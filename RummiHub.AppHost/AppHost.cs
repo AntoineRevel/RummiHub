@@ -3,7 +3,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 var cache = builder.AddRedis("cache");
 
 var apiService = builder.AddProject<Projects.RummiHub_ApiService>("apiservice")
-    .WithHttpHealthCheck("/health");
+    .WithHttpHealthCheck("/health")
+    .WithUrl("https://api.rummihub.local");
 
 builder.AddProject<Projects.RummiHub_Web>("webfrontend")
     .WithExternalHttpEndpoints()
@@ -11,6 +12,7 @@ builder.AddProject<Projects.RummiHub_Web>("webfrontend")
     .WithReference(cache)
     .WaitFor(cache)
     .WithReference(apiService)
-    .WaitFor(apiService);
+    .WaitFor(apiService)
+    .WithUrl("https://rummihub.local");
 
 builder.Build().Run();
