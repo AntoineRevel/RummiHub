@@ -1,0 +1,40 @@
+# Build outputs
+bin/
+obj/
+
+# .NET user files
+*.user
+*.suo
+.vs/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Rider / JetBrains
+.idea/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Aspire - Dashboard & service discovery local state
+.aspire/
+
+# User secrets (ne jamais commiter)
+secrets.json
+appsettings.Development.json
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db

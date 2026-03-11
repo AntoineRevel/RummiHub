@@ -1,0 +1,20 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.1.2">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <UserSecretsId>1e08f647-4e32-440b-89eb-0083365166e0</UserSecretsId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\RummiHub.ApiService\RummiHub.ApiService.csproj"/>
+        <ProjectReference Include="..\RummiHub.Web\RummiHub.Web.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Aspire.Hosting.Redis" Version="13.1.2"/>
+    </ItemGroup>
+
+</Project>

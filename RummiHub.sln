@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RummiHub.AppHost", "RummiHub.AppHost\RummiHub.AppHost.csproj", "{7A23FBA1-19E0-45AF-BD83-11CBED1E89A6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RummiHub.ServiceDefaults", "RummiHub.ServiceDefaults\RummiHub.ServiceDefaults.csproj", "{32294BA1-C64F-4754-8517-A127CDBDADDB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RummiHub.ApiService", "RummiHub.ApiService\RummiHub.ApiService.csproj", "{3532A108-46DD-4711-9D4D-1CB63C369723}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RummiHub.Web", "RummiHub.Web\RummiHub.Web.csproj", "{315924FF-FC12-42FF-9562-C2D7E65E9F6A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7A23FBA1-19E0-45AF-BD83-11CBED1E89A6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A23FBA1-19E0-45AF-BD83-11CBED1E89A6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A23FBA1-19E0-45AF-BD83-11CBED1E89A6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A23FBA1-19E0-45AF-BD83-11CBED1E89A6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{32294BA1-C64F-4754-8517-A127CDBDADDB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{32294BA1-C64F-4754-8517-A127CDBDADDB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{32294BA1-C64F-4754-8517-A127CDBDADDB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{32294BA1-C64F-4754-8517-A127CDBDADDB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3532A108-46DD-4711-9D4D-1CB63C369723}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3532A108-46DD-4711-9D4D-1CB63C369723}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3532A108-46DD-4711-9D4D-1CB63C369723}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3532A108-46DD-4711-9D4D-1CB63C369723}.Release|Any CPU.Build.0 = Release|Any CPU
+		{315924FF-FC12-42FF-9562-C2D7E65E9F6A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{315924FF-FC12-42FF-9562-C2D7E65E9F6A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{315924FF-FC12-42FF-9562-C2D7E65E9F6A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{315924FF-FC12-42FF-9562-C2D7E65E9F6A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
