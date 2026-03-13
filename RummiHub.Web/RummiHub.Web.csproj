@@ -11,6 +11,10 @@
         <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <PackageReference Include="Aspire.StackExchange.Redis" Version="9.2.1"/>
+    </ItemGroup>
+
 
 
 </Project>

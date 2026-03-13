@@ -1,73 +1,79 @@
 @page "/"
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
+@inject RummiHub.Web.Services.SolveResultSubscriber SolveResultSubscriber
 @implements IDisposable
 
 <PageTitle>RummiHub</PageTitle>
 
 <h1>RummiHub</h1>
 
-<button @onclick="LaunchSolve" disabled="@_isBusy"
+<button @onclick="LaunchSolve"
         style="padding:8px 20px; font-size:1rem; cursor:pointer;">
-    @(_isBusy ? "⏳ Solving…" : "🚀 Launch Solve")
+    🚀 Nouvelle tâche
 </button>
 
-@if (_status is not null)
+@if (_tasks.Count > 0)
 {
-    <p><strong>Statut :</strong> @_status</p>
-}
-
-@if (_requestId is not null)
-{
-    <p><strong>Request ID :</strong> @_requestId</p>
-}
-
-@if (_elapsed.HasValue)
-{
-    <p><strong>Temps de réponse :</strong> @_elapsed.Value.TotalMilliseconds.ToString("F0") ms</p>
-}
-
-@if (_workerId is not null)
-{
-    <p><strong>Traité par :</strong> @_workerId</p>
-}
-
-@if (_error is not null)
-{
-    <p style="color:orange"><strong>Info :</strong> @_error</p>
+    <table style="margin-top:1rem; border-collapse:collapse; width:100%;">
+        <thead>
+            <tr style="border-bottom:2px solid #ccc; text-align:left;">
+                <th style="padding:6px 12px;">#</th>
+                <th style="padding:6px 12px;">Statut</th>
+                <th style="padding:6px 12px;">Content Hash</th>
+                <th style="padding:6px 12px;">Temps</th>
+                <th style="padding:6px 12px;">Worker</th>
+                <th style="padding:6px 12px;">Info</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var task in _tasks)
+            {
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:6px 12px;">@task.Index</td>
+                    <td style="padding:6px 12px;">@task.Status</td>
+                    <td style="padding:6px 12px; font-family:monospace; font-size:0.85rem;">@task.ContentHash</td>
+                    <td style="padding:6px 12px;">
+                        @if (task.Elapsed.HasValue)
+                        {
+                            @($"{task.Elapsed.Value.TotalMilliseconds:F0} ms")
+                        }
+                    </td>
+                    <td style="padding:6px 12px; font-family:monospace; font-size:0.85rem;">@task.WorkerId</td>
+                    <td style="padding:6px 12px; color:orange;">@task.Error</td>
+                </tr>
+            }
+        </tbody>
+    </table>
 }
 
 @code {
-    private bool _isBusy;
-    private string? _status;
-    private string? _requestId;
-    private TimeSpan? _elapsed;
-    private string? _workerId;
-    private string? _error;
-
-    private CancellationTokenSource? _cts;
+    private readonly List<SolveTask> _tasks = [];
+    private readonly CancellationTokenSource _disposeCts = new();
+    private int _taskCounter;
 
     private async Task LaunchSolve()
     {
-        // Annule un éventuel polling précédent
-        _cts?.Cancel();
-        _cts = new CancellationTokenSource();
+        var task = new SolveTask { Index = ++_taskCounter, Status = "⏳ Envoi…" };
+        _tasks.Insert(0, task);
 
-        _isBusy = true;
-        _status = "Envoi de la requête…";
-        _requestId = null;
-        _elapsed = null;
-        _workerId = null;
-        _error = null;
-
-        // Génère un ID unique pour cette requête
         var requestId = $"req-{Guid.NewGuid().ToString()[..8]}";
 
-        // Requête minimale (plateau et main vides pour le moment)
+        // Génère une main aléatoire pour que chaque tâche ait un hash différent
+        var colors = new[] { "Red", "Blue", "Yellow", "Black" };
+        var hand = Enumerable.Range(0, Random.Shared.Next(3, 8))
+            .Select(_ => new
+            {
+                Number = Random.Shared.Next(1, 14),
+                Color = colors[Random.Shared.Next(colors.Length)],
+                IsJoker = false
+            })
+            .ToArray();
+
         var request = new
         {
             RequestId = requestId,
-            Hand = Array.Empty<object>(),
+            Hand = hand,
             Board = new { Groups = Array.Empty<object>() }
         };
 
@@ -76,60 +82,59 @@
             var client = HttpClientFactory.CreateClient("apiservice");
             var start = DateTime.UtcNow;
 
-            var postResponse = await client.PostAsJsonAsync("/solve", request, _cts.Token);
+            var postResponse = await client.PostAsJsonAsync("/solve", request, _disposeCts.Token);
             postResponse.EnsureSuccessStatusCode();
 
-            _requestId = requestId;
-            _status = "En file d'attente — en attente du worker…";
+            var accepted = await postResponse.Content.ReadFromJsonAsync<SolveAcceptedDto>(_disposeCts.Token);
+            task.ContentHash = accepted?.ContentHash;
 
-            // --- Stratégie de polling ---
-            // Blazor Server garde une connexion WebSocket ouverte vers le navigateur.
-            // On poll l'API depuis le serveur toutes les 500 ms et on pousse la mise à
-            // jour dès que le résultat arrive, sans que le navigateur fasse quoi que ce soit.
-            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
-            while (await timer.WaitForNextTickAsync(_cts.Token))
+            if (task.ContentHash is null)
             {
-                var result = await client.GetFromJsonAsync<SolveResultDto>(
-                    $"/solve/{requestId}", _cts.Token);
-
-                if (result?.Status != "pending")
-                {
-                    _elapsed = DateTime.UtcNow - start;
-                    _workerId = result?.WorkerId;
-                    _status = result?.Solved == true ? "✅ Résolu !" : "❌ Non résolu";
-                    _error = result?.Error;
-                    break;
-                }
-
-                // Rafraîchit l'UI à chaque tick pour montrer que ça tourne
-                await InvokeAsync(StateHasChanged);
+                task.Status = "❌ Erreur";
+                task.Error = "Pas de content hash reçu";
+                return;
             }
+
+            task.Status = "⏳ En attente du worker…";
+            StateHasChanged();
+
+            var result = await SolveResultSubscriber.WaitForResult(task.ContentHash, _disposeCts.Token);
+
+            task.Elapsed = DateTime.UtcNow - start;
+            task.WorkerId = result.WorkerId;
+            task.Status = result.Solved ? "✅ Résolu" : "❌ Non résolu";
+            task.Error = result.Error;
         }
         catch (OperationCanceledException)
         {
-            _status = "Annulé";
+            task.Status = "🚫 Annulé";
         }
         catch (Exception ex)
         {
-            _status = "Erreur";
-            _error = ex.Message;
+            task.Status = "❌ Erreur";
+            task.Error = ex.Message;
         }
         finally
         {
-            _isBusy = false;
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    public void Dispose() => _cts?.Cancel();
+    public void Dispose()
+    {
+        _disposeCts.Cancel();
+        _disposeCts.Dispose();
+    }
 
-    // DTO pour désérialiser la réponse de GET /solve/{id}
-    // Les deux formes ("pending" et résultat final) sont couvertes par les nullable
-    private record SolveResultDto(
-        string RequestId,
-        string? Status,      // "pending" si pas encore terminé
-        bool? Solved,
-        string? WorkerId,
-        string? Error
-    );
+    private record SolveAcceptedDto(string? ContentHash, string? RequestId, string? Status);
+
+    private class SolveTask
+    {
+        public int Index { get; init; }
+        public string Status { get; set; } = "";
+        public string? ContentHash { get; set; }
+        public TimeSpan? Elapsed { get; set; }
+        public string? WorkerId { get; set; }
+        public string? Error { get; set; }
+    }
 }

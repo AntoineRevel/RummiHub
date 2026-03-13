@@ -5,14 +5,13 @@ using StackExchange.Redis;
 
 namespace RummiHub.Solver.Worker;
 
-// IConnectionMultiplexer est injecté automatiquement grâce à AddRedisClient() dans Program.cs
 public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> logger) : BackgroundService
 {
-    // Identifiant unique généré une fois au démarrage du worker
-    // Comme l'AppHost lance 2 replicas, chaque instance aura son propre ID
+    private const string StreamKey = "solve-stream";
+    private const string GroupName = "solvers";
+
     private readonly string _workerId = $"worker-{Environment.MachineName}-{Guid.NewGuid().ToString()[..8]}";
 
-    // Options JSON pour lire/écrire les enums en texte ("Red" au lieu de 0)
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         Converters = { new JsonStringEnumConverter() }
@@ -20,49 +19,100 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("Solver worker started, waiting for jobs...");
+        logger.LogInformation("[{WorkerId}] Solver worker started", _workerId);
         var db = redis.GetDatabase();
 
+        // Crée le consumer group s'il n'existe pas encore
+        try
+        {
+            await db.StreamCreateConsumerGroupAsync(StreamKey, GroupName, "0-0", createStream: true);
+            logger.LogInformation("Consumer group '{GroupName}' created on stream '{StreamKey}'", GroupName, StreamKey);
+        }
+        catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP"))
+        {
+            // Le groupe existe déjà — c'est normal avec plusieurs replicas
+        }
+
+        // Phase 1 : récupère les messages pending (non ACK après un crash)
+        await ProcessPendingMessages(db, stoppingToken);
+
+        // Phase 2 : boucle principale — lit les nouveaux messages
         while (!stoppingToken.IsCancellationRequested)
         {
-            // RPOP = retire le dernier élément de la liste Redis "solve-queue"
-            // Combiné avec LPUSH côté API → comportement FIFO (premier arrivé, premier traité)
-            var value = await db.ListRightPopAsync("solve-queue");
+            var entries = await db.StreamReadGroupAsync(
+                StreamKey, GroupName, _workerId,
+                count: 1);
 
-            if (value.IsNull)
+            if (entries.Length == 0)
             {
-                // File vide → on attend un peu avant de réessayer
-                await Task.Delay(500, stoppingToken);
+                // Pas de nouveau message — attend avant de réessayer
+                // (StackExchange.Redis ne supporte pas BLOCK sur XREADGROUP)
+                await Task.Delay(1000, stoppingToken);
                 continue;
             }
 
-            // Désérialise la requête JSON reçue de Redis
-            var request = JsonSerializer.Deserialize<SolveRequest>((string)value!, JsonOptions);
-            if (request is null) continue;
-
-            logger.LogInformation("[{WorkerId}] Processing request {RequestId}", _workerId, request.RequestId);
-
-            // --- Logique métier : résolution du plateau Rummikub ---
-            var response = await Solve(request, _workerId, stoppingToken);
-            // --------------------------------------------------------
-
-            // Sérialise le résultat et le stocke dans Redis pendant 1 heure
-            // L'API le lira avec GET /solve/{requestId}
-            var resultJson = JsonSerializer.Serialize(response, JsonOptions);
-            await db.StringSetAsync($"solve-result:{request.RequestId}", resultJson, TimeSpan.FromHours(1));
-
-            logger.LogInformation("[{WorkerId}] Request {RequestId} done. Solved={Solved}", _workerId, request.RequestId, response.Solved);
+            await ProcessEntry(db, entries[0], stoppingToken);
         }
+    }
+
+    private async Task ProcessPendingMessages(IDatabase db, CancellationToken ct)
+    {
+        // Lit les messages délivrés à ce consumer mais non ACK (après un crash)
+        var pending = await db.StreamReadGroupAsync(
+            StreamKey, GroupName, _workerId,
+            count: 10, position: "0-0");
+
+        if (pending.Length > 0)
+        {
+            logger.LogInformation("[{WorkerId}] Recovering {Count} pending message(s)", _workerId, pending.Length);
+            foreach (var entry in pending)
+            {
+                if (ct.IsCancellationRequested) break;
+                await ProcessEntry(db, entry, ct);
+            }
+        }
+    }
+
+    private async Task ProcessEntry(IDatabase db, StreamEntry entry, CancellationToken ct)
+    {
+        var contentHash = entry["contentHash"].ToString();
+        var payload = entry["payload"].ToString();
+
+        var request = JsonSerializer.Deserialize<SolveRequest>(payload, JsonOptions);
+        if (request is null)
+        {
+            await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
+            return;
+        }
+
+        logger.LogInformation("[{WorkerId}] Processing {ContentHash} (request {RequestId})",
+            _workerId, contentHash, request.RequestId);
+
+        var response = await Solve(request, _workerId, ct);
+        var resultJson = JsonSerializer.Serialize(response, JsonOptions);
+
+        // 1. Stocke le résultat (1h TTL)
+        await db.StringSetAsync($"solve-result:{contentHash}", resultJson, TimeSpan.FromHours(1));
+
+        // 2. Publie la notification pour les subscribers (Blazor Server)
+        var subscriber = redis.GetSubscriber();
+        await subscriber.PublishAsync(RedisChannel.Literal($"solve:done:{contentHash}"), "done");
+
+        // 3. ACK le message dans le stream
+        await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
+
+        // 4. Libère le verrou de déduplication
+        await db.KeyDeleteAsync($"solve-lock:{contentHash}");
+
+        logger.LogInformation("[{WorkerId}] {ContentHash} done. Solved={Solved}",
+            _workerId, contentHash, response.Solved);
     }
 
     private static async Task<SolveResponse> Solve(SolveRequest request, string workerId, CancellationToken ct = default)
     {
-        // Simule un temps de calcul aléatoire entre 1 et 6 secondes
         var delay = Random.Shared.Next(1000, 6000);
         await Task.Delay(delay, ct);
 
-        // Pour l'instant on renvoie un résultat "non résolu"
-        // → c'est ici qu'on branchera l'algorithme de résolution plus tard
         return new SolveResponse
         {
             RequestId = request.RequestId,

@@ -1,7 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
 var cache = builder.AddRedis("cache")
-    .WithRedisInsight();
+    .WithRedisInsight(insight => insight.WithHostPort(41245));
 
 var apiService = builder.AddProject<Projects.RummiHub_ApiService>("apiservice")
     .WithReference(cache)
@@ -17,6 +17,8 @@ builder.AddProject<Projects.RummiHub_Solver_Worker>("solver-worker")
 builder.AddProject<Projects.RummiHub_Web>("webfrontend")
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health")
+    .WithReference(cache)
+    .WaitFor(cache)
     .WithReference(apiService)
     .WaitFor(apiService)
     .WithUrl("https://rummihub.lan");

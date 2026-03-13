@@ -9,10 +9,8 @@ builder.AddServiceDefaults();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
-// Enregistre le client Redis (le nom "cache" doit correspondre à celui dans AppHost.cs)
 builder.AddRedisClient("cache");
 
-// Permet d'envoyer/recevoir les enums en texte ("Red") plutôt qu'en entier (0)
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
@@ -20,7 +18,6 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
-// Options JSON partagées pour sérialiser/désérialiser manuellement (vers Redis)
 var jsonOptions = new JsonSerializerOptions
 {
     Converters = { new JsonStringEnumConverter() }
@@ -37,35 +34,57 @@ app.MapGet("/", () => "RummiHub API");
 
 app.MapGet("/ping", () => Results.Ok(new { Status = "ok", Timestamp = DateTime.UtcNow }));
 
-// POST /solve : on pousse la requête dans la file Redis, le worker va la traiter
+// POST /solve : calcule le content hash, déduplique, et enqueue dans le stream Redis
 app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis) =>
 {
     var db = redis.GetDatabase();
 
-    // Sérialise la requête en JSON et la pousse dans la liste Redis "solve-queue"
-    // LPUSH = insère à gauche (le worker lira à droite avec RPOP → ordre FIFO)
-    var json = JsonSerializer.Serialize(request, jsonOptions);
-    await db.ListLeftPushAsync("solve-queue", json);
+    // Hash déterministe du contenu (main + plateau) pour déduplication
+    var contentHash = ContentHasher.ComputeHash(request.Hand, request.Board);
 
-    // On répond immédiatement avec 202 Accepted : le travail est en cours
-    return Results.Accepted($"/solve/{request.RequestId}", new
+    // 1. Vérifie si le résultat est déjà en cache
+    var cached = await db.StringGetAsync($"solve-result:{contentHash}");
+
+    if (cached.IsNull)
     {
+        // 2. Tente d'acquérir le verrou de déduplication (SET NX, TTL 10 min)
+        //    Si le verrou existe déjà → une autre requête identique est en cours, on ne relance pas de worker
+        var lockAcquired = await db.StringSetAsync(
+            $"solve-lock:{contentHash}",
+            request.RequestId,
+            TimeSpan.FromMinutes(10),
+            When.NotExists);
+
+        if (lockAcquired)
+        {
+            // 3. Enqueue dans le Redis Stream (consumer group côté worker)
+            var payload = JsonSerializer.Serialize(request, jsonOptions);
+            await db.StreamAddAsync("solve-stream", [
+                new NameValueEntry("contentHash", contentHash),
+                new NameValueEntry("payload", payload)
+            ], maxLength: 1000, useApproximateMaxLength: true);
+        }
+    }
+
+    // Retourne toujours le même format avec ContentHash.
+    // Le SolveResultSubscriber côté Blazor trouvera le résultat en cache immédiatement
+    // grâce au pattern subscribe-then-check (pas besoin d'un format de réponse différent).
+    return Results.Accepted($"/solve/{contentHash}", new
+    {
+        ContentHash = contentHash,
         request.RequestId,
-        Status = "queued",
-        ResultUrl = $"/solve/{request.RequestId}"
+        Status = cached.IsNull ? "processing" : "completed"
     });
 });
 
-// GET /solve/{requestId} : on lit le résultat stocké par le worker dans Redis
-app.MapGet("/solve/{requestId}", async (string requestId, IConnectionMultiplexer redis) =>
+// GET /solve/{contentHash} : lit le résultat en cache (endpoint fallback)
+app.MapGet("/solve/{contentHash}", async (string contentHash, IConnectionMultiplexer redis) =>
 {
     var db = redis.GetDatabase();
-
-    // Le worker stocke le résultat sous la clé "solve-result:{requestId}"
-    var json = await db.StringGetAsync($"solve-result:{requestId}");
+    var json = await db.StringGetAsync($"solve-result:{contentHash}");
 
     if (json.IsNull)
-        return Results.Ok(new { RequestId = requestId, Status = "pending" });
+        return Results.Ok(new { ContentHash = contentHash, Status = "pending" });
 
     var response = JsonSerializer.Deserialize<SolveResponse>((string)json!, jsonOptions);
     return Results.Ok(response);
