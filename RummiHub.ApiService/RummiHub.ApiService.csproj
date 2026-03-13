@@ -8,6 +8,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\RummiHub.ServiceDefaults\RummiHub.ServiceDefaults.csproj"/>
+        <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

@@ -11,6 +11,7 @@
     <ItemGroup>
         <ProjectReference Include="..\RummiHub.ApiService\RummiHub.ApiService.csproj"/>
         <ProjectReference Include="..\RummiHub.Web\RummiHub.Web.csproj"/>
+        <ProjectReference Include="..\RummiHub.Solver.Worker\RummiHub.Solver.Worker.csproj"/>
     </ItemGroup>
 
     <ItemGroup>
