@@ -1,0 +1,62 @@
+{
+  "info": {
+    "name": "RummiHub API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5369",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/",
+        "header": []
+      }
+    },
+    {
+      "name": "Ping",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/ping",
+        "header": [
+          { "key": "Accept", "value": "application/json" }
+        ]
+      }
+    },
+    {
+      "name": "Submit solve request",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/solve",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"requestId\": \"req-001\",\n  \"hand\": [\n    { \"number\": 5, \"color\": \"Red\", \"isJoker\": false },\n    { \"number\": 6, \"color\": \"Red\", \"isJoker\": false },\n    { \"number\": 7, \"color\": \"Red\", \"isJoker\": false }\n  ],\n  \"board\": {\n    \"groups\": [\n      {\n        \"type\": \"Run\",\n        \"tiles\": [\n          { \"number\": 1, \"color\": \"Blue\", \"isJoker\": false },\n          { \"number\": 2, \"color\": \"Blue\", \"isJoker\": false },\n          { \"number\": 3, \"color\": \"Blue\", \"isJoker\": false }\n        ]\n      }\n    ]\n  }\n}",
+          "options": {
+            "raw": { "language": "json" }
+          }
+        }
+      }
+    },
+    {
+      "name": "Get solve result",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/solve/req-001",
+        "header": [
+          { "key": "Accept", "value": "application/json" }
+        ]
+      }
+    }
+  ]
+}
+
