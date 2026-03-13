@@ -17,6 +17,8 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/", () => "RummiHub API");
 
+app.MapGet("/ping", () => Results.Ok(new { Status = "ok", Timestamp = DateTime.UtcNow }));
+
 app.MapPost("/solve", (SolveRequest request) =>
 {
     try

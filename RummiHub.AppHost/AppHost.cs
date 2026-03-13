@@ -6,7 +6,7 @@ var apiService = builder.AddProject<Projects.RummiHub_ApiService>("apiservice")
     .WithReference(cache)
     .WaitFor(cache)
     .WithHttpHealthCheck("/health")
-    .WithUrl("https://api.rummihub.local");
+    .WithUrl("https://api.rummihub.lan");
 
 builder.AddProject<Projects.RummiHub_Solver_Worker>("solver-worker")
     .WithReference(cache)
@@ -20,6 +20,6 @@ builder.AddProject<Projects.RummiHub_Web>("webfrontend")
     .WaitFor(cache)
     .WithReference(apiService)
     .WaitFor(apiService)
-    .WithUrl("https://rummihub.local");
+    .WithUrl("https://rummihub.lan");
 
 builder.Build().Run();
