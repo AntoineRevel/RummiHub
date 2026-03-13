@@ -9,4 +9,5 @@ public record SolveResponse
     public Board? NewBoard { get; init; }
     public List<Tile> RemainingHand { get; init; } = [];
     public string? Error { get; init; }
+    public string? WorkerId { get; init; }
 }

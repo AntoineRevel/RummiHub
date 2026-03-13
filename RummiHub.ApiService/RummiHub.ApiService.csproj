@@ -7,12 +7,13 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\RummiHub.ServiceDefaults\RummiHub.ServiceDefaults.csproj"/>
-        <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj"/>
+        <ProjectReference Include="..\RummiHub.ServiceDefaults\RummiHub.ServiceDefaults.csproj" />
+        <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1"/>
+        <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.2" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
     </ItemGroup>
 
 </Project>
