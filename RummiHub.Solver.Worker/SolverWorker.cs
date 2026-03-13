@@ -43,7 +43,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
             logger.LogInformation("[{WorkerId}] Processing request {RequestId}", _workerId, request.RequestId);
 
             // --- Logique métier : résolution du plateau Rummikub ---
-            var response = Solve(request, _workerId);
+            var response = await Solve(request, _workerId, stoppingToken);
             // --------------------------------------------------------
 
             // Sérialise le résultat et le stocke dans Redis pendant 1 heure
@@ -55,8 +55,12 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         }
     }
 
-    private static SolveResponse Solve(SolveRequest request, string workerId)
+    private static async Task<SolveResponse> Solve(SolveRequest request, string workerId, CancellationToken ct = default)
     {
+        // Simule un temps de calcul aléatoire entre 1 et 6 secondes
+        var delay = Random.Shared.Next(1000, 6000);
+        await Task.Delay(delay, ct);
+
         // Pour l'instant on renvoie un résultat "non résolu"
         // → c'est ici qu'on branchera l'algorithme de résolution plus tard
         return new SolveResponse
@@ -66,7 +70,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
             NewBoard = request.Board,
             RemainingHand = request.Hand,
             WorkerId = workerId,
-            Error = "Solver not yet implemented"
+            Error = $"Solver not yet implemented (simulated {delay}ms)"
         };
     }
 }

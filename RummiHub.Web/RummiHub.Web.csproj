@@ -8,10 +8,9 @@
 
     <ItemGroup>
         <ProjectReference Include="..\RummiHub.ServiceDefaults\RummiHub.ServiceDefaults.csproj"/>
+        <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj"/>
     </ItemGroup>
 
-    <ItemGroup>
-        <PackageReference Include="Aspire.StackExchange.Redis.OutputCaching" Version="13.1.2"/>
-    </ItemGroup>
+
 
 </Project>

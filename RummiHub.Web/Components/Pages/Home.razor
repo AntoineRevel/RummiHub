@@ -1,7 +1,135 @@
 @page "/"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@implements IDisposable
 
 <PageTitle>RummiHub</PageTitle>
 
 <h1>RummiHub</h1>
 
-<p>Rummikub game solver — coming soon.</p>
+<button @onclick="LaunchSolve" disabled="@_isBusy"
+        style="padding:8px 20px; font-size:1rem; cursor:pointer;">
+    @(_isBusy ? "⏳ Solving…" : "🚀 Launch Solve")
+</button>
+
+@if (_status is not null)
+{
+    <p><strong>Statut :</strong> @_status</p>
+}
+
+@if (_requestId is not null)
+{
+    <p><strong>Request ID :</strong> @_requestId</p>
+}
+
+@if (_elapsed.HasValue)
+{
+    <p><strong>Temps de réponse :</strong> @_elapsed.Value.TotalMilliseconds.ToString("F0") ms</p>
+}
+
+@if (_workerId is not null)
+{
+    <p><strong>Traité par :</strong> @_workerId</p>
+}
+
+@if (_error is not null)
+{
+    <p style="color:orange"><strong>Info :</strong> @_error</p>
+}
+
+@code {
+    private bool _isBusy;
+    private string? _status;
+    private string? _requestId;
+    private TimeSpan? _elapsed;
+    private string? _workerId;
+    private string? _error;
+
+    private CancellationTokenSource? _cts;
+
+    private async Task LaunchSolve()
+    {
+        // Annule un éventuel polling précédent
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+
+        _isBusy = true;
+        _status = "Envoi de la requête…";
+        _requestId = null;
+        _elapsed = null;
+        _workerId = null;
+        _error = null;
+
+        // Génère un ID unique pour cette requête
+        var requestId = $"req-{Guid.NewGuid().ToString()[..8]}";
+
+        // Requête minimale (plateau et main vides pour le moment)
+        var request = new
+        {
+            RequestId = requestId,
+            Hand = Array.Empty<object>(),
+            Board = new { Groups = Array.Empty<object>() }
+        };
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("apiservice");
+            var start = DateTime.UtcNow;
+
+            var postResponse = await client.PostAsJsonAsync("/solve", request, _cts.Token);
+            postResponse.EnsureSuccessStatusCode();
+
+            _requestId = requestId;
+            _status = "En file d'attente — en attente du worker…";
+
+            // --- Stratégie de polling ---
+            // Blazor Server garde une connexion WebSocket ouverte vers le navigateur.
+            // On poll l'API depuis le serveur toutes les 500 ms et on pousse la mise à
+            // jour dès que le résultat arrive, sans que le navigateur fasse quoi que ce soit.
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+            while (await timer.WaitForNextTickAsync(_cts.Token))
+            {
+                var result = await client.GetFromJsonAsync<SolveResultDto>(
+                    $"/solve/{requestId}", _cts.Token);
+
+                if (result?.Status != "pending")
+                {
+                    _elapsed = DateTime.UtcNow - start;
+                    _workerId = result?.WorkerId;
+                    _status = result?.Solved == true ? "✅ Résolu !" : "❌ Non résolu";
+                    _error = result?.Error;
+                    break;
+                }
+
+                // Rafraîchit l'UI à chaque tick pour montrer que ça tourne
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _status = "Annulé";
+        }
+        catch (Exception ex)
+        {
+            _status = "Erreur";
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+
+    // DTO pour désérialiser la réponse de GET /solve/{id}
+    // Les deux formes ("pending" et résultat final) sont couvertes par les nullable
+    private record SolveResultDto(
+        string RequestId,
+        string? Status,      // "pending" si pas encore terminé
+        bool? Solved,
+        string? WorkerId,
+        string? Error
+    );
+}
