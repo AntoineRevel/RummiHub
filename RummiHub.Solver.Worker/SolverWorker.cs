@@ -9,6 +9,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 {
     private const string StreamKey = "solve-stream";
     private const string GroupName = "solvers";
+    private static readonly TimeSpan IdlePollInterval = TimeSpan.FromSeconds(1);
 
     private readonly string _workerId = $"worker-{Environment.MachineName}-{Guid.NewGuid().ToString()[..8]}";
 
@@ -37,6 +38,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         await ProcessPendingMessages(db, stoppingToken);
 
         // Phase 2 : boucle principale — lit les nouveaux messages
+        using var idlePollTimer = new PeriodicTimer(IdlePollInterval);
         while (!stoppingToken.IsCancellationRequested)
         {
             var entries = await db.StreamReadGroupAsync(
@@ -47,7 +49,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
             {
                 // Pas de nouveau message — attend avant de réessayer
                 // (StackExchange.Redis ne supporte pas BLOCK sur XREADGROUP)
-                await Task.Delay(1000, stoppingToken);
+                await idlePollTimer.WaitForNextTickAsync(stoppingToken);
                 continue;
             }
 
