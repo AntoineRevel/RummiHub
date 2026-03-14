@@ -9,7 +9,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 {
     private const string StreamKey = "solve-stream";
     private const string GroupName = "solvers";
-    private static readonly TimeSpan IdlePollInterval = TimeSpan.FromSeconds(1);
+    private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal("solve:enqueue");
 
     private readonly string _workerId = $"worker-{Environment.MachineName}-{Guid.NewGuid().ToString()[..8]}";
 
@@ -38,22 +38,35 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         await ProcessPendingMessages(db, stoppingToken);
 
         // Phase 2 : boucle principale — lit les nouveaux messages
-        using var idlePollTimer = new PeriodicTimer(IdlePollInterval);
-        while (!stoppingToken.IsCancellationRequested)
+        var subscriber = redis.GetSubscriber();
+        var wakeSignal = new SemaphoreSlim(0);
+
+        await subscriber.SubscribeAsync(EnqueueChannel, (_, _) =>
         {
-            var entries = await db.StreamReadGroupAsync(
-                StreamKey, GroupName, _workerId,
-                count: 1);
+            wakeSignal.Release();
+        });
 
-            if (entries.Length == 0)
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
             {
-                // Pas de nouveau message — attend avant de réessayer
-                // (StackExchange.Redis ne supporte pas BLOCK sur XREADGROUP)
-                await idlePollTimer.WaitForNextTickAsync(stoppingToken);
-                continue;
-            }
+                var entries = await db.StreamReadGroupAsync(
+                    StreamKey, GroupName, _workerId,
+                    count: 1);
 
-            await ProcessEntry(db, entries[0], stoppingToken);
+                if (entries.Length == 0)
+                {
+                    await wakeSignal.WaitAsync(stoppingToken);
+                    continue;
+                }
+
+                await ProcessEntry(db, entries[0], stoppingToken);
+            }
+        }
+        finally
+        {
+            await subscriber.UnsubscribeAsync(EnqueueChannel);
+            wakeSignal.Dispose();
         }
     }
 
