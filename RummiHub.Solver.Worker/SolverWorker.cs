@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RummiHub.Core.Contracts;
 using StackExchange.Redis;
+using System.Threading.Channels;
 
 namespace RummiHub.Solver.Worker;
 
@@ -9,6 +10,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 {
     private const string StreamKey = "solve-stream";
     private const string GroupName = "solvers";
+    private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal(RedisChannels.SolveEnqueue);
 
     private readonly string _workerId = $"worker-{Environment.MachineName}-{Guid.NewGuid().ToString()[..8]}";
 
@@ -37,21 +39,39 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         await ProcessPendingMessages(db, stoppingToken);
 
         // Phase 2 : boucle principale — lit les nouveaux messages
-        while (!stoppingToken.IsCancellationRequested)
+        var subscriber = redis.GetSubscriber();
+        var wakeSignal = Channel.CreateUnbounded<bool>(new UnboundedChannelOptions
         {
-            var entries = await db.StreamReadGroupAsync(
-                StreamKey, GroupName, _workerId,
-                count: 1);
+            SingleReader = true,
+            SingleWriter = false
+        });
 
-            if (entries.Length == 0)
+        await subscriber.SubscribeAsync(EnqueueChannel, (_, _) =>
+        {
+            wakeSignal.Writer.TryWrite(true);
+        });
+
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
             {
-                // Pas de nouveau message — attend avant de réessayer
-                // (StackExchange.Redis ne supporte pas BLOCK sur XREADGROUP)
-                await Task.Delay(1000, stoppingToken);
-                continue;
-            }
+                var entries = await db.StreamReadGroupAsync(
+                    StreamKey, GroupName, _workerId,
+                    count: 1);
 
-            await ProcessEntry(db, entries[0], stoppingToken);
+                if (entries.Length == 0)
+                {
+                    await wakeSignal.Reader.ReadAsync(stoppingToken);
+                    continue;
+                }
+
+                await ProcessEntry(db, entries[0], stoppingToken);
+            }
+        }
+        finally
+        {
+            await subscriber.UnsubscribeAsync(EnqueueChannel);
+            wakeSignal.Writer.TryComplete();
         }
     }
 
