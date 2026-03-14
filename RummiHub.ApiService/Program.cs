@@ -66,7 +66,7 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
 
             // 4. Réveille les workers en attente pour déclencher le traitement immédiatement
             var subscriber = redis.GetSubscriber();
-            await subscriber.PublishAsync(RedisChannel.Literal("solve:enqueue"), "new");
+            await subscriber.PublishAsync(RedisChannel.Literal(RedisChannels.SolveEnqueue), "new");
         }
     }
 

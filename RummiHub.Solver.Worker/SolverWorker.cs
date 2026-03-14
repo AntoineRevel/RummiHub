@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RummiHub.Core.Contracts;
 using StackExchange.Redis;
+using System.Threading.Channels;
 
 namespace RummiHub.Solver.Worker;
 
@@ -9,7 +10,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 {
     private const string StreamKey = "solve-stream";
     private const string GroupName = "solvers";
-    private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal("solve:enqueue");
+    private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal(RedisChannels.SolveEnqueue);
 
     private readonly string _workerId = $"worker-{Environment.MachineName}-{Guid.NewGuid().ToString()[..8]}";
 
@@ -39,11 +40,15 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 
         // Phase 2 : boucle principale — lit les nouveaux messages
         var subscriber = redis.GetSubscriber();
-        var wakeSignal = new SemaphoreSlim(0);
+        var wakeSignal = Channel.CreateUnbounded<bool>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
 
         await subscriber.SubscribeAsync(EnqueueChannel, (_, _) =>
         {
-            wakeSignal.Release();
+            wakeSignal.Writer.TryWrite(true);
         });
 
         try
@@ -56,7 +61,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 
                 if (entries.Length == 0)
                 {
-                    await wakeSignal.WaitAsync(stoppingToken);
+                    await wakeSignal.Reader.ReadAsync(stoppingToken);
                     continue;
                 }
 
@@ -66,7 +71,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         finally
         {
             await subscriber.UnsubscribeAsync(EnqueueChannel);
-            wakeSignal.Dispose();
+            wakeSignal.Writer.TryComplete();
         }
     }
 
