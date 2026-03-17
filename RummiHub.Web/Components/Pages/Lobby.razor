@@ -1,0 +1,71 @@
+@page "/lobby"
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@inject Microsoft.AspNetCore.Hosting.Server.IServer Server
+
+<PageTitle>Lobby</PageTitle>
+
+<h1>Lobby Rummikub</h1>
+
+@if (!_isConnected)
+{
+    <p>Connexion au serveur...</p>
+}
+else if (string.IsNullOrEmpty(_gameId))
+{
+    <div class="mb-3">
+        <label class="form-label">Ton nom :</label>
+        <input class="form-control" style="max-width: 300px" @bind="_playerName"/>
+    </div>
+
+    <div class="d-flex gap-2 mb-4">
+        <button class="btn btn-primary" @onclick="CreateGame" disabled="@string.IsNullOrWhiteSpace(_playerName)">
+            Creer une partie
+        </button>
+    </div>
+
+    <h4>Rejoindre une partie</h4>
+    <div class="d-flex gap-2 align-items-end">
+        <div>
+            <label class="form-label">Code de la partie :</label>
+            <input class="form-control" style="max-width: 200px" @bind="_joinGameId"/>
+        </div>
+        <button class="btn btn-success" @onclick="JoinGame"
+                disabled="@(string.IsNullOrWhiteSpace(_playerName) || string.IsNullOrWhiteSpace(_joinGameId))">
+            Rejoindre
+        </button>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        Code de la partie : <strong>@_gameId</strong> — partage ce code avec tes amis !
+    </div>
+
+    @if (_isStarted)
+    {
+        <div class="alert alert-success">
+            La partie a commence !
+        </div>
+    }
+
+    <h4>Joueurs (@_players.Count)</h4>
+    <ul class="list-group" style="max-width: 300px">
+        @foreach (var player in _players)
+        {
+            <li class="list-group-item">@player</li>
+        }
+    </ul>
+
+    @if (_isHost && !_isStarted)
+    {
+        <button class="btn btn-warning mt-3" @onclick="StartGame">
+            Lancer la partie
+        </button>
+    }
+}
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger mt-3">@_error</div>
+}

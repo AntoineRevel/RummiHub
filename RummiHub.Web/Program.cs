@@ -1,19 +1,20 @@
 using RummiHub.Web.Components;
 using RummiHub.Web.Services;
+using RummiHub.Web.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add service defaults & Aspire client integrations.
 builder.AddServiceDefaults();
 
-// Redis pour Pub/Sub (réception des notifications de résultat)
 builder.AddRedisClient("cache");
 
-// Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Client HTTP nommé "apiservice" → Aspire injecte automatiquement l'URL via la découverte de services
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IGameManager, GameManager>();
+
 builder.Services.AddHttpClient("apiservice",
     client => client.BaseAddress = new Uri("https+http://apiservice"));
 
@@ -37,6 +38,7 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+app.MapHub<GameHub>("/hubs/game");
 app.MapDefaultEndpoints();
 
 app.Run();
