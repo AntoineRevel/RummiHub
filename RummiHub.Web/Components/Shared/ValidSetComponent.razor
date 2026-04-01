@@ -1,0 +1,32 @@
+@using RummiHub.Core.Models
+<div class="valid-set-container">
+    <div class="valid-tiles">
+        @{
+            var tileIndex = StartIndex;
+        }
+        @foreach (var tile in ValidSet.Tiles)
+        {
+            <TileComponent Tile="tile" TileIndex="tileIndex" HighlightIndices="HighlightIndices"/>
+            tileIndex++;
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public required ValidSet ValidSet { get; set; }
+    [Parameter] public int StartIndex { get; set; }
+    [Parameter] public HashSet<int>? HighlightIndices { get; set; }
+}
+
+<style>
+    .valid-set-container {
+        display: inline-block;
+        white-space: nowrap;
+        padding: 5px;
+        border-radius: 5px;
+    }
+
+    .valid-tiles {
+        display: inline-flex;
+    }
+</style>

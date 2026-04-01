@@ -1,0 +1,73 @@
+@using RummiHub.Core.Models
+<div class="set-container">
+    <div class="tiles">
+        @{
+            List<Tile>? tilesToHighlight = null;
+            if (ShowHint)
+            {
+                tilesToHighlight = [..HighlightTiles];
+            }
+        }
+
+        @foreach (var tile in Set.Tiles)
+        {
+            var shouldHighlight = false;
+
+            if (ShowHint)
+            {
+                var matchingTile = tilesToHighlight!.FirstOrDefault(t => t.Equals(tile));
+                if (!matchingTile.IsNull)
+                {
+                    shouldHighlight = true;
+                    tilesToHighlight!.Remove(matchingTile);
+                }
+            }
+
+            <TileComponent Tile="tile" ShouldHighlight="@shouldHighlight"/>
+        }
+
+        @for (var i = 0; i < Set.Jokers; i++)
+        {
+            var jokerTile = new Tile(true);
+            var shouldHighlight = false;
+
+            if (ShowHint)
+            {
+                var matchingTile = tilesToHighlight!.FirstOrDefault(t => t.IsJoker);
+                if (!matchingTile.IsNull)
+                {
+                    shouldHighlight = true;
+                    tilesToHighlight!.Remove(matchingTile);
+                }
+            }
+
+            <TileComponent Tile="jokerTile" ShouldHighlight="@shouldHighlight"/>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public required Set Set { get; set; }
+    [Parameter] public List<Tile> HighlightTiles { get; set; } = [];
+    [Parameter] public bool ShowHint { get; set; }
+}
+
+<style>
+    .set-container {
+        display: inline-block;
+        white-space: normal;
+        padding: 5px;
+        border-radius: 5px;
+    }
+
+    .tiles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+    }
+
+    .tiles .tile {
+        margin: 2px;
+        flex: 0 0 auto;
+    }
+</style>
