@@ -1,26 +1,20 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using RummiHub.Core.Contracts;
 using StackExchange.Redis;
 
 namespace RummiHub.Web.Services;
 
 /// <summary>
-/// Service singleton qui s'abonne aux notifications Redis Pub/Sub
-/// et dispatche les résultats aux composants Blazor en attente via TaskCompletionSource.
-/// Pattern "subscribe-then-check" pour éliminer les race conditions.
+/// Singleton service that subscribes to Redis Pub/Sub notifications
+/// and dispatches results to waiting Blazor components via TaskCompletionSource.
+/// Uses "subscribe-then-check" pattern to eliminate race conditions.
 /// </summary>
 public sealed class SolveResultSubscriber : IDisposable
 {
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<SolveResultSubscriber> _logger;
     private readonly ConcurrentDictionary<string, List<TaskCompletionSource<SolveResponse>>> _waiters = new();
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        Converters = { new JsonStringEnumConverter() }
-    };
 
     public SolveResultSubscriber(IConnectionMultiplexer redis, ILogger<SolveResultSubscriber> logger)
     {
@@ -29,17 +23,15 @@ public sealed class SolveResultSubscriber : IDisposable
     }
 
     /// <summary>
-    /// Attend le résultat d'une résolution identifiée par son contentHash.
-    /// S'abonne au channel Pub/Sub, puis vérifie si le résultat est déjà en cache (race condition safety).
+    /// Waits for a solve result identified by its contentHash.
+    /// Subscribes to Pub/Sub channel, then checks cache (race condition safety).
     /// </summary>
     public async Task<SolveResponse> WaitForResult(string contentHash, CancellationToken ct)
     {
         var tcs = new TaskCompletionSource<SolveResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Enregistre l'annulation
         ct.Register(() => tcs.TrySetCanceled(), useSynchronizationContext: false);
 
-        // Ajoute le TCS à la liste des waiters pour ce hash
         _waiters.AddOrUpdate(
             contentHash,
             _ => [tcs],
@@ -49,18 +41,17 @@ public sealed class SolveResultSubscriber : IDisposable
                 return list;
             });
 
-        // S'abonne au channel Pub/Sub (idempotent pour le même channel)
         var subscriber = _redis.GetSubscriber();
         await subscriber.SubscribeAsync(
             RedisChannel.Literal($"solve:done:{contentHash}"),
             (_, _) => _ = OnResultReady(contentHash));
 
-        // Vérifie immédiatement si le résultat existe déjà (subscribe-then-check)
+        // Subscribe-then-check: verify cache immediately after subscribing
         var db = _redis.GetDatabase();
         var existing = await db.StringGetAsync($"solve-result:{contentHash}");
         if (!existing.IsNull)
         {
-            var result = JsonSerializer.Deserialize<SolveResponse>((string)existing!, JsonOptions);
+            var result = JsonSerializer.Deserialize<SolveResponse>((string)existing!, RummiJsonOptions.Default);
             if (result is not null)
             {
                 tcs.TrySetResult(result);
@@ -81,7 +72,7 @@ public sealed class SolveResultSubscriber : IDisposable
             return;
         }
 
-        var result = JsonSerializer.Deserialize<SolveResponse>((string)json!, JsonOptions);
+        var result = JsonSerializer.Deserialize<SolveResponse>((string)json!, RummiJsonOptions.Default);
         if (result is null) return;
 
         if (_waiters.TryRemove(contentHash, out var list))
@@ -93,7 +84,6 @@ public sealed class SolveResultSubscriber : IDisposable
             }
         }
 
-        // Unsubscribe — plus personne n'attend ce hash
         var subscriber = _redis.GetSubscriber();
         await subscriber.UnsubscribeAsync(RedisChannel.Literal($"solve:done:{contentHash}"));
 
@@ -102,7 +92,6 @@ public sealed class SolveResultSubscriber : IDisposable
 
     public void Dispose()
     {
-        // Annule tous les waiters en attente
         foreach (var (_, list) in _waiters)
         {
             lock (list)

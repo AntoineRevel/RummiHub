@@ -1,6 +1,6 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using RummiHub.Core.Contracts;
+using RummiHub.Core.Models;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,15 +13,13 @@ builder.AddRedisClient("cache");
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    foreach (var converter in RummiJsonOptions.Default.Converters)
+        options.SerializerOptions.Converters.Add(converter);
+
+    options.SerializerOptions.PropertyNamingPolicy = RummiJsonOptions.Default.PropertyNamingPolicy;
 });
 
 var app = builder.Build();
-
-var jsonOptions = new JsonSerializerOptions
-{
-    Converters = { new JsonStringEnumConverter() }
-};
 
 app.UseExceptionHandler();
 
@@ -39,7 +37,6 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
 {
     var db = redis.GetDatabase();
 
-    // Hash déterministe du contenu (main + plateau) pour déduplication
     var contentHash = ContentHasher.ComputeHash(request.Hand, request.Board);
 
     // 1. Vérifie si le résultat est déjà en cache
@@ -48,7 +45,6 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
     if (cached.IsNull)
     {
         // 2. Tente d'acquérir le verrou de déduplication (SET NX, TTL 10 min)
-        //    Si le verrou existe déjà → une autre requête identique est en cours, on ne relance pas de worker
         var lockAcquired = await db.StringSetAsync(
             $"solve-lock:{contentHash}",
             request.RequestId,
@@ -57,22 +53,19 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
 
         if (lockAcquired)
         {
-            // 3. Enqueue dans le Redis Stream (consumer group côté worker)
-            var payload = JsonSerializer.Serialize(request, jsonOptions);
+            // 3. Enqueue dans le Redis Stream
+            var payload = JsonSerializer.Serialize(request, RummiJsonOptions.Default);
             await db.StreamAddAsync("solve-stream", [
                 new NameValueEntry("contentHash", contentHash),
                 new NameValueEntry("payload", payload)
             ], maxLength: 1000, useApproximateMaxLength: true);
 
-            // 4. Réveille les workers en attente pour déclencher le traitement immédiatement
+            // 4. Réveille les workers en attente
             var subscriber = redis.GetSubscriber();
             await subscriber.PublishAsync(RedisChannel.Literal(RedisChannels.SolveEnqueue), "new");
         }
     }
 
-    // Retourne toujours le même format avec ContentHash.
-    // Le SolveResultSubscriber côté Blazor trouvera le résultat en cache immédiatement
-    // grâce au pattern subscribe-then-check (pas besoin d'un format de réponse différent).
     return Results.Accepted($"/solve/{contentHash}", new
     {
         ContentHash = contentHash,
@@ -81,7 +74,7 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
     });
 });
 
-// GET /solve/{contentHash} : lit le résultat en cache (endpoint fallback)
+// GET /solve/{contentHash} : lit le résultat en cache
 app.MapGet("/solve/{contentHash}", async (string contentHash, IConnectionMultiplexer redis) =>
 {
     var db = redis.GetDatabase();
@@ -90,7 +83,7 @@ app.MapGet("/solve/{contentHash}", async (string contentHash, IConnectionMultipl
     if (json.IsNull)
         return Results.Ok(new { ContentHash = contentHash, Status = "pending" });
 
-    var response = JsonSerializer.Deserialize<SolveResponse>((string)json!, jsonOptions);
+    var response = JsonSerializer.Deserialize<SolveResponse>((string)json!, RummiJsonOptions.Default);
     return Results.Ok(response);
 });
 

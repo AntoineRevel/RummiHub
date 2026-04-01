@@ -1,9 +1,9 @@
 namespace RummiHub.Core.Models;
 
-public enum TileColor
+public enum TileColor : byte
 {
-    Red,
-    Blue,
-    Yellow,
-    Black
+    Blue = 0,
+    Red = 1,
+    Mango = 2,
+    Black = 3
 }

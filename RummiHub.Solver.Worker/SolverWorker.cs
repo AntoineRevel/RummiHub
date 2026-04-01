@@ -1,8 +1,8 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using RummiHub.Core.Contracts;
-using StackExchange.Redis;
 using System.Threading.Channels;
+using RummiHub.Core.Contracts;
+using RummiHub.Core.Models;
+using StackExchange.Redis;
 
 namespace RummiHub.Solver.Worker;
 
@@ -13,11 +13,6 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
     private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal(RedisChannels.SolveEnqueue);
 
     private readonly string _workerId = $"worker-{Environment.MachineName}-{Guid.NewGuid().ToString()[..8]}";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        Converters = { new JsonStringEnumConverter() }
-    };
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -77,7 +72,6 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 
     private async Task ProcessPendingMessages(IDatabase db, CancellationToken ct)
     {
-        // Lit les messages délivrés à ce consumer mais non ACK (après un crash)
         var pending = await db.StreamReadGroupAsync(
             StreamKey, GroupName, _workerId,
             count: 10, position: "0-0");
@@ -98,7 +92,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         var contentHash = entry["contentHash"].ToString();
         var payload = entry["payload"].ToString();
 
-        var request = JsonSerializer.Deserialize<SolveRequest>(payload, JsonOptions);
+        var request = JsonSerializer.Deserialize<SolveRequest>(payload, RummiJsonOptions.Default);
         if (request is null)
         {
             await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
@@ -108,8 +102,8 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         logger.LogInformation("[{WorkerId}] Processing {ContentHash} (request {RequestId})",
             _workerId, contentHash, request.RequestId);
 
-        var response = await Solve(request, _workerId, ct);
-        var resultJson = JsonSerializer.Serialize(response, JsonOptions);
+        var response = Solve(request);
+        var resultJson = JsonSerializer.Serialize(response, RummiJsonOptions.Default);
 
         // 1. Stocke le résultat (1h TTL)
         await db.StringSetAsync($"solve-result:{contentHash}", resultJson, TimeSpan.FromHours(1));
@@ -124,23 +118,31 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         // 4. Libère le verrou de déduplication
         await db.KeyDeleteAsync($"solve-lock:{contentHash}");
 
-        logger.LogInformation("[{WorkerId}] {ContentHash} done. Solved={Solved}",
-            _workerId, contentHash, response.Solved);
+        logger.LogInformation("[{WorkerId}] {ContentHash} done. Found={Found}",
+            _workerId, contentHash, response.Found);
     }
 
-    private static async Task<SolveResponse> Solve(SolveRequest request, string workerId, CancellationToken ct = default)
+    /// <summary>
+    /// Stub solver — will be replaced in Phase 2 with real solver algorithms ported from OldBlazorSol.
+    /// </summary>
+    private SolveResponse Solve(SolveRequest request)
     {
-        var delay = Random.Shared.Next(1000, 6000);
-        await Task.Delay(delay, ct);
+        // TODO Phase 2: Wire up real solvers (GraphStrategy, ParallelStrategy, etc.)
+        // var boardSet = request.Board.ToSet();
+        // var rackSet = new Set(request.Hand);
+        // var strategy = new GraphStrategy();
+        // var result = await strategy.GetSolverResult(boardSet, rackSet, request.HasPlayed, ct);
 
         return new SolveResponse
         {
             RequestId = request.RequestId,
-            Solved = false,
+            Found = false,
             NewBoard = request.Board,
-            RemainingHand = request.Hand,
-            WorkerId = workerId,
-            Error = $"Solver not yet implemented (simulated {delay}ms)"
+            TilesToPlay = [],
+            JokersToPlay = 0,
+            Score = 0,
+            WorkerId = _workerId,
+            Error = "Solver not yet implemented (Phase 2)"
         };
     }
 }

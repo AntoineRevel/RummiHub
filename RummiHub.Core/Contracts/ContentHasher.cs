@@ -1,54 +1,40 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using RummiHub.Core.Models;
 
 namespace RummiHub.Core.Contracts;
 
 /// <summary>
-/// Génère un hash déterministe du contenu d'une requête de résolution.
-/// Deux requêtes avec la même main et le même plateau produisent le même hash,
-/// ce qui permet la déduplication côté Redis.
+/// Generates a deterministic hash of a solve request's content.
+/// Two requests with the same hand and board produce the same hash,
+/// enabling deduplication on the Redis side.
 /// </summary>
 public static class ContentHasher
 {
-    private static readonly JsonSerializerOptions CanonicalJsonOptions = new()
+    public static string ComputeHash(List<Tile> hand, Solution board)
     {
-        Converters = { new JsonStringEnumConverter() },
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
-    public static string ComputeHash(List<Tile> hand, Board board)
-    {
-        // Tri déterministe de la main
         var sortedHand = hand
-            .OrderBy(t => t.Color)
-            .ThenBy(t => t.Number)
-            .ThenBy(t => t.IsJoker)
+            .OrderBy(t => t.IsJoker)
+            .ThenBy(t => t.Color)
+            .ThenBy(t => t.Value)
             .ToList();
 
-        // Tri déterministe des groupes du plateau
-        var sortedGroups = board.Groups
-            .Select(g => new
-            {
-                Tiles = g.Tiles
-                    .OrderBy(t => t.Color)
-                    .ThenBy(t => t.Number)
-                    .ThenBy(t => t.IsJoker)
-                    .ToList(),
-                g.Type
-            })
-            .OrderBy(g => g.Type)
-            .ThenBy(g => g.Tiles.FirstOrDefault()?.Color)
-            .ThenBy(g => g.Tiles.FirstOrDefault()?.Number)
-            .ToList();
+        var sortedRuns = SortValidSets(board.Runs);
+        var sortedGroups = SortValidSets(board.Groups);
 
         var canonical = JsonSerializer.Serialize(
-            new { Hand = sortedHand, Board = sortedGroups },
-            CanonicalJsonOptions);
+            new { Hand = sortedHand, Runs = sortedRuns, Groups = sortedGroups },
+            RummiJsonOptions.Default);
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexStringLower(hashBytes)[..16];
     }
+
+    private static List<List<Tile>> SortValidSets(List<ValidSet> sets) =>
+        sets
+            .Select(s => s.Tiles.OrderBy(t => t.Color).ThenBy(t => t.Value).ToList())
+            .OrderBy(tiles => tiles.FirstOrDefault().Color)
+            .ThenBy(tiles => tiles.FirstOrDefault().Value)
+            .ToList();
 }

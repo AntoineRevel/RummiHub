@@ -1,5 +1,7 @@
 @page "/"
 @rendermode InteractiveServer
+@using RummiHub.Core.Contracts
+@using RummiHub.Core.Models
 @inject IHttpClientFactory HttpClientFactory
 @inject RummiHub.Web.Services.SolveResultSubscriber SolveResultSubscriber
 @implements IDisposable
@@ -48,6 +50,8 @@
 }
 
 @code {
+    private static readonly TileColor[] AllColors = Enum.GetValues<TileColor>();
+
     private readonly List<SolveTask> _tasks = [];
     private readonly CancellationTokenSource _disposeCts = new();
     private int _taskCounter;
@@ -60,21 +64,15 @@
         var requestId = $"req-{Guid.NewGuid().ToString()[..8]}";
 
         // Génère une main aléatoire pour que chaque tâche ait un hash différent
-        var colors = new[] { "Red", "Blue", "Yellow", "Black" };
         var hand = Enumerable.Range(0, Random.Shared.Next(3, 8))
-            .Select(_ => new
-            {
-                Number = Random.Shared.Next(1, 14),
-                Color = colors[Random.Shared.Next(colors.Length)],
-                IsJoker = false
-            })
-            .ToArray();
+            .Select(_ => new Tile(Random.Shared.Next(1, 14), AllColors[Random.Shared.Next(AllColors.Length)]))
+            .ToList();
 
-        var request = new
+        var request = new SolveRequest
         {
             RequestId = requestId,
             Hand = hand,
-            Board = new { Groups = Array.Empty<object>() }
+            Board = new Solution { IsValid = true }
         };
 
         try
@@ -102,7 +100,7 @@
 
             task.Elapsed = DateTime.UtcNow - start;
             task.WorkerId = result.WorkerId;
-            task.Status = result.Solved ? "✅ Résolu" : "❌ Non résolu";
+            task.Status = result.Found ? "✅ Résolu" : "❌ Non résolu";
             task.Error = result.Error;
         }
         catch (OperationCanceledException)
