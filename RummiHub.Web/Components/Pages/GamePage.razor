@@ -1,0 +1,810 @@
+@page "/game/{GameId}"
+@using RummiHub.Web.Models
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+
+<PageTitle>Rummikub - @(GameId ?? "Partie")</PageTitle>
+
+@if (!_isConnected)
+{
+    <div class="game-container">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Connexion a la partie...</p>
+        </div>
+    </div>
+}
+else if (_gameState == null)
+{
+    <div class="game-container">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Chargement de la partie...</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="game-container">
+        <header>
+            <h1>Rummikub</h1>
+            <h3>Partie : @_gameState.GameId</h3>
+        </header>
+
+        <!-- Players bar -->
+        <div class="players-bar">
+            @foreach (var (player, index) in _gameState.Players.Select((p, i) => (p, i)))
+            {
+                var isCurrent = index == _gameState.CurrentPlayerIndex;
+                var isMe = player.Name == PlayerName;
+                <div class="player-chip @(isCurrent ? "current" : "") @(isMe ? "me" : "")">
+                    <span class="player-name">
+                        @player.Name
+                        @if (isMe)
+                        {
+                            <small>(toi)</small>
+                        }
+                    </span>
+                    <span class="tile-count">@player.TileCount</span>
+                </div>
+            }
+        </div>
+
+        @if (_gameState.IsGameOver)
+        {
+            <div class="game-over">
+                <h2>@_gameState.WinnerName a gagne la partie !</h2>
+            </div>
+        }
+
+        <!-- Turn info -->
+        <div class="turn-section">
+            <h2>Tour : <span>@_gameState.Turn</span></h2>
+            @if (!_gameState.IsGameOver)
+            {
+                @if (IsMyTurn)
+                {
+                    <p class="turn-indicator my-turn">C'est ton tour !</p>
+                }
+                else
+                {
+                    <p class="turn-indicator waiting">En attente de @CurrentPlayerName...</p>
+                }
+            }
+        </div>
+
+        <!-- Board -->
+        <div class="solution-section">
+            <SolutionComponent Solution="_gameState.Board" HighlightTiles="_gameState.LastPlayedTiles"/>
+        </div>
+
+        <!-- Error play -->
+        @if (!string.IsNullOrEmpty(_errorPlay))
+        {
+            <div class="error-message">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span>@_errorPlay</span>
+            </div>
+        }
+
+        <!-- My rack section -->
+        @if (_rackTiles.Count > 0 && !_gameState.IsGameOver)
+        {
+            <div class="my-rack-section @(IsMyTurn ? "active-turn" : "")">
+                <h3 class="rack-title">Tes tuiles (@_rackTiles.Count)</h3>
+
+                @if (IsMyTurn)
+                {
+                    <!-- Selected tiles -->
+                    @if (SelectedTilesForPlay.Any())
+                    {
+                        <div class="selected-tiles-section">
+                            <h4>Tuiles selectionnees (@SelectedTilesForPlay.Count)</h4>
+                            <div class="selected-tiles-display">
+                                @foreach (var tileInstance in _selectedTileInstances)
+                                {
+                                    <div class="selected-tile-wrapper @(_removingTiles.Contains(tileInstance.Id) ? "removing" : "") @(_newTiles.Contains(tileInstance.Id) ? "new-tile" : "")"
+                                         @onclick="() => OnTileInstanceClick(tileInstance)">
+                                        <TileComponent Tile="tileInstance.Tile" ShouldHighlight="false"/>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Available tiles (clickable) -->
+                    <div class="available-tiles-section">
+                        <h4>Tuiles disponibles</h4>
+                        <div class="tiles-container">
+                            @foreach (var tileGroup in GetGroupedTiles())
+                            {
+                                var tileType = tileGroup.Key;
+                                var totalCount = tileGroup.Count();
+                                var selectedCount = GetSelectedCountForTile(tileType);
+                                var remainingCount = totalCount - selectedCount;
+                                var isFullySelected = remainingCount == 0;
+
+                                <div class="tile-stack @(isFullySelected ? "fully-selected" : "")"
+                                     @onclick="() => OnTileStackClick(tileType)">
+                                    @if (remainingCount > 0)
+                                    {
+                                        for (var i = 0; i < remainingCount; i++)
+                                        {
+                                            var stackOffset = i * 3;
+                                            <div class="stacked-tile"
+                                                 style="z-index: @(100 - i); transform: translate(@(stackOffset)px, @(-stackOffset)px);">
+                                                <TileComponent Tile="tileType" ShouldHighlight="false"/>
+                                            </div>
+                                        }
+                                        @if (remainingCount > 1)
+                                        {
+                                            <div class="count-indicator">@remainingCount</div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="stacked-tile greyed-out">
+                                            <TileComponent Tile="tileType" ShouldHighlight="false"/>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div class="human-actions-buttons">
+                        @if (SelectedTilesForPlay.Any())
+                        {
+                            <button @onclick="OnClearSelection" class="btn-clear" disabled="@_isLoading">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2">
+                                    <path d="M18 6L6 18M6 6l12 12"/>
+                                </svg>
+                                Effacer
+                            </button>
+                            <button @onclick="OnPlaySelection" class="btn-play" disabled="@_isLoading">
+                                @if (_isLoading)
+                                {
+                                    <span class="spinner"></span>
+                                    <span>Validation...</span>
+                                }
+                                else
+                                {
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <polygon points="10,8 16,12 10,16 10,8"/>
+                                    </svg>
+                                    <span>Jouer la selection</span>
+                                }
+                            </button>
+                        }
+                        else
+                        {
+                            <button @onclick="OnDrawTile" class="btn-draw"
+                                    disabled="@(_isLoading || _gameState.TilePoolCount == 0)">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2">
+                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                                </svg>
+                                Piocher (@_gameState.TilePoolCount restantes)
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <!-- Read-only rack display when not my turn -->
+                    <div class="tiles-container readonly">
+                        @foreach (var tileGroup in GetGroupedTiles())
+                        {
+                            var tileType = tileGroup.Key;
+                            var count = tileGroup.Count();
+                            <div class="tile-stack">
+                                @for (var i = 0; i < count; i++)
+                                {
+                                    var stackOffset = i * 3;
+                                    <div class="stacked-tile"
+                                         style="z-index: @(100 - i); transform: translate(@(stackOffset)px, @(-stackOffset)px);">
+                                        <TileComponent Tile="tileType" ShouldHighlight="false"/>
+                                    </div>
+                                }
+                                @if (count > 1)
+                                {
+                                    <div class="count-indicator">@count</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+<!-- Toast for drawn tile -->
+@if (_showDrawnTileToast && _drawnTile != null)
+{
+    <div class="toast-notification drawn-tile-toast">
+        <div class="toast-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <span>Tuile piochee !</span>
+        </div>
+        <div class="toast-content">
+            <TileComponent Tile="_drawnTile.Value" ShouldHighlight="false"/>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger mt-3">@_error</div>
+}
+
+<style>
+    .game-container {
+        max-width: 1300px;
+        margin: 20px auto;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        outline: none;
+    }
+
+    header {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    header h1 {
+        font-size: 2.5rem;
+        color: #3a3a3a;
+        margin: 0;
+    }
+
+    header h3 {
+        color: #777;
+        font-size: 1rem;
+    }
+
+    /* Loading */
+    .loading-state {
+        text-align: center;
+        padding: 60px 20px;
+    }
+
+    .loading-state p {
+        margin-top: 15px;
+        color: #777;
+        font-size: 1.1rem;
+    }
+
+    /* Players bar */
+    .players-bar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        justify-content: center;
+        padding: 12px;
+        background: linear-gradient(135deg, #f8f9fa, #ffffff);
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        margin-bottom: 20px;
+    }
+
+    .player-chip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        background: #ffffff;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        min-width: 140px;
+    }
+
+    .player-chip.current {
+        background: linear-gradient(135deg, #e8f5e9, #f1f8f4);
+        border: 2px solid #4caf50;
+        box-shadow: 0 3px 10px rgba(76, 175, 80, 0.2);
+    }
+
+    .player-chip.me {
+        border-color: #2196f3;
+    }
+
+    .player-chip.me.current {
+        border-color: #4caf50;
+        background: linear-gradient(135deg, #e3f2fd, #e8f5e9);
+    }
+
+    .player-chip .player-name {
+        flex: 1;
+        font-weight: 600;
+        color: #333;
+        font-size: 1rem;
+    }
+
+    .player-chip .player-name small {
+        font-weight: 400;
+        color: #999;
+        font-size: 0.8rem;
+    }
+
+    .player-chip .tile-count {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 32px;
+        height: 32px;
+        background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+        color: #1565c0;
+        font-weight: 700;
+        font-size: 0.95rem;
+        border-radius: 6px;
+        padding: 0 8px;
+    }
+
+    .player-chip.current .tile-count {
+        background: linear-gradient(135deg, #c8e6c9, #a5d6a7);
+        color: #2e7d32;
+    }
+
+    /* Game over */
+    .game-over {
+        text-align: center;
+        background: #f1f8e9;
+        border: 2px solid #8bc34a;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+
+    .game-over h2 {
+        color: #4caf50;
+        font-size: 1.5rem;
+    }
+
+    /* Turn section */
+    .turn-section {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .turn-section h2 {
+        font-size: 1.5rem;
+        color: #3f51b5;
+    }
+
+    .turn-section span {
+        font-weight: bold;
+        color: #ff5722;
+    }
+
+    .turn-indicator {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin: 5px 0 0 0;
+    }
+
+    .turn-indicator.my-turn {
+        color: #4caf50;
+    }
+
+    .turn-indicator.waiting {
+        color: #ff9800;
+    }
+
+    /* Board */
+    .solution-section {
+        padding: 20px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        background-color: #f7f7f7;
+        text-align: center;
+        min-height: 218px;
+    }
+
+    /* Error */
+    .error-message {
+        background: linear-gradient(135deg, #ffebee, #ffcdd2);
+        border: 2px solid #f44336;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 15px 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #c62828;
+        font-weight: 600;
+        box-shadow: 0 4px 12px rgba(244, 67, 54, 0.2);
+        animation: shake 0.5s ease-in-out;
+    }
+
+    .error-message svg {
+        flex-shrink: 0;
+        stroke: #c62828;
+    }
+
+    .error-message span {
+        flex: 1;
+        text-align: left;
+    }
+
+    @@keyframes shake {
+        0%, 100% {
+            transform: translateX(0);
+        }
+        10%, 30%, 50%, 70%, 90% {
+            transform: translateX(-5px);
+        }
+        20%, 40%, 60%, 80% {
+            transform: translateX(5px);
+        }
+    }
+
+    /* My rack section */
+    .my-rack-section {
+        background: linear-gradient(135deg, #f5f5f5, #fafafa);
+        border: 2px solid #e0e0e0;
+        border-radius: 15px;
+        padding: 25px;
+        margin: 20px 0;
+        text-align: center;
+    }
+
+    .my-rack-section.active-turn {
+        background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+        border: 2px solid #2196f3;
+        box-shadow: 0 4px 15px rgba(33, 150, 243, 0.2);
+    }
+
+    .rack-title {
+        color: #1976d2;
+        margin: 0 0 15px 0;
+        font-size: 1.3rem;
+    }
+
+    /* Spinner */
+    @@keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    .spinner {
+        width: 18px;
+        height: 18px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-top: 3px solid white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    .loading-state .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(33, 150, 243, 0.2);
+        border-top: 4px solid #2196f3;
+        margin: 0 auto;
+    }
+
+    /* Selected tiles */
+    .selected-tiles-section {
+        padding: 25px 15px 15px 15px;
+        background-color: #f8f9fa;
+        border: 2px solid #e3f2fd;
+        border-radius: 10px;
+        margin: 15px 0;
+    }
+
+    .selected-tiles-section h4 {
+        margin: 0 0 15px 0;
+        color: #495057;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .selected-tiles-display {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        min-height: 40px;
+        max-height: 150px;
+        overflow-y: auto;
+        transition: all 0.3s ease;
+        padding: 10px 5px 5px 5px;
+    }
+
+    .selected-tile-wrapper {
+        position: relative;
+        cursor: pointer;
+        transition: opacity 0.2s ease, filter 0.2s ease;
+    }
+
+    .selected-tile-wrapper.new-tile {
+        animation: slideIn 0.3s ease-out;
+    }
+
+    .selected-tile-wrapper:hover {
+        opacity: 0.5;
+        filter: grayscale(70%);
+    }
+
+    .selected-tile-wrapper.removing {
+        animation: slideOut 0.3s ease-in forwards;
+    }
+
+    @@keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: scale(0.8) translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+
+    @@keyframes slideOut {
+        from {
+            opacity: 1;
+            transform: scale(1);
+            max-width: 100px;
+            margin-right: 5px;
+        }
+        to {
+            opacity: 0;
+            transform: scale(0.8);
+            max-width: 0;
+            margin-right: 0;
+        }
+    }
+
+    /* Available tiles */
+    .available-tiles-section {
+        margin: 15px 0;
+    }
+
+    .available-tiles-section h4 {
+        margin: 0 0 10px 0;
+        color: #495057;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .tiles-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+        gap: 8px;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        max-height: 300px;
+        overflow-y: auto;
+        align-content: start;
+    }
+
+    .tiles-container.readonly {
+        opacity: 0.7;
+    }
+
+    .tile-stack {
+        position: relative;
+        cursor: pointer;
+        min-width: 50px;
+        min-height: 70px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .stacked-tile {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transition: transform 0.2s ease;
+    }
+
+    .tile-stack:hover .stacked-tile {
+        transform: translate(0, 0) !important;
+    }
+
+    .tile-stack.fully-selected {
+        opacity: 0.5;
+        cursor: pointer;
+    }
+
+    .tile-stack.fully-selected:hover {
+        opacity: 0.7;
+    }
+
+    .stacked-tile.greyed-out {
+        opacity: 0.4;
+        filter: grayscale(80%);
+        pointer-events: none;
+    }
+
+    .count-indicator {
+        position: absolute;
+        bottom: -3px;
+        right: -3px;
+        background-color: #007bff;
+        color: white;
+        border-radius: 50%;
+        width: 18px;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: bold;
+        z-index: 200;
+    }
+
+    /* Action buttons */
+    .human-actions-buttons {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 15px;
+    }
+
+    .btn-draw, .btn-play, .btn-clear {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 15px 25px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        min-width: 150px;
+        justify-content: center;
+    }
+
+    .btn-draw {
+        background: linear-gradient(135deg, #ff9800, #f57c00);
+        color: white;
+        box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
+    }
+
+    .btn-draw:hover {
+        background: linear-gradient(135deg, #f57c00, #ef6c00);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(255, 152, 0, 0.4);
+    }
+
+    .btn-draw:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-play {
+        background: linear-gradient(135deg, #4caf50, #388e3c);
+        color: white;
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+    }
+
+    .btn-play:hover {
+        background: linear-gradient(135deg, #388e3c, #2e7d32);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(76, 175, 80, 0.4);
+    }
+
+    .btn-play:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-clear {
+        background: linear-gradient(135deg, #6c757d, #545b62);
+        color: white;
+        box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+    }
+
+    .btn-clear:hover {
+        background: linear-gradient(135deg, #545b62, #495057);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(108, 117, 125, 0.4);
+    }
+
+    .btn-draw:active, .btn-play:active, .btn-clear:active {
+        transform: translateY(0);
+    }
+
+    @@media (max-width: 768px) {
+        .human-actions-buttons {
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .btn-draw, .btn-play, .btn-clear {
+            min-width: 200px;
+        }
+    }
+
+    /* Toast */
+    .toast-notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #4caf50, #66bb6a);
+        color: white;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(76, 175, 80, 0.4);
+        padding: 16px;
+        min-width: 280px;
+        max-width: 400px;
+        z-index: 9999;
+        animation: slideInToast 0.3s ease-out;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(8px);
+    }
+
+    .toast-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .toast-header svg {
+        flex-shrink: 0;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+    }
+
+    .toast-content {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        padding: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    @@keyframes slideInToast {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+
+    @@media (max-width: 768px) {
+        .toast-notification {
+            top: 10px;
+            right: 10px;
+            left: 10px;
+            min-width: auto;
+            max-width: none;
+        }
+    }
+</style>

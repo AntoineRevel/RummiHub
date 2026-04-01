@@ -77,6 +77,28 @@ public partial class GameManager(ILogger<GameManager> logger) : IGameManager
         return _games.Values.FirstOrDefault(g => g.HasConnection(connectionId));
     }
 
+    public bool InitializeEngine(string gameId)
+    {
+        if (!_games.TryGetValue(gameId, out var game))
+            return false;
+
+        var playerNames = game.GetPlayerNames();
+        var engine = new GameEngine();
+        engine.Initialize(playerNames);
+        game.Engine = engine;
+
+        LogEngineInitialized(gameId, playerNames.Count);
+        return true;
+    }
+
+    public bool UpdatePlayerConnection(string gameId, string playerName, string newConnectionId)
+    {
+        if (!_games.TryGetValue(gameId, out var game))
+            return false;
+
+        return game.UpdatePlayerConnection(playerName, newConnectionId);
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} created by {PlayerName}")]
     private partial void LogGameCreated(string gameId, string playerName);
 
@@ -88,4 +110,7 @@ public partial class GameManager(ILogger<GameManager> logger) : IGameManager
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} removed (no players left)")]
     private partial void LogGameRemoved(string gameId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Engine initialized for game {GameId} with {PlayerCount} players")]
+    private partial void LogEngineInitialized(string gameId, int playerCount);
 }

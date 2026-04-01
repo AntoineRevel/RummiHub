@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 @inject Microsoft.AspNetCore.Hosting.Server.IServer Server
+@inject NavigationManager Navigation
 
 <PageTitle>Lobby</PageTitle>
 
@@ -42,13 +43,6 @@ else
         Code de la partie : <strong>@_gameId</strong> — partage ce code avec tes amis !
     </div>
 
-    @if (_isStarted)
-    {
-        <div class="alert alert-success">
-            La partie a commence !
-        </div>
-    }
-
     <h4>Joueurs (@_players.Count)</h4>
     <ul class="list-group" style="max-width: 300px">
         @foreach (var player in _players)
@@ -57,7 +51,7 @@ else
         }
     </ul>
 
-    @if (_isHost && !_isStarted)
+    @if (_isHost)
     {
         <button class="btn btn-warning mt-3" @onclick="StartGame">
             Lancer la partie

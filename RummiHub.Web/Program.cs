@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using RummiHub.Web.Components;
 using RummiHub.Web.Services;
 using RummiHub.Web.Hubs;
@@ -12,7 +14,12 @@ builder.AddRedisClient("cache");
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddSingleton<IGameManager, GameManager>();
 
 builder.Services.AddHttpClient("apiservice",

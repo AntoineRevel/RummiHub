@@ -11,7 +11,6 @@ public partial class Lobby
     private HubConnection? _hubConnection;
     private bool _isConnected;
     private bool _isHost;
-    private bool _isStarted;
     private string _joinGameId = string.Empty;
     private string _playerName = string.Empty;
     private List<string> _players = [];
@@ -66,11 +65,10 @@ public partial class Lobby
             InvokeAsync(StateHasChanged);
         });
 
-        _hubConnection.On<IEnumerable<string>>(HubEvents.GameStarted, players =>
+        _hubConnection.On<string, IEnumerable<string>>(HubEvents.GameStarted, (gameId, _) =>
         {
-            _isStarted = true;
-            _players = players.ToList();
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(() =>
+                Navigation.NavigateTo($"/game/{gameId}?player={Uri.EscapeDataString(_playerName)}"));
         });
 
         _hubConnection.On<string>(HubEvents.Error, message =>
