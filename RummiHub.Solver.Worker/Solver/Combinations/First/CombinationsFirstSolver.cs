@@ -1,0 +1,70 @@
+using RummiHub.Core.Models;
+using RummiHub.Core.Solver;
+using RummiHub.Solver.Worker.Solver.Abstract;
+
+namespace RummiHub.Solver.Worker.Solver.Combinations.First;
+
+public class CombinationsFirstSolver : ISolver
+{
+    private readonly List<Tile> _tiles;
+
+    private CombinationsFirstSolver(List<Tile> tiles)
+    {
+        _tiles = tiles;
+    }
+
+    public SolverResult SearchSolution(CancellationToken cancellationToken = default)
+    {
+        _tiles.Sort();
+
+        var tilesFirstTry = new List<Tile>(_tiles);
+
+        var playerJokers = _tiles.Count(tile => tile.IsJoker);
+
+        if (playerJokers > 0) tilesFirstTry.RemoveRange(tilesFirstTry.Count - playerJokers, playerJokers);
+
+        var firstBinarySolver = new BinaryFirstBaseSolver(tilesFirstTry.ToArray(), playerJokers);
+
+        var result = firstBinarySolver.SearchSolution(cancellationToken);
+
+        if (result.Found)
+            return SolverResult.FromSolution(GetType().Name, firstBinarySolver.BinarySolution, tilesFirstTry,
+                playerJokers);
+
+        _tiles.Reverse();
+
+        for (var tileTry = _tiles.Count - 1; tileTry > 2; tileTry--)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return SolverResult.Invalid(GetType().Name);
+
+            foreach (
+                var combi in
+                BaseSolver.GetCombinations(_tiles, tileTry, cancellationToken)
+                    .OrderByDescending(l => l.Sum(t => t.Value)))
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    return SolverResult.Invalid(GetType().Name);
+
+                var joker = combi.Count(tile => tile.IsJoker);
+                if (joker > 0) combi.RemoveRange(tileTry - joker, joker);
+                var solver = new BinaryFirstBaseSolver(combi.ToArray(), joker);
+                var solverResult = solver.SearchSolution(cancellationToken);
+                if (!solverResult.Found) continue;
+                return SolverResult.FromSolution(GetType().Name, solver.BinarySolution, solver.TilesToPlay,
+                    solver.JokerToPlay);
+            }
+        }
+
+        return SolverResult.Invalid(GetType().Name);
+    }
+
+    public static CombinationsFirstSolver Create(Set playerSet)
+    {
+        var playerTilesWithJokers = new List<Tile>(playerSet.Tiles);
+        for (var i = 0; i < playerSet.Jokers; i++)
+            playerTilesWithJokers.Add(new Tile(true));
+
+        return new CombinationsFirstSolver(playerTilesWithJokers);
+    }
+}

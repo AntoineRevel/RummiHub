@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Channels;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
+using RummiHub.Core.Solver;
+using RummiHub.Solver.Worker.Strategies;
 using StackExchange.Redis;
 
 namespace RummiHub.Solver.Worker;
@@ -102,7 +105,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         logger.LogInformation("[{WorkerId}] Processing {ContentHash} (request {RequestId})",
             _workerId, contentHash, request.RequestId);
 
-        var response = Solve(request);
+        var response = await Solve(request, ct);
         var resultJson = JsonSerializer.Serialize(response, RummiJsonOptions.Default);
 
         // 1. Stocke le résultat (1h TTL)
@@ -122,27 +125,66 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
             _workerId, contentHash, response.Found);
     }
 
-    /// <summary>
-    /// Stub solver — will be replaced in Phase 2 with real solver algorithms ported from OldBlazorSol.
-    /// </summary>
-    private SolveResponse Solve(SolveRequest request)
+    private async Task<SolveResponse> Solve(SolveRequest request, CancellationToken ct)
     {
-        // TODO Phase 2: Wire up real solvers (GraphStrategy, ParallelStrategy, etc.)
-        // var boardSet = request.Board.ToSet();
-        // var rackSet = new Set(request.Hand);
-        // var strategy = new GraphStrategy();
-        // var result = await strategy.GetSolverResult(boardSet, rackSet, request.HasPlayed, ct);
+        var stopwatch = Stopwatch.StartNew();
 
-        return new SolveResponse
+        try
         {
-            RequestId = request.RequestId,
-            Found = false,
-            NewBoard = request.Board,
-            TilesToPlay = [],
-            JokersToPlay = 0,
-            Score = 0,
-            WorkerId = _workerId,
-            Error = "Solver not yet implemented (Phase 2)"
-        };
+            var boardSet = request.Board.ToSet();
+            var rackSet = new Set(request.Hand);
+
+            IStrategy strategy = new GraphStrategy();
+            var result = await strategy.GetSolverResult(boardSet, rackSet, request.HasPlayed, ct);
+
+            stopwatch.Stop();
+
+            logger.LogInformation("[{WorkerId}] Solver {Source} completed in {Elapsed}ms. Found={Found}",
+                _workerId, result.Source, stopwatch.ElapsedMilliseconds, result.Found);
+
+            if (!result.Found)
+            {
+                return new SolveResponse
+                {
+                    RequestId = request.RequestId,
+                    Found = false,
+                    NewBoard = request.Board,
+                    WorkerId = _workerId
+                };
+            }
+
+            return new SolveResponse
+            {
+                RequestId = request.RequestId,
+                Found = true,
+                NewBoard = result.BestSolution,
+                TilesToPlay = result.TilesToPlay.ToList(),
+                JokersToPlay = result.JokersToPlay,
+                Score = result.Score,
+                WorkerId = _workerId
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            return new SolveResponse
+            {
+                RequestId = request.RequestId,
+                Found = false,
+                WorkerId = _workerId,
+                Error = "Solve cancelled"
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[{WorkerId}] Solver error for request {RequestId}", _workerId, request.RequestId);
+
+            return new SolveResponse
+            {
+                RequestId = request.RequestId,
+                Found = false,
+                WorkerId = _workerId,
+                Error = ex.Message
+            };
+        }
     }
 }
