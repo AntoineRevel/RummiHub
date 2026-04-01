@@ -7,13 +7,13 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\RummiHub.ServiceDefaults\RummiHub.ServiceDefaults.csproj"/>
-        <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj"/>
+        <ProjectReference Include="..\RummiHub.ServiceDefaults\RummiHub.ServiceDefaults.csproj" />
+        <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aspire.StackExchange.Redis" Version="9.2.1"/>
-        <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="*"/>
+        <PackageReference Include="Aspire.StackExchange.Redis" Version="13.2.1" />
+        <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="*" />
     </ItemGroup>
 
 

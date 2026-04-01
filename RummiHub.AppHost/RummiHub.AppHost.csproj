@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.1.2">
+<Project Sdk="Aspire.AppHost.Sdk/13.2.1">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -9,13 +9,13 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\RummiHub.ApiService\RummiHub.ApiService.csproj"/>
-        <ProjectReference Include="..\RummiHub.Web\RummiHub.Web.csproj"/>
-        <ProjectReference Include="..\RummiHub.Solver.Worker\RummiHub.Solver.Worker.csproj"/>
+        <ProjectReference Include="..\RummiHub.ApiService\RummiHub.ApiService.csproj" />
+        <ProjectReference Include="..\RummiHub.Web\RummiHub.Web.csproj" />
+        <ProjectReference Include="..\RummiHub.Solver.Worker\RummiHub.Solver.Worker.csproj" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aspire.Hosting.Redis" Version="13.1.2"/>
+        <PackageReference Include="Aspire.Hosting.Redis" Version="13.2.1" />
     </ItemGroup>
 
 </Project>
