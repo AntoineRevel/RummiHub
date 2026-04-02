@@ -29,6 +29,13 @@ else
         <header>
             <h1>Rummikub</h1>
             <h3>Partie : @_gameState.GameId</h3>
+            <a class="share-link" href="/lobby?code=@Uri.EscapeDataString(_gameState.GameId)" title="Inviter des joueurs">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+                Inviter des joueurs
+            </a>
         </header>
 
         <!-- Players bar -->
@@ -274,6 +281,26 @@ else
     header h3 {
         color: #777;
         font-size: 1rem;
+    }
+
+    .share-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        padding: 6px 14px;
+        font-size: 0.85rem;
+        color: #1976d2;
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 20px;
+        text-decoration: none;
+        transition: background 0.2s ease;
+    }
+
+    .share-link:hover {
+        background: #bbdefb;
+        color: #0d47a1;
     }
 
     /* Loading */

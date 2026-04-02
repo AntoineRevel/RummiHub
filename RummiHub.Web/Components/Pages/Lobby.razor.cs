@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
 using RummiHub.Web.Hubs;
@@ -6,6 +7,10 @@ namespace RummiHub.Web.Components.Pages;
 
 public partial class Lobby
 {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "code")]
+    public string? GameCode { get; set; }
+
     private string? _error;
     private string? _gameId;
     private HubConnection? _hubConnection;
@@ -14,6 +19,12 @@ public partial class Lobby
     private string _joinGameId = string.Empty;
     private string _playerName = string.Empty;
     private List<string> _players = [];
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(GameCode))
+            _joinGameId = GameCode;
+    }
 
     public async ValueTask DisposeAsync()
     {
