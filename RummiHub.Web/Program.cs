@@ -26,7 +26,7 @@ builder.Services.AddSingleton<IGameManager, GameManager>();
 builder.Services.AddHttpClient("apiservice",
     client => client.BaseAddress = new Uri("https+http://apiservice"));
 
-// Service singleton qui gère les abonnements Redis Pub/Sub et dispatche les résultats aux composants Blazor
+// Singleton service that manages Redis Pub/Sub subscriptions and dispatches results to Blazor components
 builder.Services.AddSingleton<SolveResultSubscriber>();
 
 var app = builder.Build();

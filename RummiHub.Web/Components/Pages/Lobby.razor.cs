@@ -27,8 +27,8 @@ public partial class Lobby
 
     private static readonly string[] DefaultNames =
     [
-        "Antoine", "Baptiste", "Camille", "David", "Emma",
-        "François", "Gabriel", "Hugo", "Inès", "Jules"
+        "Alice", "Bob", "Charlie", "Diana", "Eve",
+        "Frank", "Grace", "Henry", "Iris", "Jack"
     ];
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -62,7 +62,7 @@ public partial class Lobby
 
         if (baseAddress is null)
         {
-            _error = "Impossible de déterminer l'adresse du serveur.";
+            _error = "Could not determine server address.";
             return;
         }
 
@@ -122,7 +122,7 @@ public partial class Lobby
         }
         catch (Exception ex)
         {
-            _error = $"Impossible de se connecter au serveur : {ex.Message}";
+            _error = $"Could not connect to server: {ex.Message}";
         }
     }
 

@@ -32,19 +32,19 @@ app.MapGet("/", () => "RummiHub API");
 
 app.MapGet("/ping", () => Results.Ok(new { Status = "ok", Timestamp = DateTime.UtcNow }));
 
-// POST /solve : calcule le content hash, déduplique, et enqueue dans le stream Redis
+// POST /solve : computes content hash, deduplicates, and enqueues into Redis stream
 app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis) =>
 {
     var db = redis.GetDatabase();
 
     var contentHash = ContentHasher.ComputeHash(request.Hand, request.Board);
 
-    // 1. Vérifie si le résultat est déjà en cache
+    // 1. Check if result is already cached
     var cached = await db.StringGetAsync($"solve-result:{contentHash}");
 
     if (cached.IsNull)
     {
-        // 2. Tente d'acquérir le verrou de déduplication (SET NX, TTL 10 min)
+        // 2. Try to acquire the deduplication lock (SET NX, TTL 10 min)
         var lockAcquired = await db.StringSetAsync(
             $"solve-lock:{contentHash}",
             request.RequestId,
@@ -53,14 +53,14 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
 
         if (lockAcquired)
         {
-            // 3. Enqueue dans le Redis Stream
+            // 3. Enqueue into Redis Stream
             var payload = JsonSerializer.Serialize(request, RummiJsonOptions.Default);
             await db.StreamAddAsync("solve-stream", [
                 new NameValueEntry("contentHash", contentHash),
                 new NameValueEntry("payload", payload)
             ], maxLength: 1000, useApproximateMaxLength: true);
 
-            // 4. Réveille les workers en attente
+            // 4. Wake up waiting workers
             var subscriber = redis.GetSubscriber();
             await subscriber.PublishAsync(RedisChannel.Literal(RedisChannels.SolveEnqueue), "new");
         }
@@ -74,7 +74,7 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
     });
 });
 
-// GET /solve/{contentHash} : lit le résultat en cache
+// GET /solve/{contentHash} : reads result from cache
 app.MapGet("/solve/{contentHash}", async (string contentHash, IConnectionMultiplexer redis) =>
 {
     var db = redis.GetDatabase();

@@ -26,7 +26,7 @@ public partial class GameHub(
             playerName = playerName?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(playerName))
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Le nom du joueur est requis.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "Player name is required.");
                 return;
             }
 
@@ -38,7 +38,7 @@ public partial class GameHub(
         {
             LogHubError(ex, nameof(CreateGame), Context.ConnectionId);
             await Clients.Caller.SendAsync(HubEvents.Error,
-                "Une erreur est survenue lors de la creation de la partie.");
+                "An error occurred while creating the game.");
         }
     }
 
@@ -52,27 +52,27 @@ public partial class GameHub(
             if (string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(playerName))
             {
                 await Clients.Caller.SendAsync(HubEvents.Error,
-                    "Le code de la partie et le nom du joueur sont requis.");
+                    "Game code and player name are required.");
                 return;
             }
 
             var game = gameManager.GetGame(gameId);
             if (game == null)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Partie introuvable.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "Game not found.");
                 return;
             }
 
             if (game.HasPlayerWithName(playerName))
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Ce nom est deja pris dans cette partie.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "This name is already taken in this game.");
                 return;
             }
 
             var player = gameManager.AddPlayer(gameId, playerName, Context.ConnectionId);
             if (player == null)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Impossible de rejoindre la partie.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "Could not join the game.");
                 return;
             }
 
@@ -82,7 +82,7 @@ public partial class GameHub(
         catch (Exception ex)
         {
             LogHubError(ex, nameof(JoinGame), Context.ConnectionId);
-            await Clients.Caller.SendAsync(HubEvents.Error, "Une erreur est survenue en rejoignant la partie.");
+            await Clients.Caller.SendAsync(HubEvents.Error, "An error occurred while joining the game.");
         }
     }
 
@@ -100,14 +100,14 @@ public partial class GameHub(
 
             if (game.PlayerCount < 2)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Il faut au moins 2 joueurs pour commencer.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "At least 2 players are required to start.");
                 return;
             }
 
             // Initialize the engine server-side
             if (!gameManager.InitializeEngine(gameId))
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Erreur lors de l'initialisation de la partie.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "Error initializing the game.");
                 return;
             }
 
@@ -121,7 +121,7 @@ public partial class GameHub(
         {
             LogHubError(ex, nameof(StartGame), Context.ConnectionId);
             await Clients.Caller.SendAsync(HubEvents.Error,
-                "Une erreur est survenue lors du lancement de la partie.");
+                "An error occurred while starting the game.");
         }
     }
 
@@ -138,14 +138,14 @@ public partial class GameHub(
             var game = gameManager.GetGame(gameId);
             if (game?.Engine == null)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Partie introuvable ou non demarree.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "Game not found or not started.");
                 return;
             }
 
             // Update connection mapping (player navigated from lobby → game page)
             if (!gameManager.UpdatePlayerConnection(gameId, playerName, Context.ConnectionId))
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Joueur introuvable dans cette partie.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "Player not found in this game.");
                 return;
             }
 
@@ -168,7 +168,7 @@ public partial class GameHub(
         catch (Exception ex)
         {
             LogHubError(ex, nameof(JoinGameSession), Context.ConnectionId);
-            await Clients.Caller.SendAsync(HubEvents.Error, "Erreur lors de la connexion a la partie.");
+            await Clients.Caller.SendAsync(HubEvents.Error, "Error connecting to the game.");
         }
     }
 
@@ -187,7 +187,7 @@ public partial class GameHub(
             var playerIndex = game.FindPlayerIndexByConnection(Context.ConnectionId);
             if (playerIndex == null || playerIndex.Value != game.Engine.PlayerIndex)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Ce n'est pas votre tour.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "It's not your turn.");
                 return;
             }
 
@@ -221,14 +221,14 @@ public partial class GameHub(
                 else
                 {
                     await Clients.Caller.SendAsync(HubEvents.InvalidPlay,
-                        "Toutes les tuiles selectionnees n'ont pas pu etre placees.");
+                        "Not all selected tiles could be placed.");
                 }
             }
             else
             {
                 var msg = !game.Engine.CurrentPlayer.HasPlayed
-                    ? $"Le premier coup doit faire au moins 30 points. Score actuel : {result.Score}."
-                    : "Combinaison invalide avec le plateau actuel.";
+                    ? $"First move must score at least 30 points. Current score: {result.Score}."
+                    : "Invalid combination with the current board.";
 
                 if (!string.IsNullOrEmpty(result.Error))
                     msg = result.Error;
@@ -239,7 +239,7 @@ public partial class GameHub(
         catch (Exception ex)
         {
             LogHubError(ex, nameof(PlayTiles), Context.ConnectionId);
-            await Clients.Caller.SendAsync(HubEvents.Error, "Erreur lors de la validation du coup.");
+            await Clients.Caller.SendAsync(HubEvents.Error, "Error validating the move.");
         }
         finally
         {
@@ -261,13 +261,13 @@ public partial class GameHub(
             var playerIndex = game.FindPlayerIndexByConnection(Context.ConnectionId);
             if (playerIndex == null || playerIndex.Value != game.Engine.PlayerIndex)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Ce n'est pas votre tour.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "It's not your turn.");
                 return;
             }
 
             if (game.Engine.TilePoolCount == 0)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Plus de tuiles dans la pioche.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "No tiles left in the pool.");
                 return;
             }
 
@@ -291,7 +291,7 @@ public partial class GameHub(
         catch (Exception ex)
         {
             LogHubError(ex, nameof(DrawTile), Context.ConnectionId);
-            await Clients.Caller.SendAsync(HubEvents.Error, "Erreur lors de la pioche.");
+            await Clients.Caller.SendAsync(HubEvents.Error, "Error drawing a tile.");
         }
         finally
         {

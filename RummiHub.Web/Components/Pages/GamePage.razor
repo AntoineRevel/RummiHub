@@ -10,7 +10,7 @@
     <div class="game-container">
         <div class="loading-state">
             <div class="spinner"></div>
-            <p>Connexion a la partie...</p>
+            <p>Connecting to game...</p>
         </div>
     </div>
 }
@@ -19,7 +19,7 @@ else if (_gameState == null)
     <div class="game-container">
         <div class="loading-state">
             <div class="spinner"></div>
-            <p>Chargement de la partie...</p>
+            <p>Loading game...</p>
         </div>
     </div>
 }
@@ -28,16 +28,16 @@ else
     <div class="game-container">
         <header>
             <h1>Rummikub</h1>
-            <h3>Partie : @_gameState.GameId</h3>
+            <h3>Game: @_gameState.GameId</h3>
             <p class="seed-display">
-                Seed : <strong>@_gameState.DistributionSeed</strong>
+                Seed: <strong>@_gameState.DistributionSeed</strong>
             </p>
             <a class="share-link" href="/lobby?code=@Uri.EscapeDataString(_gameState.GameId)" title="Inviter des joueurs">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
                     <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
                 </svg>
-                Inviter des joueurs
+                Invite players
             </a>
         </header>
 
@@ -52,7 +52,7 @@ else
                         @player.Name
                         @if (isMe)
                         {
-                            <small>(toi)</small>
+                            <small>(you)</small>
                         }
                     </span>
                     <span class="tile-count">@player.TileCount</span>
@@ -63,22 +63,22 @@ else
         @if (_gameState.IsGameOver)
         {
             <div class="game-over">
-                <h2>@_gameState.WinnerName a gagne la partie !</h2>
+                <h2>@_gameState.WinnerName won the game!</h2>
             </div>
         }
 
         <!-- Turn info -->
         <div class="turn-section">
-            <h2>Tour : <span>@_gameState.Turn</span></h2>
+            <h2>Turn: <span>@_gameState.Turn</span></h2>
             @if (!_gameState.IsGameOver)
             {
                 @if (IsMyTurn)
                 {
-                    <p class="turn-indicator my-turn">C'est ton tour !</p>
+                    <p class="turn-indicator my-turn">Your turn!</p>
                 }
                 else
                 {
-                    <p class="turn-indicator waiting">En attente de @CurrentPlayerName...</p>
+                    <p class="turn-indicator waiting">Waiting for @CurrentPlayerName...</p>
                 }
             }
         </div>
@@ -105,7 +105,7 @@ else
         @if (_rackTiles.Count > 0 && !_gameState.IsGameOver)
         {
             <div class="my-rack-section @(IsMyTurn ? "active-turn" : "")">
-                <h3 class="rack-title">Tes tuiles (@_rackTiles.Count)</h3>
+                <h3 class="rack-title">Your tiles (@_rackTiles.Count)</h3>
 
                 @if (IsMyTurn)
                 {
@@ -113,7 +113,7 @@ else
                     @if (SelectedTilesForPlay.Any())
                     {
                         <div class="selected-tiles-section">
-                            <h4>Tuiles selectionnees (@SelectedTilesForPlay.Count)</h4>
+                            <h4>Selected tiles (@SelectedTilesForPlay.Count)</h4>
                             <div class="selected-tiles-display">
                                 @foreach (var tileInstance in _selectedTileInstances)
                                 {
@@ -128,7 +128,7 @@ else
 
                     <!-- Available tiles (clickable) -->
                     <div class="available-tiles-section">
-                        <h4>Tuiles disponibles</h4>
+                        <h4>Available tiles</h4>
                         <div class="tiles-container">
                             @foreach (var tileGroup in GetGroupedTiles())
                             {
@@ -175,13 +175,13 @@ else
                                      stroke-width="2">
                                     <path d="M18 6L6 18M6 6l12 12"/>
                                 </svg>
-                                Effacer
+                                Clear
                             </button>
                             <button @onclick="OnPlaySelection" class="btn-play" disabled="@_isLoading">
                                 @if (_isLoading)
                                 {
                                     <span class="spinner"></span>
-                                    <span>Validation...</span>
+                                    <span>Validating...</span>
                                 }
                                 else
                                 {
@@ -190,7 +190,7 @@ else
                                         <circle cx="12" cy="12" r="10"/>
                                         <polygon points="10,8 16,12 10,16 10,8"/>
                                     </svg>
-                                    <span>Jouer la selection</span>
+                                    <span>Play selection</span>
                                 }
                             </button>
                         }
@@ -202,7 +202,7 @@ else
                                      stroke-width="2">
                                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                                 </svg>
-                                Piocher (@_gameState.TilePoolCount restantes)
+                                Draw (@_gameState.TilePoolCount remaining)
                             </button>
                         }
                     </div>
@@ -245,7 +245,7 @@ else
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
             </svg>
-            <span>Tuile piochee !</span>
+            <span>Tile drawn!</span>
         </div>
         <div class="toast-content">
             <TileComponent Tile="_drawnTile.Value" ShouldHighlight="false"/>

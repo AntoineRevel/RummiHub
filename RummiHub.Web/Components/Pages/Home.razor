@@ -12,7 +12,7 @@
 
 <button @onclick="LaunchSolve"
         style="padding:8px 20px; font-size:1rem; cursor:pointer;">
-    🚀 Nouvelle tâche
+    🚀 New task
 </button>
 
 @if (_tasks.Count > 0)
@@ -58,12 +58,12 @@
 
     private async Task LaunchSolve()
     {
-        var task = new SolveTask { Index = ++_taskCounter, Status = "⏳ Envoi…" };
+        var task = new SolveTask { Index = ++_taskCounter, Status = "⏳ Sending…" };
         _tasks.Insert(0, task);
 
         var requestId = $"req-{Guid.NewGuid().ToString()[..8]}";
 
-        // Génère une main aléatoire pour que chaque tâche ait un hash différent
+        // Generate a random hand so each task has a different hash
         var hand = Enumerable.Range(0, Random.Shared.Next(3, 8))
             .Select(_ => new Tile(Random.Shared.Next(1, 14), AllColors[Random.Shared.Next(AllColors.Length)]))
             .ToList();
@@ -89,23 +89,23 @@
             if (task.ContentHash is null)
             {
                 task.Status = "❌ Erreur";
-                task.Error = "Pas de content hash reçu";
+                task.Error = "No content hash received";
                 return;
             }
 
-            task.Status = "⏳ En attente du worker…";
+            task.Status = "⏳ Waiting for worker…";
             StateHasChanged();
 
             var result = await SolveResultSubscriber.WaitForResult(task.ContentHash, _disposeCts.Token);
 
             task.Elapsed = DateTime.UtcNow - start;
             task.WorkerId = result.WorkerId;
-            task.Status = result.Found ? "✅ Résolu" : "❌ Non résolu";
+            task.Status = result.Found ? "✅ Solved" : "❌ No solution";
             task.Error = result.Error;
         }
         catch (OperationCanceledException)
         {
-            task.Status = "🚫 Annulé";
+            task.Status = "🚫 Cancelled";
         }
         catch (Exception ex)
         {

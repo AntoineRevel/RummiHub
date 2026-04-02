@@ -63,7 +63,7 @@ public partial class GamePage : IAsyncDisposable
 
         if (baseAddress is null)
         {
-            _error = "Impossible de determiner l'adresse du serveur.";
+            _error = "Could not determine server address.";
             return;
         }
 
@@ -89,7 +89,7 @@ public partial class GamePage : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _error = $"Impossible de se connecter : {ex.Message}";
+            _error = $"Could not connect: {ex.Message}";
         }
     }
 
@@ -151,7 +151,7 @@ public partial class GamePage : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _errorPlay = $"Erreur : {ex.Message}";
+            _errorPlay = $"Error: {ex.Message}";
             _isLoading = false;
         }
     }
@@ -169,7 +169,7 @@ public partial class GamePage : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _errorPlay = $"Erreur : {ex.Message}";
+            _errorPlay = $"Error: {ex.Message}";
             _isLoading = false;
         }
     }

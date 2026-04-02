@@ -9,25 +9,25 @@
 <div class="lobby-container">
     <header>
         <h1>Rummikub</h1>
-        <p>Crée ou rejoins une partie</p>
+        <p>Create or join a game</p>
     </header>
 
     @if (!_isConnected)
     {
         <div class="connecting">
             <div class="spinner"></div>
-            <span>Connexion au serveur...</span>
+            <span>Connecting to server...</span>
         </div>
     }
     else if (string.IsNullOrEmpty(_gameId))
     {
         <div class="lobby-form">
             <div class="form-group">
-                <label for="playerName">Ton nom</label>
+                <label for="playerName">Your name</label>
                 <input id="playerName"
                        type="text"
                        class="form-control"
-                       placeholder="Entrez votre nom"
+                       placeholder="Enter your name"
                        maxlength="20"
                        @bind="_playerName"
                        @bind:event="oninput"
@@ -36,11 +36,11 @@
             </div>
 
             <div class="form-group">
-                <label for="gameCode">Code de la partie <span class="optional">(optionnel)</span></label>
+                <label for="gameCode">Game code <span class="optional">(optional)</span></label>
                 <input id="gameCode"
                        type="text"
                        class="form-control"
-                       placeholder="Laisser vide pour créer"
+                       placeholder="Leave empty to create"
                        maxlength="50"
                        @bind="_joinGameId"
                        @bind:event="oninput"
@@ -50,9 +50,9 @@
             @if (_availableGameIds.Count > 0 && string.IsNullOrWhiteSpace(_joinGameId))
             {
                 <div class="form-group">
-                    <label for="seedSelect">Seed de distribution</label>
+                    <label for="seedSelect">Distribution seed</label>
                     <select id="seedSelect" class="form-control" @bind="_selectedGameId">
-                        <option value="">— Aléatoire —</option>
+                        <option value="">— Random —</option>
                         @foreach (var id in _availableGameIds)
                         {
                             <option value="@id">@id</option>
@@ -69,7 +69,7 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                     </svg>
-                    <span>Créer une partie</span>
+                    <span>Create a game</span>
                 }
                 else
                 {
@@ -77,7 +77,7 @@
                         <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
                         <polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
                     </svg>
-                    <span>Rejoindre</span>
+                    <span>Join</span>
                 }
             </button>
         </div>
@@ -87,7 +87,7 @@
         <div class="waiting-room">
             <div class="game-info">
                 <div class="info-row">
-                    <span class="info-label">Code de la partie</span>
+                    <span class="info-label">Game code</span>
                     <strong class="info-value">@_gameId</strong>
                 </div>
                 @if (!string.IsNullOrEmpty(_selectedGameId))
@@ -104,11 +104,11 @@
                     <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
                     <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
                 </svg>
-                Lien d'invitation
+                Invite link
             </a>
 
             <div class="players-list">
-                <h3>Joueurs (@_players.Count)</h3>
+                <h3>Players (@_players.Count)</h3>
                 @foreach (var player in _players)
                 {
                     <div class="player-row @(player == _playerName ? "me" : "")">
@@ -116,7 +116,7 @@
                         <span>@player</span>
                         @if (player == _playerName)
                         {
-                            <span class="you-badge">toi</span>
+                            <span class="you-badge">you</span>
                         }
                     </div>
                 }
@@ -129,18 +129,18 @@
                         <circle cx="12" cy="12" r="10"/>
                         <polygon points="10,8 16,12 10,16 10,8" fill="currentColor" stroke="none"/>
                     </svg>
-                    Lancer la partie
+                    Start game
                 </button>
                 @if (_players.Count < 2)
                 {
-                    <p class="hint">Il faut au moins 2 joueurs pour commencer.</p>
+                    <p class="hint">At least 2 players needed to start.</p>
                 }
             }
             else
             {
                 <p class="waiting-hint">
                     <span class="dot-pulse"></span>
-                    En attente que l'hôte lance la partie…
+                    Waiting for the host to start the game…
                 </p>
             }
         </div>
