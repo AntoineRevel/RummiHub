@@ -4,89 +4,490 @@
 @inject Microsoft.AspNetCore.Hosting.Server.IServer Server
 @inject NavigationManager Navigation
 
-<PageTitle>Lobby</PageTitle>
+<PageTitle>Lobby — Rummikub</PageTitle>
 
-<h1>Lobby Rummikub</h1>
+<div class="lobby-container">
+    <header>
+        <h1>Rummikub</h1>
+        <p>Crée ou rejoins une partie</p>
+    </header>
 
-@if (!_isConnected)
-{
-    <p>Connexion au serveur...</p>
-}
-else if (string.IsNullOrEmpty(_gameId))
-{
-    <div class="mb-3">
-        <label class="form-label">Ton nom :</label>
-        <input class="form-control" style="max-width: 300px" @bind="_playerName"/>
-    </div>
-
-    @if (_availableGameIds.Count > 0)
+    @if (!_isConnected)
     {
-        <div class="mb-3">
-            <label class="form-label">Seed de la partie :</label>
-            <select class="form-select" style="max-width: 300px" @bind="_selectedGameId">
-                <option value="">— Aléatoire —</option>
-                @foreach (var id in _availableGameIds)
+        <div class="connecting">
+            <div class="spinner"></div>
+            <span>Connexion au serveur...</span>
+        </div>
+    }
+    else if (string.IsNullOrEmpty(_gameId))
+    {
+        <div class="lobby-form">
+            <div class="form-group">
+                <label for="playerName">Ton nom</label>
+                <input id="playerName"
+                       type="text"
+                       class="form-control"
+                       placeholder="Entrez votre nom"
+                       maxlength="20"
+                       @bind="_playerName"
+                       @bind:event="oninput"
+                       @onkeydown="HandleKeyDown"
+                       @ref="_nameInput" />
+            </div>
+
+            <div class="form-group">
+                <label for="gameCode">Code de la partie <span class="optional">(optionnel)</span></label>
+                <input id="gameCode"
+                       type="text"
+                       class="form-control"
+                       placeholder="Laisser vide pour créer"
+                       maxlength="50"
+                       @bind="_joinGameId"
+                       @bind:event="oninput"
+                       @onkeydown="HandleKeyDown" />
+            </div>
+
+            @if (_availableGameIds.Count > 0 && string.IsNullOrWhiteSpace(_joinGameId))
+            {
+                <div class="form-group">
+                    <label for="seedSelect">Seed de distribution</label>
+                    <select id="seedSelect" class="form-control" @bind="_selectedGameId">
+                        <option value="">— Aléatoire —</option>
+                        @foreach (var id in _availableGameIds)
+                        {
+                            <option value="@id">@id</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            <button class="btn-action @(string.IsNullOrWhiteSpace(_joinGameId) ? "btn-create" : "btn-join")"
+                    @onclick="HandleAction"
+                    disabled="@string.IsNullOrWhiteSpace(_playerName)">
+                @if (string.IsNullOrWhiteSpace(_joinGameId))
                 {
-                    <option value="@id">@id</option>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    <span>Créer une partie</span>
                 }
-            </select>
+                else
+                {
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                        <polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+                    </svg>
+                    <span>Rejoindre</span>
+                }
+            </button>
         </div>
     }
-
-    <div class="d-flex gap-2 mb-4">
-        <button class="btn btn-primary" @onclick="CreateGame" disabled="@string.IsNullOrWhiteSpace(_playerName)">
-            Creer une partie
-        </button>
-    </div>
-
-    <h4>Rejoindre une partie</h4>
-    <div class="d-flex gap-2 align-items-end">
-        <div>
-            <label class="form-label">Code de la partie :</label>
-            <input class="form-control" style="max-width: 200px" @bind="_joinGameId"/>
-        </div>
-        <button class="btn btn-success" @onclick="JoinGame"
-                disabled="@(string.IsNullOrWhiteSpace(_playerName) || string.IsNullOrWhiteSpace(_joinGameId))">
-            Rejoindre
-        </button>
-    </div>
-}
-else
-{
-    <div class="alert alert-info">
-        Code de la partie : <strong>@_gameId</strong> — partage ce code avec tes amis !
-        @if (!string.IsNullOrEmpty(_selectedGameId))
-        {
-            <br/><span>Seed de distribution : <strong>@_selectedGameId</strong></span>
-        }
-    </div>
-    <div class="mb-3">
-        <a href="/lobby?code=@Uri.EscapeDataString(_gameId!)" class="btn btn-outline-primary btn-sm" target="_blank">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;vertical-align:middle">
-                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-            </svg>
-            Lien d'invitation
-        </a>
-    </div>
-
-    <h4>Joueurs (@_players.Count)</h4>
-    <ul class="list-group" style="max-width: 300px">
-        @foreach (var player in _players)
-        {
-            <li class="list-group-item">@player</li>
-        }
-    </ul>
-
-    @if (_isHost)
+    else
     {
-        <button class="btn btn-warning mt-3" @onclick="StartGame">
-            Lancer la partie
-        </button>
-    }
-}
+        <div class="waiting-room">
+            <div class="game-info">
+                <div class="info-row">
+                    <span class="info-label">Code de la partie</span>
+                    <strong class="info-value">@_gameId</strong>
+                </div>
+                @if (!string.IsNullOrEmpty(_selectedGameId))
+                {
+                    <div class="info-row">
+                        <span class="info-label">Seed</span>
+                        <strong class="info-value seed-value">@_selectedGameId</strong>
+                    </div>
+                }
+            </div>
 
-@if (!string.IsNullOrEmpty(_error))
-{
-    <div class="alert alert-danger mt-3">@_error</div>
-}
+            <a href="/lobby?code=@Uri.EscapeDataString(_gameId!)" class="invite-link" target="_blank">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+                Lien d'invitation
+            </a>
+
+            <div class="players-list">
+                <h3>Joueurs (@_players.Count)</h3>
+                @foreach (var player in _players)
+                {
+                    <div class="player-row @(player == _playerName ? "me" : "")">
+                        <span class="player-dot"></span>
+                        <span>@player</span>
+                        @if (player == _playerName)
+                        {
+                            <span class="you-badge">toi</span>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (_isHost)
+            {
+                <button class="btn-start" @onclick="StartGame" disabled="@(_players.Count < 2)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polygon points="10,8 16,12 10,16 10,8" fill="currentColor" stroke="none"/>
+                    </svg>
+                    Lancer la partie
+                </button>
+                @if (_players.Count < 2)
+                {
+                    <p class="hint">Il faut au moins 2 joueurs pour commencer.</p>
+                }
+            }
+            else
+            {
+                <p class="waiting-hint">
+                    <span class="dot-pulse"></span>
+                    En attente que l'hôte lance la partie…
+                </p>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="error-banner">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            @_error
+        </div>
+    }
+</div>
+
+<style>
+    .lobby-container {
+        max-width: 480px;
+        margin: 60px auto;
+        padding: 40px;
+        font-family: Arial, sans-serif;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.10);
+    }
+
+    header {
+        text-align: center;
+        margin-bottom: 36px;
+    }
+
+    header h1 {
+        font-size: 2.4rem;
+        color: #3a3a3a;
+        margin: 0 0 6px 0;
+    }
+
+    header p {
+        color: #999;
+        font-size: 1rem;
+        margin: 0;
+    }
+
+    /* Connecting */
+    .connecting {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        color: #777;
+        padding: 20px 0;
+    }
+
+    /* Form */
+    .lobby-form {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .form-group label {
+        font-weight: 600;
+        color: #3a3a3a;
+        font-size: 0.95rem;
+    }
+
+    .optional {
+        font-weight: 400;
+        color: #aaa;
+        font-size: 0.85rem;
+    }
+
+    .form-control {
+        padding: 12px 15px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        font-size: 1rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        background: #fff;
+        color: #3a3a3a;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #2196f3;
+        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.12);
+    }
+
+    /* Action button */
+    .btn-action {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 14px 24px;
+        font-size: 1.05rem;
+        font-weight: 700;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-top: 4px;
+        color: white;
+    }
+
+    .btn-create {
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        box-shadow: 0 4px 14px rgba(33, 150, 243, 0.3);
+    }
+
+    .btn-create:hover:not(:disabled) {
+        background: linear-gradient(135deg, #1e88e5, #1565c0);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(33, 150, 243, 0.4);
+    }
+
+    .btn-join {
+        background: linear-gradient(135deg, #4caf50, #388e3c);
+        box-shadow: 0 4px 14px rgba(76, 175, 80, 0.3);
+    }
+
+    .btn-join:hover:not(:disabled) {
+        background: linear-gradient(135deg, #43a047, #2e7d32);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(76, 175, 80, 0.4);
+    }
+
+    .btn-action:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .btn-action:active:not(:disabled) {
+        transform: translateY(0);
+    }
+
+    /* Waiting room */
+    .waiting-room {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .game-info {
+        background: #f8f9fa;
+        border: 2px solid #e9ecef;
+        border-radius: 12px;
+        padding: 16px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .info-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .info-label {
+        font-size: 0.9rem;
+        color: #888;
+    }
+
+    .info-value {
+        font-size: 1rem;
+        color: #3a3a3a;
+        font-family: monospace;
+        letter-spacing: 0.03em;
+    }
+
+    .seed-value {
+        color: #1976d2;
+    }
+
+    .invite-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        font-size: 0.88rem;
+        color: #1976d2;
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 20px;
+        text-decoration: none;
+        align-self: flex-start;
+        transition: background 0.2s;
+    }
+
+    .invite-link:hover {
+        background: #bbdefb;
+    }
+
+    .players-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .players-list h3 {
+        font-size: 1rem;
+        color: #555;
+        margin: 0 0 4px 0;
+        font-weight: 600;
+    }
+
+    .player-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        background: #f8f9fa;
+        border: 2px solid #e9ecef;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        color: #3a3a3a;
+    }
+
+    .player-row.me {
+        border-color: #2196f3;
+        background: #e3f2fd;
+    }
+
+    .player-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #4caf50;
+        flex-shrink: 0;
+    }
+
+    .you-badge {
+        margin-left: auto;
+        font-size: 0.75rem;
+        color: #1976d2;
+        font-weight: 600;
+        background: #fff;
+        border: 1px solid #90caf9;
+        border-radius: 10px;
+        padding: 2px 8px;
+    }
+
+    /* Start button */
+    .btn-start {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 14px 24px;
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: white;
+        background: linear-gradient(135deg, #ff9800, #f57c00);
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 14px rgba(255, 152, 0, 0.3);
+    }
+
+    .btn-start:hover:not(:disabled) {
+        background: linear-gradient(135deg, #f57c00, #ef6c00);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(255, 152, 0, 0.4);
+    }
+
+    .btn-start:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .hint {
+        text-align: center;
+        font-size: 0.85rem;
+        color: #aaa;
+        margin: -8px 0 0 0;
+    }
+
+    .waiting-hint {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #888;
+        font-size: 0.95rem;
+    }
+
+    /* Pulsing dot */
+    .dot-pulse {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ff9800;
+        flex-shrink: 0;
+        animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @@keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    /* Error */
+    .error-banner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 16px;
+        padding: 12px 16px;
+        background: #ffebee;
+        border: 1px solid #ef9a9a;
+        border-radius: 8px;
+        color: #c62828;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    /* Spinner */
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+        width: 20px;
+        height: 20px;
+        border: 3px solid #e0e0e0;
+        border-top-color: #2196f3;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @@media (max-width: 540px) {
+        .lobby-container {
+            margin: 20px;
+            padding: 28px 20px;
+        }
+    }
+</style>

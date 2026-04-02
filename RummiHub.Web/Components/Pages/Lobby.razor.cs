@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
 using RummiHub.Web.Hubs;
@@ -21,6 +22,23 @@ public partial class Lobby
     private List<string> _players = [];
     private List<string> _availableGameIds = [];
     private string _selectedGameId = string.Empty;
+    private ElementReference _nameInput;
+    private bool _hasFocused;
+
+    private static readonly string[] DefaultNames =
+    [
+        "Antoine", "Baptiste", "Camille", "David", "Emma",
+        "François", "Gabriel", "Hugo", "Inès", "Jules"
+    ];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_hasFocused && _isConnected && string.IsNullOrEmpty(_gameId))
+        {
+            _hasFocused = true;
+            await _nameInput.FocusAsync();
+        }
+    }
 
     protected override void OnParametersSet()
     {
@@ -36,8 +54,8 @@ public partial class Lobby
 
     protected override async Task OnInitializedAsync()
     {
-        // The SignalR client runs server-side (InteractiveServer), so connect
-        // directly to our own HTTP endpoint — no SSL, no certificate issues.
+        _playerName = DefaultNames[Random.Shared.Next(DefaultNames.Length)];
+
         var addresses = Server.Features.Get<IServerAddressesFeature>()?.Addresses;
         var baseAddress = addresses?.FirstOrDefault(a => a.StartsWith("http://"))
                           ?? addresses?.FirstOrDefault();
@@ -106,6 +124,22 @@ public partial class Lobby
         {
             _error = $"Impossible de se connecter au serveur : {ex.Message}";
         }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_playerName))
+            await HandleAction();
+    }
+
+    private async Task HandleAction()
+    {
+        if (string.IsNullOrWhiteSpace(_playerName)) return;
+
+        if (string.IsNullOrWhiteSpace(_joinGameId))
+            await CreateGame();
+        else
+            await JoinGame();
     }
 
     private async Task CreateGame()
