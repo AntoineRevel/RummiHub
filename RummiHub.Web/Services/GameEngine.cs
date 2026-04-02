@@ -22,9 +22,9 @@ public sealed class GameEngine
     public GamePlayer CurrentPlayer => Players[PlayerIndex];
     public int TilePoolCount => _tilePool.Count;
 
-    public void Initialize(List<string> playerNames, Guid? gameId = null)
+    public void Initialize(List<string> playerNames, string? distributionSeed = null)
     {
-        Id = gameId ?? Guid.NewGuid();
+        Id = Guid.NewGuid();
         Turn = 0;
         PlayerIndex = 0;
         IsGameOver = false;
@@ -33,7 +33,10 @@ public sealed class GameEngine
         _tilePool.Clear();
 
         var tiles = GenerateTiles();
-        Shuffle(tiles, new Random(Id.GetHashCode()));
+        var rng = distributionSeed is not null
+            ? new Random(distributionSeed.GetHashCode())
+            : new Random();
+        Shuffle(tiles, rng);
         DistributeTiles(tiles, playerNames);
     }
 

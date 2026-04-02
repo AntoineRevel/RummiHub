@@ -8,6 +8,7 @@ namespace RummiHub.Web.Models;
 public record GameStateDto
 {
     public required string GameId { get; init; }
+    public string? DistributionSeed { get; init; }
     public required List<PlayerInfoDto> Players { get; init; }
     public required int CurrentPlayerIndex { get; init; }
     public required int Turn { get; init; }

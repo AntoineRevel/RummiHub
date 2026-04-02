@@ -13,7 +13,13 @@ public partial class GameHub(
 {
     // ========== LOBBY PHASE ==========
 
-    public async Task CreateGame(string playerName)
+    public async Task GetAvailableGameIds()
+    {
+        var ids = gameManager.GetAvailableGameIds();
+        await Clients.Caller.SendAsync(HubEvents.AvailableGameIds, ids);
+    }
+
+    public async Task CreateGame(string playerName, string? gameId = null)
     {
         try
         {
@@ -24,7 +30,7 @@ public partial class GameHub(
                 return;
             }
 
-            var game = gameManager.CreateGame(playerName, Context.ConnectionId);
+            var game = gameManager.CreateGame(playerName, Context.ConnectionId, gameId?.Trim()); // gameId = distribution seed
             await Groups.AddToGroupAsync(Context.ConnectionId, game.Id);
             await Clients.Caller.SendAsync(HubEvents.GameCreated, game.Id, game.GetPlayerNames());
         }
@@ -333,6 +339,7 @@ public partial class GameHub(
         return new GameStateDto
         {
             GameId = game.Id,
+            DistributionSeed = game.DistributionSeed,
             Players = engine.Players.Select(p => new PlayerInfoDto
             {
                 Name = p.Name,

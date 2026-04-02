@@ -19,6 +19,8 @@ public partial class Lobby
     private string _joinGameId = string.Empty;
     private string _playerName = string.Empty;
     private List<string> _players = [];
+    private List<string> _availableGameIds = [];
+    private string _selectedGameId = string.Empty;
 
     protected override void OnParametersSet()
     {
@@ -52,6 +54,12 @@ public partial class Lobby
             .WithUrl(hubUri)
             .WithAutomaticReconnect()
             .Build();
+
+        _hubConnection.On<IEnumerable<string>>(HubEvents.AvailableGameIds, ids =>
+        {
+            _availableGameIds = ids.ToList();
+            InvokeAsync(StateHasChanged);
+        });
 
         _hubConnection.On<string, IEnumerable<string>>(HubEvents.GameCreated, (gameId, players) =>
         {
@@ -92,6 +100,7 @@ public partial class Lobby
         {
             await _hubConnection.StartAsync();
             _isConnected = true;
+            await _hubConnection.SendAsync(HubEvents.GetAvailableGameIds);
         }
         catch (Exception ex)
         {
@@ -102,7 +111,10 @@ public partial class Lobby
     private async Task CreateGame()
     {
         if (_hubConnection is not null)
-            await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName);
+        {
+            var seed = string.IsNullOrWhiteSpace(_selectedGameId) ? null : _selectedGameId;
+            await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, seed);
+        }
     }
 
     private async Task JoinGame()

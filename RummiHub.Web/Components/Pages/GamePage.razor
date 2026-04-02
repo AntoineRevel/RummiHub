@@ -29,6 +29,12 @@ else
         <header>
             <h1>Rummikub</h1>
             <h3>Partie : @_gameState.GameId</h3>
+            @if (!string.IsNullOrEmpty(_gameState.DistributionSeed))
+            {
+                <p class="seed-display">
+                    Seed : <strong>@_gameState.DistributionSeed</strong>
+                </p>
+            }
             <a class="share-link" href="/lobby?code=@Uri.EscapeDataString(_gameState.GameId)" title="Inviter des joueurs">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -281,6 +287,19 @@ else
     header h3 {
         color: #777;
         font-size: 1rem;
+    }
+
+    .seed-display {
+        margin: 4px 0 0 0;
+        font-size: 0.85rem;
+        color: #888;
+        user-select: all;
+        cursor: text;
+    }
+
+    .seed-display strong {
+        color: #555;
+        font-family: monospace;
     }
 
     .share-link {

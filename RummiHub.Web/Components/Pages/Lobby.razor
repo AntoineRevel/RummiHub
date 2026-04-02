@@ -19,6 +19,20 @@ else if (string.IsNullOrEmpty(_gameId))
         <input class="form-control" style="max-width: 300px" @bind="_playerName"/>
     </div>
 
+    @if (_availableGameIds.Count > 0)
+    {
+        <div class="mb-3">
+            <label class="form-label">Seed de la partie :</label>
+            <select class="form-select" style="max-width: 300px" @bind="_selectedGameId">
+                <option value="">— Aléatoire —</option>
+                @foreach (var id in _availableGameIds)
+                {
+                    <option value="@id">@id</option>
+                }
+            </select>
+        </div>
+    }
+
     <div class="d-flex gap-2 mb-4">
         <button class="btn btn-primary" @onclick="CreateGame" disabled="@string.IsNullOrWhiteSpace(_playerName)">
             Creer une partie
@@ -41,6 +55,10 @@ else
 {
     <div class="alert alert-info">
         Code de la partie : <strong>@_gameId</strong> — partage ce code avec tes amis !
+        @if (!string.IsNullOrEmpty(_selectedGameId))
+        {
+            <br/><span>Seed de distribution : <strong>@_selectedGameId</strong></span>
+        }
     </div>
     <div class="mb-3">
         <a href="/lobby?code=@Uri.EscapeDataString(_gameId!)" class="btn btn-outline-primary btn-sm" target="_blank">

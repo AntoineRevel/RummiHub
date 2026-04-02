@@ -7,6 +7,7 @@ public class Game
     private readonly Lock _playersLock = new();
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string? DistributionSeed { get; set; }
     private List<Player> Players { get; } = [];
     public bool IsStarted { get; set; }
     public string HostConnectionId { get; init; } = string.Empty;

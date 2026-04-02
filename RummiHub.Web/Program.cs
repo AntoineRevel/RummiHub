@@ -20,6 +20,7 @@ builder.Services.AddSignalR()
         options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
+builder.Services.Configure<GameOptions>(builder.Configuration.GetSection("GameOptions"));
 builder.Services.AddSingleton<IGameManager, GameManager>();
 
 builder.Services.AddHttpClient("apiservice",

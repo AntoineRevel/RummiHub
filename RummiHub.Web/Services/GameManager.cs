@@ -1,17 +1,26 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Options;
 using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
-public partial class GameManager(ILogger<GameManager> logger) : IGameManager
+public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptions> options) : IGameManager
 {
     private readonly ConcurrentDictionary<string, Game> _games = new();
 
-    public Game CreateGame(string playerName, string connectionId)
+    public IReadOnlyList<string> GetAvailableGameIds()
+    {
+        var predefined = options.Value.PredefinedIds;
+        if (predefined.Count == 0) return [];
+        return predefined.Where(id => !_games.ContainsKey(id)).ToList();
+    }
+
+    public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null)
     {
         var game = new Game
         {
-            HostConnectionId = connectionId
+            HostConnectionId = connectionId,
+            DistributionSeed = string.IsNullOrWhiteSpace(distributionSeed) ? null : distributionSeed
         };
 
         var player = new Player
@@ -84,7 +93,7 @@ public partial class GameManager(ILogger<GameManager> logger) : IGameManager
 
         var playerNames = game.GetPlayerNames();
         var engine = new GameEngine();
-        engine.Initialize(playerNames);
+        engine.Initialize(playerNames, game.DistributionSeed);
         game.Engine = engine;
 
         LogEngineInitialized(gameId, playerNames.Count);
