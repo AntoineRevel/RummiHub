@@ -20,7 +20,9 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         var game = new Game
         {
             HostConnectionId = connectionId,
-            DistributionSeed = string.IsNullOrWhiteSpace(distributionSeed) ? null : distributionSeed
+            DistributionSeed = string.IsNullOrWhiteSpace(distributionSeed)
+                ? Guid.NewGuid().ToString("N")[..8]
+                : distributionSeed
         };
 
         var player = new Player
