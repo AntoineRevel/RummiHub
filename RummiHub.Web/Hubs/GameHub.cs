@@ -104,14 +104,13 @@ public partial class GameHub(
                 return;
             }
 
-            // Initialize the engine server-side
+            // Initialize the engine server-side (also marks game as started)
             if (!gameManager.InitializeEngine(gameId))
             {
                 await Clients.Caller.SendAsync(HubEvents.Error, "Error initializing the game.");
                 return;
             }
 
-            game.IsStarted = true;
             LogGameStarted(gameId);
 
             // Broadcast: all lobby clients navigate to the game page

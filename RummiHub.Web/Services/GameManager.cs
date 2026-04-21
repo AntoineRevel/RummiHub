@@ -1,12 +1,22 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
+using NRedisStack;
+using NRedisStack.RedisStackCommands;
+using StackExchange.Redis;
 using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
-public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptions> options) : IGameManager
+public partial class GameManager(
+    ILogger<GameManager> logger,
+    IOptions<GameOptions> options,
+    IConnectionMultiplexer redis) : IGameManager
 {
+    private readonly IDatabase _db = redis.GetDatabase();
     private readonly ConcurrentDictionary<string, Game> _games = new();
+    private readonly ConcurrentDictionary<string, string> _connectionToGameId = new();
+
+    private static string GameKey(string id) => $"game:{id}";
 
     public IReadOnlyList<string> GetAvailableGameIds()
     {
@@ -34,6 +44,9 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 
         game.AddPlayer(player);
         _games[game.Id] = game;
+        _connectionToGameId[connectionId] = game.Id;
+        _db.JSON().Set(GameKey(game.Id), "$", GameDto.FromGame(game));
+
         LogGameCreated(game.Id, playerName);
         return game;
     }
@@ -60,32 +73,45 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         };
 
         game.AddPlayer(player);
+        _connectionToGameId[connectionId] = gameId;
+        _db.JSON().Set(GameKey(gameId), "$", GameDto.FromGame(game));
+
         LogPlayerJoined(playerName, gameId);
         return player;
     }
 
     public bool RemovePlayer(string connectionId)
     {
-        foreach (var game in _games.Values)
+        if (!_connectionToGameId.TryGetValue(connectionId, out var gameId))
+            return false;
+
+        if (!_games.TryGetValue(gameId, out var game))
+            return false;
+
+        if (!game.RemovePlayer(connectionId, out var removed))
+            return false;
+
+        _connectionToGameId.TryRemove(connectionId, out _);
+        LogPlayerRemoved(removed!.Name, game.Id);
+
+        if (game.PlayerCount > 0)
         {
-            if (!game.RemovePlayer(connectionId, out var removed)) continue;
-
-            LogPlayerRemoved(removed!.Name, game.Id);
-
-            if (game.PlayerCount != 0) return true;
-
-            _games.TryRemove(game.Id, out _);
-            LogGameRemoved(game.Id);
-
+            _db.JSON().Set(GameKey(game.Id), "$", GameDto.FromGame(game));
             return true;
         }
 
-        return false;
+        _games.TryRemove(game.Id, out _);
+        _db.KeyDelete(GameKey(game.Id));
+        LogGameRemoved(game.Id);
+        return true;
     }
 
     public Game? FindGameByConnection(string connectionId)
     {
-        return _games.Values.FirstOrDefault(g => g.HasConnection(connectionId));
+        if (_connectionToGameId.TryGetValue(connectionId, out var gameId) &&
+            _games.TryGetValue(gameId, out var game))
+            return game;
+        return null;
     }
 
     public bool InitializeEngine(string gameId)
@@ -97,6 +123,9 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         var engine = new GameEngine();
         engine.Initialize(playerNames, game.DistributionSeed);
         game.Engine = engine;
+        game.IsStarted = true;
+
+        _db.JSON().Set(GameKey(gameId), "$", GameDto.FromGame(game));
 
         LogEngineInitialized(gameId, playerNames.Count);
         return true;
@@ -107,7 +136,19 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         if (!_games.TryGetValue(gameId, out var game))
             return false;
 
-        return game.UpdatePlayerConnection(playerName, newConnectionId);
+        var oldConnectionId = game.GetPlayers()
+            .FirstOrDefault(p => p.Name.Equals(playerName, StringComparison.OrdinalIgnoreCase))
+            ?.ConnectionId;
+
+        if (!game.UpdatePlayerConnection(playerName, newConnectionId))
+            return false;
+
+        if (!string.IsNullOrEmpty(oldConnectionId) && oldConnectionId != newConnectionId)
+            _connectionToGameId.TryRemove(oldConnectionId, out _);
+        _connectionToGameId[newConnectionId] = gameId;
+
+        _db.JSON().Set(GameKey(gameId), "$", GameDto.FromGame(game));
+        return true;
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} created by {PlayerName}")]

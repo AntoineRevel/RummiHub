@@ -1,6 +1,6 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var cache = builder.AddRedis("cache")
+var cache = builder.AddRedisStack("cache")
     .WithRedisInsight(insight => insight.WithHostPort(41245));
 
 var apiService = builder.AddProject<Projects.RummiHub_ApiService>("apiservice")
