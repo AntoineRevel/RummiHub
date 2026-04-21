@@ -30,7 +30,12 @@ public sealed class SolveResultSubscriber : IDisposable
     {
         var tcs = new TaskCompletionSource<SolveResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        ct.Register(() => tcs.TrySetCanceled(), useSynchronizationContext: false);
+        ct.Register(() =>
+        {
+            tcs.TrySetCanceled();
+            if (_waiters.TryGetValue(contentHash, out var waitList))
+                lock (waitList) { waitList.Remove(tcs); }
+        }, useSynchronizationContext: false);
 
         _waiters.AddOrUpdate(
             contentHash,

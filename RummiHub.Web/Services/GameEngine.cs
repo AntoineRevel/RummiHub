@@ -21,6 +21,7 @@ public sealed class GameEngine
 
     public GamePlayer CurrentPlayer => Players[PlayerIndex];
     public int TilePoolCount => _tilePool.Count;
+    public string? WinnerName { get; private set; }
 
     public void Initialize(List<string> playerNames, string? distributionSeed = null)
     {
@@ -34,7 +35,7 @@ public sealed class GameEngine
 
         var tiles = GenerateTiles();
         var rng = distributionSeed is not null
-            ? new Random(distributionSeed.GetHashCode())
+            ? new Random(GetStableHash(distributionSeed))
             : new Random();
         Shuffle(tiles, rng);
         DistributeTiles(tiles, playerNames);
@@ -116,7 +117,10 @@ public sealed class GameEngine
 
         // Check win
         if (player.Rack.Tiles.Count == 0 && player.Rack.Jokers == 0)
+        {
             IsGameOver = true;
+            WinnerName = player.Name;
+        }
     }
 
     /// <summary>
@@ -150,6 +154,14 @@ public sealed class GameEngine
             throw new InvalidOperationException("No content hash received from API");
 
         return await resultSubscriber.WaitForResult(accepted.ContentHash, ct);
+    }
+
+    private static int GetStableHash(string s)
+    {
+        var hash = 0;
+        foreach (var c in s)
+            hash = hash * 31 + c;
+        return hash;
     }
 
     private static Tile[] GenerateTiles()
