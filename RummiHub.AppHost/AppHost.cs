@@ -6,9 +6,8 @@ var cache = builder.AddRedis("cache")
 var apiService = builder.AddProject<Projects.RummiHub_ApiService>("apiservice")
     .WithReference(cache)
     .WaitFor(cache)
-    .WithHttpHealthCheck("/health")
-    .WithUrl("https://api.rummihub.lan");
-
+    .WithHttpHealthCheck("/health");
+    
 builder.AddProject<Projects.RummiHub_Solver_Worker>("solver-worker")
     .WithReference(cache)
     .WaitFor(cache)
@@ -20,7 +19,6 @@ builder.AddProject<Projects.RummiHub_Web>("webfrontend")
     .WithReference(cache)
     .WaitFor(cache)
     .WithReference(apiService)
-    .WaitFor(apiService)
-    .WithUrl("https://rummihub.lan");
+    .WaitFor(apiService);
 
 builder.Build().Run();
