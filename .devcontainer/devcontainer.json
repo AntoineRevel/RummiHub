@@ -14,16 +14,5 @@
         "ms-azuretools.vscode-docker"
       ]
     }
-  },
-  "forwardPorts": [18888, 15888],
-  "portsAttributes": {
-    "18888": {
-      "label": "Aspire Dashboard (HTTPS)",
-      "onAutoForward": "notify"
-    },
-    "15888": {
-      "label": "Aspire Dashboard (HTTP)",
-      "onAutoForward": "notify"
-    }
   }
 }
