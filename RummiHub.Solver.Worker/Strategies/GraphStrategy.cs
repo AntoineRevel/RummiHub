@@ -14,6 +14,6 @@ public class GraphStrategy : IStrategy
             ? GraphSolver.Create(board, rack)
             : GraphFirstSolver.Create(rack);
 
-        return Task.Run(() => graphSolver.SearchSolution(cancellationToken), cancellationToken);
+        return Task.FromResult(graphSolver.SearchSolution(cancellationToken));
     }
 }
