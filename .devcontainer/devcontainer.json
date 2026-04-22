@@ -1,0 +1,28 @@
+{
+  "name": "RummiHub (.NET Aspire)",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:1-10.0",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "dotnet workload install aspire",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+  "forwardPorts": [18888, 15888],
+  "portsAttributes": {
+    "18888": {
+      "label": "Aspire Dashboard (HTTPS)",
+      "onAutoForward": "notify"
+    },
+    "15888": {
+      "label": "Aspire Dashboard (HTTP)",
+      "onAutoForward": "notify"
+    }
+  }
+}
