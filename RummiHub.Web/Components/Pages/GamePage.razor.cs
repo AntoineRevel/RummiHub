@@ -27,6 +27,8 @@ public partial class GamePage : IAsyncDisposable
     private Tile? _drawnTile;
     private bool _showDrawnTileToast;
     private Timer? _toastTimer;
+    private List<Tile>? _highlightTiles;
+    private bool _highlightSeenFirstUpdate;
 
     [Inject] private IServer Server { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
@@ -102,6 +104,25 @@ public partial class GamePage : IAsyncDisposable
             _gameState = state;
             _errorPlay = null;
             _isLoading = false;
+
+            if (_highlightTiles != null)
+            {
+                if (!_highlightSeenFirstUpdate)
+                    _highlightSeenFirstUpdate = true;
+                else
+                {
+                    _highlightTiles = null;
+                    _highlightSeenFirstUpdate = false;
+                }
+            }
+
+            InvokeAsync(StateHasChanged);
+        });
+
+        hub.On<List<Tile>>(HubEvents.HighlightTilesUpdated, tiles =>
+        {
+            _highlightTiles = tiles;
+            _highlightSeenFirstUpdate = false;
             InvokeAsync(StateHasChanged);
         });
 

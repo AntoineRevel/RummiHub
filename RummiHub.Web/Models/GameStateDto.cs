@@ -15,7 +15,6 @@ public record GameStateDto
     public required Solution Board { get; init; }
     public required bool IsGameOver { get; init; }
     public string? WinnerName { get; init; }
-    public List<Tile>? LastPlayedTiles { get; init; }
     public int TilePoolCount { get; init; }
 }
 
