@@ -194,7 +194,7 @@ public partial class GameHub(
             // Validate via the distributed solver
             var client = httpClientFactory.CreateClient("apiservice");
             var result = await game.Engine.ValidateHumanPlay(
-                selectedTiles, client, solveResultSubscriber, CancellationToken.None);
+                selectedTiles, client, solveResultSubscriber, Context.ConnectionAborted);
 
             if (result.Found)
             {
@@ -334,7 +334,7 @@ public partial class GameHub(
     private static GameStateDto BuildGameState(Game game, List<Tile>? lastPlayedTiles = null)
     {
         var engine = game.Engine!;
-        var winnerName = engine.IsGameOver ? engine.CurrentPlayer.Name : null;
+        var winnerName = engine.IsGameOver ? engine.WinnerName : null;
 
         return new GameStateDto
         {
