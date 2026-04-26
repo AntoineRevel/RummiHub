@@ -10,6 +10,7 @@ public partial class GameHub(
     IGameManager gameManager,
     IHttpClientFactory httpClientFactory,
     SolveResultSubscriber solveResultSubscriber,
+    IHubContext<GameHub> hubContext,
     ILogger<GameHub> logger) : Hub
 {
     // ========== LOBBY PHASE ==========
@@ -174,6 +175,15 @@ public partial class GameHub(
             {
                 var rack = GetRackTiles(game.Engine, playerIndex.Value);
                 await Clients.Caller.SendAsync(HubEvents.RackUpdated, rack);
+
+                // If it's this player's turn and the background solve is already done
+                // (reconnect after a slow start), send the indicator immediately.
+                var pending = game.PendingOptimalSolve;
+                if (playerIndex.Value == game.Engine.PlayerIndex
+                    && pending is { Task.IsCompletedSuccessfully: true })
+                {
+                    await Clients.Caller.SendAsync(HubEvents.OptimalReady);
+                }
             }
 
             LogPlayerJoinedSession(playerName, gameId);
@@ -450,6 +460,49 @@ public partial class GameHub(
         var task = RunOptimalSolveAsync(engine, client, cts.Token, game.Id, turn, playerIndex);
 
         game.PendingOptimalSolve = new PendingOptimalSolve(turn, playerIndex, task, cts);
+
+        // Fire-and-forget: notify the current player when the solve is done so they see
+        // a "hint ready" indicator before they act.
+        _ = NotifyOptimalReadyWhenDoneAsync(game, turn, playerIndex, task, cts.Token);
+    }
+
+    private async Task NotifyOptimalReadyWhenDoneAsync(
+        Game game, int turn, int playerIndex, Task<SolveResponse> task, CancellationToken ct)
+    {
+        try
+        {
+            await task.WaitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch
+        {
+            // Helper swallows internal failures and returns Found=false; we still
+            // signal readiness so the spinner stops.
+        }
+
+        // Skip if this solve is no longer current (turn advanced, or replaced).
+        var pending = game.PendingOptimalSolve;
+        if (pending is null || !ReferenceEquals(pending.Task, task)) return;
+        if (game.Engine is not { } engine) return;
+        if (engine.IsGameOver || engine.Turn != turn || engine.PlayerIndex != playerIndex) return;
+
+        // Resolve the player's current connection (may have changed via reconnect).
+        var lobbyPlayers = game.GetPlayers();
+        if (playerIndex >= lobbyPlayers.Count) return;
+        var connectionId = lobbyPlayers[playerIndex].ConnectionId;
+        if (string.IsNullOrEmpty(connectionId)) return;
+
+        try
+        {
+            await hubContext.Clients.Client(connectionId).SendAsync(HubEvents.OptimalReady);
+        }
+        catch (Exception ex)
+        {
+            LogOptimalReadyNotifyFailed(ex, game.Id, turn, playerIndex);
+        }
     }
 
     private async Task<SolveResponse> RunOptimalSolveAsync(
@@ -523,4 +576,7 @@ public partial class GameHub(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Optimal solve failed for game {GameId} turn {Turn} player {PlayerIndex}")]
     private partial void LogOptimalSolveFailed(Exception ex, string gameId, int turn, int playerIndex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to notify optimal-ready for game {GameId} turn {Turn} player {PlayerIndex}")]
+    private partial void LogOptimalReadyNotifyFailed(Exception ex, string gameId, int turn, int playerIndex);
 }

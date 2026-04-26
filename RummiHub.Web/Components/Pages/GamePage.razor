@@ -68,6 +68,20 @@ else
                 @if (IsMyTurn)
                 {
                     <p class="turn-indicator my-turn">Your turn!</p>
+                    <div class="solver-status @(_optimalReady ? "ready" : "computing")">
+                        @if (_optimalReady)
+                        {
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span>Hint ready</span>
+                        }
+                        else
+                        {
+                            <span class="solver-dot"></span>
+                            <span>Computing hint...</span>
+                        }
+                    </div>
                 }
                 else
                 {
@@ -434,6 +448,48 @@ else
 
     .turn-indicator.waiting {
         color: #ff9800;
+    }
+
+    /* Solver status indicator */
+    .solver-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+
+    .solver-status.computing {
+        background: #fff3e0;
+        color: #e65100;
+        border: 1px solid #ffcc80;
+    }
+
+    .solver-status.ready {
+        background: #e8f5e9;
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }
+
+    .solver-status svg {
+        flex-shrink: 0;
+    }
+
+    .solver-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: #ff9800;
+        animation: solver-pulse 1.2s ease-in-out infinite;
+    }
+
+    @@keyframes solver-pulse {
+        0%, 100% { opacity: 0.4; transform: scale(0.85); }
+        50% { opacity: 1; transform: scale(1.1); }
     }
 
     /* Board */

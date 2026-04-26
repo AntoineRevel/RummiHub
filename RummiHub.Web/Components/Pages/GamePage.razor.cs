@@ -31,6 +31,7 @@ public partial class GamePage : IAsyncDisposable
     private bool _highlightSeenFirstUpdate;
     private List<Tile>? _optimalPlayTiles;
     private bool _optimalSeenFirstUpdate;
+    private bool _optimalReady;
 
     [Inject] private IServer Server { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
@@ -143,6 +144,14 @@ public partial class GamePage : IAsyncDisposable
         {
             _optimalPlayTiles = tiles is { Count: > 0 } ? tiles : null;
             _optimalSeenFirstUpdate = false;
+            // Player has just acted — the indicator is for next turn (someone else's).
+            _optimalReady = false;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hub.On(HubEvents.OptimalReady, () =>
+        {
+            _optimalReady = true;
             InvokeAsync(StateHasChanged);
         });
 
