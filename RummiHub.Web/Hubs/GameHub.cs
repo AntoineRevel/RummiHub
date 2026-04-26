@@ -208,11 +208,15 @@ public partial class GameHub(
                     var rack = GetRackTiles(game.Engine, playerIndex.Value);
                     await Clients.Caller.SendAsync(HubEvents.RackUpdated, rack);
 
+                    // Send highlight privately: only the player who played sees the red borders
+                    var playedTiles = game.Engine.Players[playerIndex.Value].TilesToPlay;
+                    await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated, playedTiles);
+
                     // Advance turn
                     game.Engine.AdvanceToNextPlayer();
 
-                    // Broadcast new game state to all
-                    var state = BuildGameState(game, game.Engine.Players[playerIndex.Value].TilesToPlay);
+                    // Broadcast new game state to all (no highlight info — it's private)
+                    var state = BuildGameState(game);
                     await Clients.Group(gameId).SendAsync(HubEvents.GameStateUpdated, state);
 
                     // Send the next player their rack (in case they just connected and need it)
@@ -331,7 +335,7 @@ public partial class GameHub(
 
     // ========== HELPERS ==========
 
-    private static GameStateDto BuildGameState(Game game, List<Tile>? lastPlayedTiles = null)
+    private static GameStateDto BuildGameState(Game game)
     {
         var engine = game.Engine!;
         var winnerName = engine.IsGameOver ? engine.WinnerName : null;
@@ -351,7 +355,6 @@ public partial class GameHub(
             Board = engine.Board,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,
-            LastPlayedTiles = lastPlayedTiles,
             TilePoolCount = engine.TilePoolCount
         };
     }
