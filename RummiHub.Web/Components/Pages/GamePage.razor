@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 
-<PageTitle>Rummikub - @(GameId ?? "Partie")</PageTitle>
+<PageTitle>Rummikub - @(GameId ?? "Game")</PageTitle>
 
 @if (!_isConnected)
 {
@@ -68,6 +68,20 @@ else
                 @if (IsMyTurn)
                 {
                     <p class="turn-indicator my-turn">Your turn!</p>
+                    <div class="solver-status @(_optimalReady ? "ready" : "computing")">
+                        @if (_optimalReady)
+                        {
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span>Hint ready</span>
+                        }
+                        else
+                        {
+                            <span class="solver-dot"></span>
+                            <span>Computing hint...</span>
+                        }
+                    </div>
                 }
                 else
                 {
@@ -91,6 +105,20 @@ else
                     <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
                 <span>@_errorPlay</span>
+            </div>
+        }
+
+        <!-- Optimal play hint (shown to the player who just acted, cleared next turn) -->
+        @if (_optimalPlayTiles is { Count: > 0 })
+        {
+            <div class="optimal-play-section">
+                <h4>Optimal play you could have made this turn</h4>
+                <div class="optimal-play-tiles">
+                    @foreach (var tile in _optimalPlayTiles)
+                    {
+                        <TileComponent Tile="tile" ShouldHighlight="false"/>
+                    }
+                </div>
             </div>
         }
 
@@ -422,6 +450,48 @@ else
         color: #ff9800;
     }
 
+    /* Solver status indicator */
+    .solver-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+
+    .solver-status.computing {
+        background: #fff3e0;
+        color: #e65100;
+        border: 1px solid #ffcc80;
+    }
+
+    .solver-status.ready {
+        background: #e8f5e9;
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }
+
+    .solver-status svg {
+        flex-shrink: 0;
+    }
+
+    .solver-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: #ff9800;
+        animation: solver-pulse 1.2s ease-in-out infinite;
+    }
+
+    @@keyframes solver-pulse {
+        0%, 100% { opacity: 0.4; transform: scale(0.85); }
+        50% { opacity: 1; transform: scale(1.1); }
+    }
+
     /* Board */
     .solution-section {
         padding: 20px;
@@ -468,6 +538,30 @@ else
         20%, 40%, 60%, 80% {
             transform: translateX(5px);
         }
+    }
+
+    /* Optimal play hint */
+    .optimal-play-section {
+        background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+        border: 2px solid #64b5f6;
+        border-radius: 10px;
+        padding: 15px 20px;
+        margin: 15px 0;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
+    }
+
+    .optimal-play-section h4 {
+        margin: 0 0 12px 0;
+        color: #1565c0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .optimal-play-tiles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
     }
 
     /* My rack section */

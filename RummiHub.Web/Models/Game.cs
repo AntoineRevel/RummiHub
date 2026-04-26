@@ -1,6 +1,13 @@
+using RummiHub.Core.Contracts;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Web.Models;
+
+public sealed record PendingOptimalSolve(
+    int Turn,
+    int PlayerIndex,
+    Task<SolveResponse> Task,
+    CancellationTokenSource Cts);
 
 public class Game
 {
@@ -21,6 +28,13 @@ public class Game
     /// Serializes all game-mutating hub calls for this game.
     /// </summary>
     public SemaphoreSlim ActionLock { get; } = new(1, 1);
+
+    /// <summary>
+    /// Background solve started at the beginning of the current turn so the player
+    /// can receive an "optimal play you could have made" hint after acting.
+    /// Read/written only inside ActionLock.
+    /// </summary>
+    public PendingOptimalSolve? PendingOptimalSolve { get; set; }
 
     public int PlayerCount
     {
