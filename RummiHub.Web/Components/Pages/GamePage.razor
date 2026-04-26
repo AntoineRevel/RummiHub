@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 
-<PageTitle>Rummikub - @(GameId ?? "Partie")</PageTitle>
+<PageTitle>Rummikub - @(GameId ?? "Game")</PageTitle>
 
 @if (!_isConnected)
 {
@@ -98,7 +98,7 @@ else
         @if (_optimalPlayTiles is { Count: > 0 })
         {
             <div class="optimal-play-section">
-                <h4>Coup optimal possible ce tour-ci</h4>
+                <h4>Optimal play you could have made this turn</h4>
                 <div class="optimal-play-tiles">
                     @foreach (var tile in _optimalPlayTiles)
                     {
