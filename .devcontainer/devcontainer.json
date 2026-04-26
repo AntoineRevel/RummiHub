@@ -2,7 +2,10 @@
   "name": "RummiHub (.NET Aspire)",
   "image": "mcr.microsoft.com/devcontainers/dotnet:dev-10.0-noble",
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
   },
   "onCreateCommand": "curl -sSL https://aspire.dev/install.sh | bash && curl -fsSL https://claude.ai/install.sh | bash",
   "postStartCommand": "dotnet dev-certs https --trust",
