@@ -29,6 +29,8 @@ public partial class GamePage : IAsyncDisposable
     private Timer? _toastTimer;
     private List<Tile>? _highlightTiles;
     private bool _highlightSeenFirstUpdate;
+    private List<Tile>? _optimalPlayTiles;
+    private bool _optimalSeenFirstUpdate;
 
     [Inject] private IServer Server { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
@@ -116,6 +118,17 @@ public partial class GamePage : IAsyncDisposable
                 }
             }
 
+            if (_optimalPlayTiles != null)
+            {
+                if (!_optimalSeenFirstUpdate)
+                    _optimalSeenFirstUpdate = true;
+                else
+                {
+                    _optimalPlayTiles = null;
+                    _optimalSeenFirstUpdate = false;
+                }
+            }
+
             InvokeAsync(StateHasChanged);
         });
 
@@ -123,6 +136,13 @@ public partial class GamePage : IAsyncDisposable
         {
             _highlightTiles = tiles;
             _highlightSeenFirstUpdate = false;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hub.On<List<Tile>>(HubEvents.OptimalPlay, tiles =>
+        {
+            _optimalPlayTiles = tiles is { Count: > 0 } ? tiles : null;
+            _optimalSeenFirstUpdate = false;
             InvokeAsync(StateHasChanged);
         });
 

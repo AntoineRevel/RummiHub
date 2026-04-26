@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Web.Models;
 using RummiHub.Web.Services;
@@ -151,6 +152,18 @@ public partial class GameHub(
 
             await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
 
+            // Make sure an optimal solve is in flight for whoever's turn it currently is.
+            // Idempotent — won't relaunch if one already runs for this (turn, playerIndex).
+            await game.ActionLock.WaitAsync();
+            try
+            {
+                StartOptimalSolveForCurrentPlayerIfNeeded(game);
+            }
+            finally
+            {
+                game.ActionLock.Release();
+            }
+
             // Send initial game state
             var state = BuildGameState(game);
             await Clients.Caller.SendAsync(HubEvents.GameStateUpdated, state);
@@ -212,6 +225,13 @@ public partial class GameHub(
                     var playedTiles = game.Engine.Players[playerIndex.Value].TilesToPlay;
                     await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated, playedTiles);
 
+                    // Send the optimal play that was being computed in background since the
+                    // start of this turn (against the player's pre-action hand).
+                    var turnAtAction = game.Engine.Turn;
+                    var playerAtAction = playerIndex.Value;
+                    await SendOptimalPlayToCallerAsync(
+                        game, turnAtAction, playerAtAction, Context.ConnectionAborted);
+
                     // Advance turn
                     game.Engine.AdvanceToNextPlayer();
 
@@ -221,6 +241,9 @@ public partial class GameHub(
 
                     // Send the next player their rack (in case they just connected and need it)
                     await SendCurrentPlayerRack(game, gameId);
+
+                    // Kick off the next player's optimal solve in the background.
+                    StartOptimalSolveForCurrentPlayerIfNeeded(game);
                 }
                 else
                 {
@@ -282,6 +305,13 @@ public partial class GameHub(
             var rack = GetRackTiles(game.Engine, playerIndex.Value);
             await Clients.Caller.SendAsync(HubEvents.RackUpdated, rack);
 
+            // Send the optimal play that was being computed in background since the
+            // start of this turn (what the solver would have played from the pre-draw hand).
+            var turnAtAction = game.Engine.Turn;
+            var playerAtAction = playerIndex.Value;
+            await SendOptimalPlayToCallerAsync(
+                game, turnAtAction, playerAtAction, Context.ConnectionAborted);
+
             // Advance turn
             game.Engine.AdvanceToNextPlayer();
 
@@ -291,6 +321,9 @@ public partial class GameHub(
 
             // Send next player their rack
             await SendCurrentPlayerRack(game, gameId);
+
+            // Kick off the next player's optimal solve in the background.
+            StartOptimalSolveForCurrentPlayerIfNeeded(game);
         }
         catch (Exception ex)
         {
@@ -384,6 +417,99 @@ public partial class GameHub(
         }
     }
 
+    // ========== OPTIMAL-PLAY HINT ==========
+
+    /// <summary>
+    /// Kicks off a background solve from the current player's full hand, unless one
+    /// is already in flight for this (turn, playerIndex). Idempotent on reconnects.
+    /// Must be called inside ActionLock.
+    /// </summary>
+    private void StartOptimalSolveForCurrentPlayerIfNeeded(Game game)
+    {
+        var engine = game.Engine!;
+        if (engine.IsGameOver) return;
+
+        var existing = game.PendingOptimalSolve;
+        if (existing is not null
+            && existing.Turn == engine.Turn
+            && existing.PlayerIndex == engine.PlayerIndex
+            && !existing.Task.IsCompleted)
+        {
+            return;
+        }
+
+        existing?.Cts.Cancel();
+
+        var cts = new CancellationTokenSource();
+        var client = httpClientFactory.CreateClient("apiservice");
+        var turn = engine.Turn;
+        var playerIndex = engine.PlayerIndex;
+
+        // Call without Task.Run so the synchronous prefix (which snapshots Hand/Board
+        // into the SolveRequest) runs on the hub thread while we still hold ActionLock.
+        var task = RunOptimalSolveAsync(engine, client, cts.Token, game.Id, turn, playerIndex);
+
+        game.PendingOptimalSolve = new PendingOptimalSolve(turn, playerIndex, task, cts);
+    }
+
+    private async Task<SolveResponse> RunOptimalSolveAsync(
+        GameEngine engine, HttpClient client, CancellationToken ct,
+        string gameId, int turn, int playerIndex)
+    {
+        try
+        {
+            return await engine.SolveForCurrentPlayer(client, solveResultSubscriber, ct);
+        }
+        catch (Exception ex)
+        {
+            LogOptimalSolveFailed(ex, gameId, turn, playerIndex);
+            return new SolveResponse { RequestId = "failed", Found = false };
+        }
+    }
+
+    /// <summary>
+    /// Awaits the in-flight optimal solve for the (turn, playerIndex) the caller just acted on,
+    /// then sends the optimal tile list privately. Falls back to an empty list on timeout/failure.
+    /// </summary>
+    private async Task SendOptimalPlayToCallerAsync(
+        Game game, int turnAtAction, int playerIndexAtAction, CancellationToken ct)
+    {
+        var pending = game.PendingOptimalSolve;
+        List<Tile> tiles;
+
+        if (pending is null
+            || pending.Turn != turnAtAction
+            || pending.PlayerIndex != playerIndexAtAction)
+        {
+            tiles = [];
+        }
+        else
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+                var result = await pending.Task.WaitAsync(linked.Token);
+
+                tiles = result.Found
+                    ? [..result.TilesToPlay,
+                       ..Enumerable.Range(0, result.JokersToPlay).Select(_ => new Tile(isJoker: true))]
+                    : [];
+            }
+            catch (OperationCanceledException)
+            {
+                tiles = [];
+            }
+            catch (Exception ex)
+            {
+                LogOptimalSolveFailed(ex, game.Id, turnAtAction, playerIndexAtAction);
+                tiles = [];
+            }
+        }
+
+        await Clients.Caller.SendAsync(HubEvents.OptimalPlay, tiles, ct);
+    }
+
     // ========== LOGGING ==========
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} started")]
@@ -394,4 +520,7 @@ public partial class GameHub(
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Error in {MethodName} for connection {ConnectionId}")]
     private partial void LogHubError(Exception ex, string methodName, string connectionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Optimal solve failed for game {GameId} turn {Turn} player {PlayerIndex}")]
+    private partial void LogOptimalSolveFailed(Exception ex, string gameId, int turn, int playerIndex);
 }

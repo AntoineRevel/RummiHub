@@ -94,6 +94,20 @@ else
             </div>
         }
 
+        <!-- Optimal play hint (shown to the player who just acted, cleared next turn) -->
+        @if (_optimalPlayTiles is { Count: > 0 })
+        {
+            <div class="optimal-play-section">
+                <h4>Coup optimal possible ce tour-ci</h4>
+                <div class="optimal-play-tiles">
+                    @foreach (var tile in _optimalPlayTiles)
+                    {
+                        <TileComponent Tile="tile" ShouldHighlight="false"/>
+                    }
+                </div>
+            </div>
+        }
+
         <!-- My rack section -->
         @if (_rackTiles.Count > 0 && !_gameState.IsGameOver)
         {
@@ -468,6 +482,30 @@ else
         20%, 40%, 60%, 80% {
             transform: translateX(5px);
         }
+    }
+
+    /* Optimal play hint */
+    .optimal-play-section {
+        background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+        border: 2px solid #64b5f6;
+        border-radius: 10px;
+        padding: 15px 20px;
+        margin: 15px 0;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
+    }
+
+    .optimal-play-section h4 {
+        margin: 0 0 12px 0;
+        color: #1565c0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .optimal-play-tiles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
     }
 
     /* My rack section */

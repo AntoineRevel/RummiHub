@@ -22,6 +22,7 @@ public static class HubEvents
     public const string TileDrawn = nameof(TileDrawn);
     public const string InvalidPlay = nameof(InvalidPlay);
     public const string HighlightTilesUpdated = nameof(HighlightTilesUpdated);
+    public const string OptimalPlay = nameof(OptimalPlay);
 
     // === Game phase: Client -> Server ===
     public const string JoinGameSession = nameof(JoinGameSession);
