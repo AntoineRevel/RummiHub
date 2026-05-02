@@ -3,7 +3,7 @@ using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Web.Services;
 
-namespace RummiHub.Tests.GameEngine;
+namespace RummiHub.Tests.GameEngineTests;
 
 public class GameEngineTests
 {
