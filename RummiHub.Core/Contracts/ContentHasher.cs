@@ -12,7 +12,7 @@ namespace RummiHub.Core.Contracts;
 /// </summary>
 public static class ContentHasher
 {
-    public static string ComputeHash(List<Tile> hand, Solution board)
+    public static string ComputeHash(List<Tile> hand, Solution board, bool hasPlayed)
     {
         var sortedHand = hand
             .OrderBy(t => t.IsJoker)
@@ -24,7 +24,7 @@ public static class ContentHasher
         var sortedGroups = SortValidSets(board.Groups);
 
         var canonical = JsonSerializer.Serialize(
-            new { Hand = sortedHand, Runs = sortedRuns, Groups = sortedGroups },
+            new { Hand = sortedHand, Runs = sortedRuns, Groups = sortedGroups, HasPlayed = hasPlayed },
             RummiJsonOptions.Default);
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
