@@ -1,5 +1,5 @@
 meta {
-  name: Récupérer le résultat
+  name: Get solve result
   type: http
   seq: 2
 }
@@ -15,13 +15,11 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("Réponse cohérente", function() {
+  test("Response is consistent", function() {
     const body = res.body;
-    // Si en attente
     if (body.status === "pending") {
       expect(body.contentHash).to.be.a("string");
     }
-    // Si complété
     if (body.found !== undefined) {
       expect(body.found).to.be.a("boolean");
       expect(body.score).to.be.a("number");

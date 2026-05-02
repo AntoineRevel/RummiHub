@@ -1,5 +1,5 @@
 meta {
-  name: Scénario 4 - Résultat plateau existant
+  name: Scenario 4 - Existing board result
   type: http
   seq: 8
 }
@@ -15,7 +15,7 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("Structure de réponse valide", function() {
+  test("Valid response structure", function() {
     if (res.body.found !== undefined) {
       expect(res.body.found).to.be.a("boolean");
       if (res.body.found) {

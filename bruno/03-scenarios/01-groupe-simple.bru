@@ -1,5 +1,5 @@
 meta {
-  name: Scénario 1 - Groupe simple (3×5)
+  name: Scenario 1 - Simple group (3×5)
   type: http
   seq: 1
 }
@@ -16,7 +16,7 @@ headers {
 
 body:json {
   {
-    "requestId": "scenario-groupe-001",
+    "requestId": "scenario-group-001",
     "hand": [
       {"value": 5, "color": "Blue", "isJoker": false},
       {"value": 5, "color": "Red", "isJoker": false},
@@ -38,11 +38,11 @@ script:post-response {
 }
 
 tests {
-  test("Accepté 202", function() {
+  test("Accepted 202", function() {
     expect(res.status).to.equal(202);
   });
 
-  test("contentHash retourné", function() {
+  test("contentHash returned", function() {
     expect(res.body.contentHash).to.be.a("string");
   });
 }

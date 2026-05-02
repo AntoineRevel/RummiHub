@@ -15,11 +15,11 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("Status ok", function() {
+  test("Status is ok", function() {
     expect(res.body.status).to.equal("ok");
   });
 
-  test("Timestamp présent", function() {
+  test("Timestamp present", function() {
     expect(res.body.timestamp).to.be.a("string");
   });
 }
