@@ -9,5 +9,6 @@
   <Project Path="RummiHub.Core/RummiHub.Core.csproj" />
   <Project Path="RummiHub.ServiceDefaults/RummiHub.ServiceDefaults.csproj" />
   <Project Path="RummiHub.Solver.Worker/RummiHub.Solver.Worker.csproj" />
+  <Project Path="RummiHub.Tests/RummiHub.Tests.csproj" />
   <Project Path="RummiHub.Web/RummiHub.Web.csproj" />
 </Solution>
