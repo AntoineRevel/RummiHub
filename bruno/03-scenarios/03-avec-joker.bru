@@ -1,5 +1,5 @@
 meta {
-  name: Scénario 3 - Suite avec joker (Red 8, Joker, Red 10)
+  name: Scenario 3 - Run with joker (Red 8, Joker, Red 10)
   type: http
   seq: 5
 }
@@ -38,11 +38,11 @@ script:post-response {
 }
 
 tests {
-  test("Accepté 202", function() {
+  test("Accepted 202", function() {
     expect(res.status).to.equal(202);
   });
 
-  test("contentHash retourné", function() {
+  test("contentHash returned", function() {
     expect(res.body.contentHash).to.be.a("string");
   });
 }

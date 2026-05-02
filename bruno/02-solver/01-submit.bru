@@ -1,5 +1,5 @@
 meta {
-  name: Soumettre une résolution
+  name: Submit solve request
   type: http
   seq: 1
 }
@@ -34,7 +34,7 @@ body:json {
 script:post-response {
   if (res.status === 202 && res.body.contentHash) {
     bru.setVar("contentHash", res.body.contentHash);
-    console.log("contentHash capturé :", res.body.contentHash);
+    console.log("contentHash captured:", res.body.contentHash);
   }
 }
 
@@ -43,16 +43,16 @@ tests {
     expect(res.status).to.equal(202);
   });
 
-  test("contentHash présent", function() {
+  test("contentHash present", function() {
     expect(res.body.contentHash).to.be.a("string");
     expect(res.body.contentHash.length).to.be.greaterThan(0);
   });
 
-  test("requestId retourné", function() {
+  test("requestId returned", function() {
     expect(res.body.requestId).to.equal("bruno-test-001");
   });
 
-  test("Status processing ou completed", function() {
+  test("Status is processing or completed", function() {
     expect(["processing", "completed"]).to.include(res.body.status);
   });
 }

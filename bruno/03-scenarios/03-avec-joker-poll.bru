@@ -1,5 +1,5 @@
 meta {
-  name: Scénario 3 - Résultat avec joker
+  name: Scenario 3 - Run with joker result
   type: http
   seq: 6
 }
@@ -15,7 +15,7 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("Joker utilisé", function() {
+  test("Joker used", function() {
     if (res.body.found !== undefined) {
       expect(res.body.found).to.equal(true);
       expect(res.body.jokersToPlay).to.equal(1);
