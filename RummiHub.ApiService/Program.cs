@@ -40,7 +40,7 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
     var contentHash = ContentHasher.ComputeHash(request.Hand, request.Board, request.HasPlayed);
 
     // 1. Check if result is already cached
-    var cached = await db.StringGetAsync($"solve-result:{contentHash}");
+    var cached = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
 
     if (cached.IsNull)
     {
@@ -78,12 +78,12 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
 app.MapGet("/solve/{contentHash}", async (string contentHash, IConnectionMultiplexer redis) =>
 {
     var db = redis.GetDatabase();
-    var json = await db.StringGetAsync($"solve-result:{contentHash}");
+    var json = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
 
     if (json.IsNull)
         return Results.Ok(new { ContentHash = contentHash, Status = "pending" });
 
-    var response = JsonSerializer.Deserialize<SolveResponse>((string)json!, RummiJsonOptions.Default);
+    var response = JsonSerializer.Deserialize<SolveResponse>(json.ToString()!, RummiJsonOptions.Default);
     return Results.Ok(response);
 });
 

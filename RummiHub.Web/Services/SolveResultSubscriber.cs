@@ -53,10 +53,10 @@ public sealed class SolveResultSubscriber : IDisposable
 
         // Subscribe-then-check: verify cache immediately after subscribing
         var db = _redis.GetDatabase();
-        var existing = await db.StringGetAsync($"solve-result:{contentHash}");
+        var existing = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
         if (!existing.IsNull)
         {
-            var result = JsonSerializer.Deserialize<SolveResponse>((string)existing!, RummiJsonOptions.Default);
+            var result = JsonSerializer.Deserialize<SolveResponse>(existing.ToString()!, RummiJsonOptions.Default);
             if (result is not null)
             {
                 tcs.TrySetResult(result);
@@ -69,7 +69,7 @@ public sealed class SolveResultSubscriber : IDisposable
     private async Task OnResultReady(string contentHash)
     {
         var db = _redis.GetDatabase();
-        var json = await db.StringGetAsync($"solve-result:{contentHash}");
+        var json = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
 
         if (json.IsNull)
         {
@@ -77,7 +77,7 @@ public sealed class SolveResultSubscriber : IDisposable
             return;
         }
 
-        var result = JsonSerializer.Deserialize<SolveResponse>((string)json!, RummiJsonOptions.Default);
+        var result = JsonSerializer.Deserialize<SolveResponse>(json.ToString()!, RummiJsonOptions.Default);
         if (result is null) return;
 
         if (_waiters.TryRemove(contentHash, out var list))
