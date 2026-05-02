@@ -22,7 +22,8 @@ body:json {
       {"value": 4, "color": "Red", "isJoker": false},
       {"value": 5, "color": "Red", "isJoker": false},
       {"value": 6, "color": "Red", "isJoker": false},
-      {"value": 7, "color": "Red", "isJoker": false}
+      {"value": 7, "color": "Red", "isJoker": false},
+      {"value": 8, "color": "Red", "isJoker": false}
     ],
     "board": {
       "runs": [],
@@ -43,7 +44,7 @@ tests {
   test("Accepted 202", function() {
     expect(res.status).to.equal(202);
   });
-
+  
   test("contentHash returned", function() {
     expect(res.body.contentHash).to.be.a("string");
   });

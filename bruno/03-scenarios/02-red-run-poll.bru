@@ -14,12 +14,12 @@ tests {
   test("Status 200", function() {
     expect(res.status).to.equal(200);
   });
-
-  test("Solution found (score = 25)", function() {
+  
+  test("Solution found (score = 33)", function() {
     if (res.body.found !== undefined) {
       expect(res.body.found).to.equal(true);
-      expect(res.body.score).to.equal(25);
-      expect(res.body.tilesToPlay).to.have.lengthOf(5);
+      expect(res.body.score).to.equal(33);
+      expect(res.body.tilesToPlay).to.have.lengthOf(6);
     }
   });
 }
