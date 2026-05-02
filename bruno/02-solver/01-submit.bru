@@ -1,0 +1,58 @@
+meta {
+  name: Submit solve request
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/solve
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "requestId": "bruno-test-001",
+    "hand": [
+      {"value": 5, "color": "Blue", "isJoker": false},
+      {"value": 5, "color": "Red", "isJoker": false},
+      {"value": 5, "color": "Mango", "isJoker": false}
+    ],
+    "board": {
+      "runs": [],
+      "groups": [],
+      "isValid": true
+    },
+    "hasPlayed": false
+  }
+}
+
+script:post-response {
+  if (res.status === 202 && res.body.contentHash) {
+    bru.setVar("contentHash", res.body.contentHash);
+    console.log("contentHash captured:", res.body.contentHash);
+  }
+}
+
+tests {
+  test("Status 202 Accepted", function() {
+    expect(res.status).to.equal(202);
+  });
+
+  test("contentHash present", function() {
+    expect(res.body.contentHash).to.be.a("string");
+    expect(res.body.contentHash.length).to.be.greaterThan(0);
+  });
+
+  test("requestId returned", function() {
+    expect(res.body.requestId).to.equal("bruno-test-001");
+  });
+
+  test("Status is processing or completed", function() {
+    expect(["processing", "completed"]).to.include(res.body.status);
+  });
+}

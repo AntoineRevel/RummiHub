@@ -1,0 +1,29 @@
+meta {
+  name: Scenario 4 - Existing board result
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/solve/{{contentHash}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("Valid response structure", function() {
+    if (res.body.found !== undefined) {
+      expect(res.body.found).to.be.a("boolean");
+      if (res.body.found) {
+        expect(res.body.score).to.be.a("number");
+        expect(res.body.score).to.be.greaterThan(0);
+        expect(res.body.tilesToPlay).to.be.an("array");
+        expect(res.body.newBoard).to.not.be.null;
+      }
+    }
+  });
+}

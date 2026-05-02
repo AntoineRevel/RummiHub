@@ -1,0 +1,28 @@
+meta {
+  name: Get solve result
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/solve/{{contentHash}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("Response is consistent", function() {
+    const body = res.body;
+    if (body.status === "pending") {
+      expect(body.contentHash).to.be.a("string");
+    }
+    if (body.found !== undefined) {
+      expect(body.found).to.be.a("boolean");
+      expect(body.score).to.be.a("number");
+    }
+  });
+}

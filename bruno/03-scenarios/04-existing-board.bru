@@ -1,0 +1,67 @@
+meta {
+  name: Scenario 4 - Existing board (hasPlayed = true)
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/solve
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "requestId": "scenario-board-001",
+    "hand": [
+      {"value": 8, "color": "Black", "isJoker": false},
+      {"value": 8, "color": "Red", "isJoker": false},
+      {"value": 8, "color": "Blue", "isJoker": false},
+      {"value": 9, "color": "Blue", "isJoker": false},
+      {"value": 10, "color": "Blue", "isJoker": false},
+      {"value": 11, "color": "Blue", "isJoker": false}
+    ],
+    "board": {
+      "runs": [
+        {
+          "tiles": [
+            {"value": 1, "color": "Red", "isJoker": false},
+            {"value": 2, "color": "Red", "isJoker": false},
+            {"value": 3, "color": "Red", "isJoker": false}
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "tiles": [
+            {"value": 7, "color": "Red", "isJoker": false},
+            {"value": 7, "color": "Blue", "isJoker": false},
+            {"value": 7, "color": "Mango", "isJoker": false}
+          ]
+        }
+      ],
+      "isValid": true
+    },
+    "hasPlayed": true
+  }
+}
+
+script:post-response {
+  if (res.status === 202) {
+    bru.setVar("contentHash", res.body.contentHash);
+  }
+}
+
+tests {
+  test("Accepted 202", function() {
+    expect(res.status).to.equal(202);
+  });
+
+  test("contentHash returned", function() {
+    expect(res.body.contentHash).to.be.a("string");
+  });
+}

@@ -1,0 +1,7 @@
+script:pre-request {
+  // GitHub Codespaces: inject token header if set
+  const token = bru.getEnvVar("githubToken");
+  if (token) {
+    req.setHeader("X-Github-Token", token);
+  }
+}
