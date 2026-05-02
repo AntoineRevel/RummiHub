@@ -37,7 +37,7 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
 {
     var db = redis.GetDatabase();
 
-    var contentHash = ContentHasher.ComputeHash(request.Hand, request.Board);
+    var contentHash = ContentHasher.ComputeHash(request.Hand, request.Board, request.HasPlayed);
 
     // 1. Check if result is already cached
     var cached = await db.StringGetAsync($"solve-result:{contentHash}");
