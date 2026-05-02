@@ -1,0 +1,24 @@
+meta {
+  name: Scénario 3 - Résultat avec joker
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/solve/{{contentHash}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("Joker utilisé", function() {
+    if (res.body.found !== undefined) {
+      expect(res.body.found).to.equal(true);
+      expect(res.body.jokersToPlay).to.equal(1);
+    }
+  });
+}

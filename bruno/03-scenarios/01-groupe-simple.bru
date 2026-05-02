@@ -1,0 +1,48 @@
+meta {
+  name: Scénario 1 - Groupe simple (3×5)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/solve
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "requestId": "scenario-groupe-001",
+    "hand": [
+      {"value": 5, "color": "Blue", "isJoker": false},
+      {"value": 5, "color": "Red", "isJoker": false},
+      {"value": 5, "color": "Mango", "isJoker": false}
+    ],
+    "board": {
+      "runs": [],
+      "groups": [],
+      "isValid": true
+    },
+    "hasPlayed": false
+  }
+}
+
+script:post-response {
+  if (res.status === 202) {
+    bru.setVar("contentHash", res.body.contentHash);
+  }
+}
+
+tests {
+  test("Accepté 202", function() {
+    expect(res.status).to.equal(202);
+  });
+
+  test("contentHash retourné", function() {
+    expect(res.body.contentHash).to.be.a("string");
+  });
+}

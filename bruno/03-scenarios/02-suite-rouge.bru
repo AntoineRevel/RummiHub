@@ -1,0 +1,50 @@
+meta {
+  name: Scénario 2 - Suite rouge (3-4-5-6-7)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/solve
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "requestId": "scenario-suite-001",
+    "hand": [
+      {"value": 3, "color": "Red", "isJoker": false},
+      {"value": 4, "color": "Red", "isJoker": false},
+      {"value": 5, "color": "Red", "isJoker": false},
+      {"value": 6, "color": "Red", "isJoker": false},
+      {"value": 7, "color": "Red", "isJoker": false}
+    ],
+    "board": {
+      "runs": [],
+      "groups": [],
+      "isValid": true
+    },
+    "hasPlayed": false
+  }
+}
+
+script:post-response {
+  if (res.status === 202) {
+    bru.setVar("contentHash", res.body.contentHash);
+  }
+}
+
+tests {
+  test("Accepté 202", function() {
+    expect(res.status).to.equal(202);
+  });
+
+  test("contentHash retourné", function() {
+    expect(res.body.contentHash).to.be.a("string");
+  });
+}

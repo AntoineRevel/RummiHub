@@ -1,0 +1,48 @@
+meta {
+  name: Scénario 3 - Suite avec joker (Red 8, Joker, Red 10)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/solve
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "requestId": "scenario-joker-001",
+    "hand": [
+      {"value": 8, "color": "Red", "isJoker": false},
+      {"value": 0, "color": "Blue", "isJoker": true},
+      {"value": 10, "color": "Red", "isJoker": false}
+    ],
+    "board": {
+      "runs": [],
+      "groups": [],
+      "isValid": true
+    },
+    "hasPlayed": false
+  }
+}
+
+script:post-response {
+  if (res.status === 202) {
+    bru.setVar("contentHash", res.body.contentHash);
+  }
+}
+
+tests {
+  test("Accepté 202", function() {
+    expect(res.status).to.equal(202);
+  });
+
+  test("contentHash retourné", function() {
+    expect(res.body.contentHash).to.be.a("string");
+  });
+}

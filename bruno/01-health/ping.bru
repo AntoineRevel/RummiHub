@@ -1,0 +1,25 @@
+meta {
+  name: Ping
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/ping
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("Status ok", function() {
+    expect(res.body.status).to.equal("ok");
+  });
+
+  test("Timestamp présent", function() {
+    expect(res.body.timestamp).to.be.a("string");
+  });
+}
