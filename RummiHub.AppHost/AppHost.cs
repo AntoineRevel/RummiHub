@@ -1,6 +1,9 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
 var cache = builder.AddRedis("cache")
+    .WithImageRegistry("docker.io/redis")
+    .WithImage("redis-stack-server", "latest")
+    .WithArgs("--include", "/etc/redis-stack.conf")
     .WithRedisInsight(insight => insight.WithHostPort(41245));
 
 var apiService = builder.AddProject<Projects.RummiHub_ApiService>("apiservice")

@@ -108,8 +108,9 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         var response = await Solve(request, ct);
         var resultJson = JsonSerializer.Serialize(response, RummiJsonOptions.Default);
 
-        // 1. Stocke le résultat (1h TTL)
-        await db.StringSetAsync($"solve-result:{contentHash}", resultJson, TimeSpan.FromHours(1));
+        // 1. Stocke le résultat en JSON natif (1h TTL)
+        await db.ExecuteAsync("JSON.SET", $"solve-result:{contentHash}", "$", resultJson);
+        await db.KeyExpireAsync($"solve-result:{contentHash}", TimeSpan.FromHours(1));
 
         // 2. Publie la notification pour les subscribers (Blazor Server)
         var subscriber = redis.GetSubscriber();
