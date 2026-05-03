@@ -10,19 +10,19 @@ flowchart LR
 
     subgraph Aspire["RummiHub.AppHost (Aspire)"]
         Web["RummiHub.Web<br/>Blazor Server + SignalR<br/>(GameHub)"]
-        Api["RummiHub.ApiService<br/>Minimal API<br/>POST /solve · GET /solve/{hash}"]
+        Api["RummiHub.ApiService<br/>Minimal API<br/>POST /solve · GET /solve/hash"]
         Worker["RummiHub.Solver.Worker<br/>BackgroundService<br/>(2 replicas)"]
         Redis[("Redis Stack<br/>JSON · Streams · Pub/Sub")]
     end
 
     User <-->|HTTPS / WebSocket SignalR| Web
-    Web -->|HTTP: POST /solve| Api
-    Api -->|XADD solve-stream<br/>SET solve-lock:{hash}| Redis
+    Web -->|HTTP POST /solve| Api
+    Api -->|XADD solve-stream<br/>SET solve-lock:hash| Redis
     Api -->|PUBLISH solve:enqueue| Redis
     Redis -->|XREADGROUP solvers| Worker
-    Worker -->|JSON.SET solve-result:{hash}| Redis
-    Worker -->|PUBLISH solve:done:{hash}| Redis
-    Redis -->|SUBSCRIBE solve:done:{hash}| Web
+    Worker -->|JSON.SET solve-result:hash| Redis
+    Worker -->|PUBLISH solve:done:hash| Redis
+    Redis -->|SUBSCRIBE solve:done:hash| Web
     Web -->|SignalR push| User
 ```
 
