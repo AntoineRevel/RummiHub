@@ -17,6 +17,37 @@ main {
 
 .sidebar {
     background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-collapse-input {
+    display: none;
+}
+
+.sidebar-collapse-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 8px;
+    align-self: flex-end;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.3s ease;
+}
+
+.sidebar-collapse-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+}
+
+.sidebar-collapse-btn .icon-collapse {
+    transition: transform 0.3s ease;
 }
 
 @media (min-width: 641px) {
@@ -29,6 +60,59 @@ main {
         height: 100vh;
         position: sticky;
         top: 0;
+        transition: width 0.25s ease;
+        overflow: hidden;
+    }
+
+    .sidebar-collapse-btn {
+        display: inline-flex;
+    }
+
+    /* Collapsed state */
+    .page:has(.sidebar-collapse-input:checked) .sidebar {
+        width: 64px;
+    }
+
+    .page:has(.sidebar-collapse-input:checked) .sidebar-collapse-btn {
+        align-self: center;
+    }
+
+    .page:has(.sidebar-collapse-input:checked) .sidebar-collapse-btn .icon-collapse {
+        transform: rotate(180deg);
+    }
+
+    /* Hide textual content when collapsed; keep icons */
+    .page:has(.sidebar-collapse-input:checked) .sidebar ::deep .navbar-brand {
+        font-size: 0;
+        text-align: center;
+        padding: 0;
+    }
+
+    .page:has(.sidebar-collapse-input:checked) .sidebar ::deep .navbar-brand::before {
+        content: "R";
+        font-size: 1.4rem;
+        color: #fff;
+        font-weight: 700;
+    }
+
+    .page:has(.sidebar-collapse-input:checked) .sidebar ::deep .nav-item {
+        padding: 0 6px 0.5rem 6px;
+    }
+
+    .page:has(.sidebar-collapse-input:checked) .sidebar ::deep .nav-item a {
+        justify-content: center;
+        font-size: 0;
+        padding: 0;
+    }
+
+    .page:has(.sidebar-collapse-input:checked) .sidebar ::deep .nav-item a .bi {
+        margin-right: 0;
+    }
+
+    .page:has(.sidebar-collapse-input:checked) .sidebar ::deep .top-row {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        justify-content: center;
     }
 }
 
