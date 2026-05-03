@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -221,6 +222,27 @@ public partial class GamePage : IAsyncDisposable
         {
             _errorPlay = $"Error: {ex.Message}";
             _isLoading = false;
+        }
+    }
+
+    // --- Keyboard shortcuts ---
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (!IsMyTurn || _isLoading) return;
+
+        switch (e.Key)
+        {
+            case "Enter":
+                if (SelectedTilesForPlay.Count > 0)
+                    await OnPlaySelection();
+                else if (_gameState is { TilePoolCount: > 0 })
+                    await OnDrawTile();
+                break;
+            case "Escape":
+                if (SelectedTilesForPlay.Count > 0)
+                    OnClearSelection();
+                break;
         }
     }
 
