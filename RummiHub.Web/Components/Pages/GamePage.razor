@@ -25,22 +25,41 @@ else if (_gameState == null)
 }
 else
 {
-    <div class="game-container">
-        <header>
-            <h1>Rummikub</h1>
-            <h3>Game: @_gameState.GameId</h3>
-            <p class="seed-display">
-                Seed: <strong>@_gameState.DistributionSeed</strong>
-            </p>
+    <div class="game-container @(IsMyTurn ? "is-my-turn" : "")" tabindex="0" @onkeydown="OnKeyDown">
+        <!-- Compact top bar -->
+        <header class="game-header">
+            <div class="game-meta">
+                <span class="meta-chip turn-chip" title="Current turn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    Turn @_gameState.Turn
+                </span>
+                <span class="meta-chip pool-chip" title="Tiles left in pool">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    </svg>
+                    @_gameState.TilePoolCount in pool
+                </span>
+                <span class="meta-chip seed-chip" title="Distribution seed (click to copy)">
+                    Seed:&nbsp;<strong>@_gameState.DistributionSeed</strong>
+                </span>
+            </div>
+            <div class="game-id" title="Game code">#@_gameState.GameId</div>
         </header>
 
         <!-- Players bar -->
         <div class="players-bar">
             @foreach (var (player, index) in _gameState.Players.Select((p, i) => (p, i)))
             {
-                var isCurrent = index == _gameState.CurrentPlayerIndex;
+                var isCurrent = index == _gameState.CurrentPlayerIndex && !_gameState.IsGameOver;
                 var isMe = player.Name == PlayerName;
                 <div class="player-chip @(isCurrent ? "current" : "") @(isMe ? "me" : "")">
+                    @if (isCurrent)
+                    {
+                        <span class="active-pulse" aria-hidden="true"></span>
+                    }
                     <span class="player-name">
                         @player.Name
                         @if (isMe)
@@ -48,7 +67,7 @@ else
                             <small>(you)</small>
                         }
                     </span>
-                    <span class="tile-count">@player.TileCount</span>
+                    <span class="tile-count" title="Tiles in rack">@player.TileCount</span>
                 </div>
             }
         </div>
@@ -56,22 +75,24 @@ else
         @if (_gameState.IsGameOver)
         {
             <div class="game-over">
+                <div class="trophy">🏆</div>
                 <h2>@_gameState.WinnerName won the game!</h2>
+                <button class="btn-back-lobby" @onclick="@(() => Navigation.NavigateTo("/lobby"))">
+                    Back to lobby
+                </button>
             </div>
         }
-
-        <!-- Turn info -->
-        <div class="turn-section">
-            <h2>Turn: <span>@_gameState.Turn</span></h2>
-            @if (!_gameState.IsGameOver)
-            {
+        else
+        {
+            <!-- Turn status banner -->
+            <div class="turn-banner @(IsMyTurn ? "my-turn" : "waiting")">
                 @if (IsMyTurn)
                 {
-                    <p class="turn-indicator my-turn">Your turn!</p>
+                    <span class="turn-banner-text">Your turn — pick tiles to play, or draw.</span>
                     <div class="solver-status @(_optimalReady ? "ready" : "computing")">
                         @if (_optimalReady)
                         {
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                                 <polyline points="20 6 9 17 4 12"/>
                             </svg>
                             <span>Hint ready</span>
@@ -79,16 +100,17 @@ else
                         else
                         {
                             <span class="solver-dot"></span>
-                            <span>Computing hint...</span>
+                            <span>Computing hint…</span>
                         }
                     </div>
                 }
                 else
                 {
-                    <p class="turn-indicator waiting">Waiting for @CurrentPlayerName...</p>
+                    <span class="dot-pulse" aria-hidden="true"></span>
+                    <span class="turn-banner-text">Waiting for @CurrentPlayerName…</span>
                 }
-            }
-        </div>
+            </div>
+        }
 
         <!-- Board -->
         <div class="solution-section">
@@ -126,7 +148,15 @@ else
         @if (_rackTiles.Count > 0 && !_gameState.IsGameOver)
         {
             <div class="my-rack-section @(IsMyTurn ? "active-turn" : "")">
-                <h3 class="rack-title">Your tiles (@_rackTiles.Count)</h3>
+                <h3 class="rack-title">
+                    <span>Your tiles (@_rackTiles.Count)</span>
+                    @if (IsMyTurn)
+                    {
+                        <span class="keyboard-hint">
+                            <kbd>Enter</kbd> play · <kbd>Esc</kbd> clear
+                        </span>
+                    }
+                </h3>
 
                 @if (IsMyTurn)
                 {
@@ -282,44 +312,83 @@ else
 <style>
     .game-container {
         max-width: 1300px;
-        margin: 20px auto;
-        padding: 20px;
+        margin: 16px auto 140px auto;
+        padding: 16px 20px;
         font-family: Arial, sans-serif;
         background: #fff;
         border-radius: 12px;
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
         outline: none;
+        transition: box-shadow 0.3s ease;
     }
 
-    header {
-        text-align: center;
-        margin-bottom: 20px;
+    .game-container.is-my-turn {
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(33, 150, 243, 0.18);
     }
 
-    header h1 {
-        font-size: 2.5rem;
-        color: #3a3a3a;
-        margin: 0;
+    /* Compact header */
+    .game-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 6px 4px 14px 4px;
+        border-bottom: 1px solid #eee;
+        margin-bottom: 14px;
     }
 
-    header h3 {
-        color: #777;
-        font-size: 1rem;
+    .game-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
     }
 
-    .seed-display {
-        margin: 4px 0 0 0;
-        font-size: 0.85rem;
-        color: #888;
-        user-select: all;
-        cursor: text;
+    .meta-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        font-size: 0.82rem;
+        color: #555;
+        background: #f4f6f8;
+        border: 1px solid #e2e6ea;
+        border-radius: 999px;
+        line-height: 1;
     }
 
-    .seed-display strong {
+    .meta-chip svg {
+        flex-shrink: 0;
+        opacity: 0.75;
+    }
+
+    .turn-chip {
+        color: #1565c0;
+        background: #e3f2fd;
+        border-color: #bbdefb;
+        font-weight: 600;
+    }
+
+    .pool-chip {
+        color: #6a1b9a;
+        background: #f3e5f5;
+        border-color: #e1bee7;
+    }
+
+    .seed-chip strong {
         color: #555;
         font-family: monospace;
+        user-select: all;
     }
 
+    .game-id {
+        font-family: monospace;
+        font-size: 0.78rem;
+        color: #999;
+        letter-spacing: 0.02em;
+        user-select: all;
+    }
 
     /* Loading */
     .loading-state {
@@ -347,6 +416,7 @@ else
     }
 
     .player-chip {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 10px;
@@ -362,6 +432,24 @@ else
         background: linear-gradient(135deg, #e8f5e9, #f1f8f4);
         border: 2px solid #4caf50;
         box-shadow: 0 3px 10px rgba(76, 175, 80, 0.2);
+    }
+
+    .active-pulse {
+        position: absolute;
+        top: -5px;
+        left: -5px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #4caf50;
+        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.6);
+        animation: active-ring 1.6s ease-out infinite;
+    }
+
+    @@keyframes active-ring {
+        0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.6); }
+        70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
     }
 
     .player-chip.me {
@@ -408,46 +496,88 @@ else
     /* Game over */
     .game-over {
         text-align: center;
-        background: #f1f8e9;
+        background: linear-gradient(135deg, #f1f8e9, #fff8e1);
         border: 2px solid #8bc34a;
-        border-radius: 10px;
-        padding: 15px;
+        border-radius: 12px;
+        padding: 24px 20px;
         margin-bottom: 20px;
+        box-shadow: 0 4px 16px rgba(139, 195, 74, 0.18);
+    }
+
+    .game-over .trophy {
+        font-size: 2.5rem;
+        line-height: 1;
+        margin-bottom: 6px;
+        animation: trophy-bounce 1.6s ease-in-out infinite;
+    }
+
+    @@keyframes trophy-bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-6px); }
     }
 
     .game-over h2 {
         color: #4caf50;
-        font-size: 1.5rem;
+        font-size: 1.6rem;
+        margin: 0 0 14px 0;
     }
 
-    /* Turn section */
-    .turn-section {
-        text-align: center;
-        margin-bottom: 20px;
-    }
-
-    .turn-section h2 {
-        font-size: 1.5rem;
-        color: #3f51b5;
-    }
-
-    .turn-section span {
-        font-weight: bold;
-        color: #ff5722;
-    }
-
-    .turn-indicator {
-        font-size: 1.1rem;
+    .btn-back-lobby {
+        padding: 10px 22px;
+        font-size: 0.95rem;
         font-weight: 600;
-        margin: 5px 0 0 0;
+        color: #fff;
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 3px 10px rgba(33, 150, 243, 0.3);
     }
 
-    .turn-indicator.my-turn {
-        color: #4caf50;
+    .btn-back-lobby:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(33, 150, 243, 0.4);
     }
 
-    .turn-indicator.waiting {
-        color: #ff9800;
+    /* Turn banner */
+    .turn-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 10px 16px;
+        border-radius: 10px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin-bottom: 14px;
+    }
+
+    .turn-banner.my-turn {
+        background: linear-gradient(135deg, #e8f5e9, #f1f8f4);
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }
+
+    .turn-banner.waiting {
+        background: #fff8e1;
+        color: #ef6c00;
+        border: 1px solid #ffe0b2;
+    }
+
+    .turn-banner-text {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .dot-pulse {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ff9800;
+        animation: solver-pulse 1.4s ease-in-out infinite;
     }
 
     /* Solver status indicator */
@@ -455,10 +585,9 @@ else
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        margin-top: 4px;
-        padding: 4px 10px;
+        padding: 3px 10px;
         border-radius: 12px;
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         font-weight: 500;
         transition: all 0.2s ease;
     }
@@ -566,24 +695,52 @@ else
 
     /* My rack section */
     .my-rack-section {
+        position: sticky;
+        bottom: 12px;
+        z-index: 50;
         background: linear-gradient(135deg, #f5f5f5, #fafafa);
         border: 2px solid #e0e0e0;
         border-radius: 15px;
-        padding: 25px;
-        margin: 20px 0;
+        padding: 16px 20px;
+        margin: 20px 0 0 0;
         text-align: center;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
     }
 
     .my-rack-section.active-turn {
         background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
         border: 2px solid #2196f3;
-        box-shadow: 0 4px 15px rgba(33, 150, 243, 0.2);
+        box-shadow: 0 -4px 20px rgba(33, 150, 243, 0.2);
     }
 
     .rack-title {
         color: #1976d2;
-        margin: 0 0 15px 0;
-        font-size: 1.3rem;
+        margin: 0 0 10px 0;
+        font-size: 1.05rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .keyboard-hint {
+        font-size: 0.72rem;
+        color: #888;
+        font-weight: 400;
+        background: rgba(255, 255, 255, 0.7);
+        padding: 2px 8px;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
+    }
+
+    .keyboard-hint kbd {
+        font-family: monospace;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        padding: 0 4px;
+        font-size: 0.7rem;
+        color: #555;
     }
 
     /* Spinner */
@@ -617,17 +774,17 @@ else
 
     /* Selected tiles */
     .selected-tiles-section {
-        padding: 25px 15px 15px 15px;
+        padding: 18px 12px 12px 12px;
         background-color: #f8f9fa;
         border: 2px solid #e3f2fd;
         border-radius: 10px;
-        margin: 15px 0;
+        margin: 10px 0;
     }
 
     .selected-tiles-section h4 {
-        margin: 0 0 15px 0;
+        margin: 0 0 10px 0;
         color: #495057;
-        font-size: 16px;
+        font-size: 0.95rem;
         font-weight: 600;
     }
 
@@ -689,25 +846,26 @@ else
 
     /* Available tiles */
     .available-tiles-section {
-        margin: 15px 0;
+        margin: 10px 0;
     }
 
     .available-tiles-section h4 {
-        margin: 0 0 10px 0;
+        margin: 0 0 8px 0;
         color: #495057;
-        font-size: 16px;
+        font-size: 0.95rem;
         font-weight: 600;
+        text-align: left;
     }
 
     .tiles-container {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
         gap: 8px;
-        padding: 15px;
+        padding: 12px;
         background-color: #f8f9fa;
         border: 1px solid #e0e0e0;
         border-radius: 10px;
-        max-height: 300px;
+        max-height: 220px;
         overflow-y: auto;
         align-content: start;
     }
@@ -772,18 +930,18 @@ else
     /* Action buttons */
     .human-actions-buttons {
         display: flex;
-        gap: 20px;
+        gap: 16px;
         justify-content: center;
         flex-wrap: wrap;
-        margin-top: 15px;
+        margin-top: 12px;
     }
 
     .btn-draw, .btn-play, .btn-clear {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 15px 25px;
-        font-size: 1.1rem;
+        padding: 12px 22px;
+        font-size: 1.05rem;
         font-weight: 600;
         border: none;
         border-radius: 10px;
