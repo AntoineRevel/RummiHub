@@ -1,6 +1,13 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(dotnet --version)",
+      "Bash(aspire --version)",
+      "Bash(dotnet restore *)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "aspire"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }
