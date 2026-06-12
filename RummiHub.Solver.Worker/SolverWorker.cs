@@ -15,6 +15,15 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
     private const string GroupName = "solvers";
     private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal(RedisChannels.SolveEnqueue);
 
+    // Un message pending dont le consumer ne donne plus signe de vie depuis ce délai
+    // est considéré abandonné (worker crashé) et peut être réclamé via XAUTOCLAIM.
+    private static readonly TimeSpan AbandonedMessageIdleTime = TimeSpan.FromMinutes(1);
+
+    // Réveil périodique de la boucle même sans notification Pub/Sub, pour vérifier
+    // les messages abandonnés (le nom de consumer change à chaque démarrage, donc
+    // les pending d'un worker mort ne sont jamais relus par son propre PEL).
+    private static readonly TimeSpan IdleWakeInterval = TimeSpan.FromSeconds(30);
+
     private readonly string _workerId = $"worker-{Environment.MachineName}-{Guid.NewGuid().ToString()[..8]}";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -33,10 +42,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
             // Le groupe existe déjà — c'est normal avec plusieurs replicas
         }
 
-        // Phase 1 : récupère les messages pending (non ACK après un crash)
-        await ProcessPendingMessages(db, stoppingToken);
-
-        // Phase 2 : boucle principale — lit les nouveaux messages
+        // Boucle principale — lit les nouveaux messages et réclame les abandonnés
         var subscriber = redis.GetSubscriber();
         var wakeSignal = Channel.CreateUnbounded<bool>(new UnboundedChannelOptions
         {
@@ -57,13 +63,22 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
                     StreamKey, GroupName, _workerId,
                     count: 1);
 
-                if (entries.Length == 0)
+                if (entries.Length > 0)
                 {
-                    await wakeSignal.Reader.ReadAsync(stoppingToken);
+                    await ProcessEntry(db, entries[0], stoppingToken);
                     continue;
                 }
 
-                await ProcessEntry(db, entries[0], stoppingToken);
+                // Pas de nouveau message : tente de réclamer un message abandonné
+                // par un worker mort, sinon attend un réveil (Pub/Sub ou périodique).
+                var claimed = await ClaimAbandonedEntry(db);
+                if (claimed is { } entry)
+                {
+                    await ProcessEntry(db, entry, stoppingToken);
+                    continue;
+                }
+
+                await WaitForWakeSignal(wakeSignal.Reader, stoppingToken);
             }
         }
         finally
@@ -73,29 +88,55 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         }
     }
 
-    private async Task ProcessPendingMessages(IDatabase db, CancellationToken ct)
+    /// <summary>
+    /// Réclame un message pending d'un consumer mort (XAUTOCLAIM). Sans cela, un
+    /// message non-ACKé après un crash resterait orphelin pour toujours : le nom de
+    /// consumer contient un GUID régénéré à chaque démarrage, donc personne ne relit
+    /// jamais le PEL du consumer disparu.
+    /// </summary>
+    private async Task<StreamEntry?> ClaimAbandonedEntry(IDatabase db)
     {
-        var pending = await db.StreamReadGroupAsync(
+        var result = await db.StreamAutoClaimAsync(
             StreamKey, GroupName, _workerId,
-            count: 10, position: "0-0");
+            (long)AbandonedMessageIdleTime.TotalMilliseconds,
+            "0-0", count: 1);
 
-        if (pending.Length > 0)
+        if (result.ClaimedEntries.Length == 0)
+            return null;
+
+        var entry = result.ClaimedEntries[0];
+        logger.LogWarning("[{WorkerId}] Claimed abandoned message {EntryId} from a dead consumer",
+            _workerId, entry.Id);
+        return entry;
+    }
+
+    private static async Task WaitForWakeSignal(ChannelReader<bool> reader, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(IdleWakeInterval);
+        try
         {
-            logger.LogInformation("[{WorkerId}] Recovering {Count} pending message(s)", _workerId, pending.Length);
-            foreach (var entry in pending)
-            {
-                if (ct.IsCancellationRequested) break;
-                await ProcessEntry(db, entry, ct);
-            }
+            await reader.ReadAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Réveil périodique : on repart vérifier le stream et les abandonnés.
         }
     }
 
     private async Task ProcessEntry(IDatabase db, StreamEntry entry, CancellationToken ct)
     {
         var contentHash = entry["contentHash"].ToString();
-        var payload = entry["payload"].ToString();
+        var payload = entry["payload"];
 
-        var request = JsonSerializer.Deserialize<SolveRequest>(payload, RummiJsonOptions.Default);
+        // Entrée vide (ex. supprimée par le trim du stream) : ACK et on passe.
+        if (payload.IsNullOrEmpty)
+        {
+            await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
+            return;
+        }
+
+        var request = JsonSerializer.Deserialize<SolveRequest>(payload.ToString(), RummiJsonOptions.Default);
         if (request is null)
         {
             await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
