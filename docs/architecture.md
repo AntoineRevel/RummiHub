@@ -18,15 +18,16 @@ flowchart TB
         end
 
         subgraph Api["RummiHub.ApiService (Minimal API)"]
-            Solve["POST /solve<br/>hash SHA-256 → cache → lock → stream"]
+            Solve["POST /solve<br/>hash SHA-256 → cache → lock → stream<br/>(prioritaire si Priority)"]
         end
 
         subgraph Workers["RummiHub.Solver.Worker (×2 réplicas)"]
-            SW["SolverWorker<br/>consumer group « solvers »"]
+            SW["SolverWorker<br/>consumer group « solvers »<br/>(prioritaire vidé en premier)"]
             Strategy["GraphStrategy<br/>GraphSolver / GraphFirstSolver"]
         end
 
         subgraph Redis["Redis Stack"]
+            PrioStream[("solve-stream-priority<br/>(Stream prioritaire)")]
             Stream[("solve-stream<br/>(Stream)")]
             Cache[("solve-result:{hash}<br/>(JSON, TTL 1h)")]
             Lock[("solve-lock:{hash}<br/>(SET NX)")]
@@ -47,10 +48,12 @@ flowchart TB
 
     Solve -->|"1 — vérifie le cache"| Cache
     Solve -->|"2 — dédup"| Lock
-    Solve -->|"3 — enqueue"| Stream
+    Solve -->|"3 — enqueue (normal)"| Stream
+    Solve -->|"3' — enqueue (Priority)"| PrioStream
     Solve -->|"4 — réveille les workers"| PubSub
 
     PubSub -.->|"solve:enqueue"| SW
+    PrioStream -->|"XREADGROUP (vidé en premier)"| SW
     Stream -->|"XREADGROUP"| SW
     SW --> Strategy
     SW -->|"écrit le résultat"| Cache
@@ -79,21 +82,21 @@ sequenceDiagram
     participant K as Solver.Worker<br/>(×2)
 
     W->>W: SubmitAndWaitForResult(SolveRequest)
-    W->>A: POST /solve {hand, board, hasPlayed}
-    A->>A: contentHash = SHA-256(JSON canonique)[0..16]
+    W->>A: POST /solve {hand, board, hasPlayed, priority}
+    A->>A: contentHash = SHA-256(JSON canonique)[0..16]<br/>(priority hors hash)
     A->>R: GET solve-result:{hash} (cache JSON)
     alt résultat en cache
         R-->>A: SolveResponse
         A-->>W: 200 + résultat
     else cache vide
         A->>R: SET solve-lock:{hash} NX (dédup)
-        A->>R: XADD solve-stream
+        A->>R: XADD solve-stream-priority (si priority)<br/>sinon XADD solve-stream
         A->>R: PUBLISH solve:enqueue
         A-->>W: 202 + contentHash
         W->>R: SUBSCRIBE solve:done:{hash}
         Note over W,R: « subscribe-then-check » :<br/>s'abonne AVANT de revérifier le cache<br/>(élimine la race condition)
         R-->>K: réveil (solve:enqueue)
-        K->>R: XREADGROUP solve-stream (groupe « solvers »)
+        K->>R: XREADGROUP solve-stream-priority puis solve-stream<br/>(prioritaire vidé en premier, groupe « solvers »)
         K->>K: GraphStrategy.GetSolverResult()<br/>BFS parallèle (RummiNode)
         K->>R: JSON.SET solve-result:{hash} (TTL 1h)
         K->>R: PUBLISH solve:done:{hash}
@@ -106,7 +109,8 @@ sequenceDiagram
 
 ## Points clés
 
-- **Dédup des solves** : un même état de jeu (même `contentHash`) n'est calculé qu'une fois, quel que soit le nombre de demandeurs — verrou `solve-lock:{hash}` (SET NX) + cache `solve-result:{hash}`.
-- **Résilience des workers** : consumer group Redis Streams ; au démarrage, un worker récupère les messages pending (non-ACKés) d'un worker tombé.
+- **Dédup des solves** : un même état de jeu (même `contentHash`) n'est calculé qu'une fois, quel que soit le nombre de demandeurs — verrou `solve-lock:{hash}` (SET NX) + cache `solve-result:{hash}`. Le flag `Priority` n'entre **pas** dans le hash (le résultat est identique quelle que soit la priorité).
+- **Priorité des validations** : la validation du coup réellement joué (`ValidateHumanPlay`, petit chevalet, rapide) part avec `Priority = true` sur le stream `solve-stream-priority`, que les workers vident **avant** `solve-stream`. Elle ne fait donc jamais la queue derrière un gros solve de hint (chevalet complet).
+- **Résilience des workers** : consumer group Redis Streams (sur les deux streams) ; au démarrage, un worker récupère les messages pending (non-ACKés) d'un worker tombé.
 - **Concurrence côté jeu** : toutes les mutations d'une partie passent par `Game.ActionLock` (`SemaphoreSlim(1,1)`), via le `GameHub` SignalR.
 - **Sérialisation** : `RummiJsonOptions.Default` est l'unique `JsonSerializerOptions` partagé entre API, workers et Web (camelCase, enums en string, `TileJsonConverter`).

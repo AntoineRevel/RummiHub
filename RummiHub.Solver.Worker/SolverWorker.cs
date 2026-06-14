@@ -12,6 +12,7 @@ namespace RummiHub.Solver.Worker;
 public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> logger) : BackgroundService
 {
     private const string StreamKey = RedisKeys.SolveStream;
+    private const string PriorityStreamKey = RedisKeys.SolvePriorityStream;
     private const string GroupName = RedisKeys.SolversGroup;
     private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal(RedisKeys.SolveEnqueueChannel);
 
@@ -31,16 +32,9 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         logger.LogInformation("[{WorkerId}] Solver worker started", _workerId);
         var db = redis.GetDatabase();
 
-        // Crée le consumer group s'il n'existe pas encore
-        try
-        {
-            await db.StreamCreateConsumerGroupAsync(StreamKey, GroupName, "0-0", createStream: true);
-            logger.LogInformation("Consumer group '{GroupName}' created on stream '{StreamKey}'", GroupName, StreamKey);
-        }
-        catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP"))
-        {
-            // Le groupe existe déjà — c'est normal avec plusieurs replicas
-        }
+        // Crée le consumer group sur les deux streams (normal + prioritaire) s'il n'existe pas encore
+        await EnsureConsumerGroup(db, StreamKey);
+        await EnsureConsumerGroup(db, PriorityStreamKey);
 
         // Boucle principale — lit les nouveaux messages et réclame les abandonnés
         var subscriber = redis.GetSubscriber();
@@ -59,24 +53,16 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                var entries = await db.StreamReadGroupAsync(
-                    StreamKey, GroupName, _workerId,
-                    count: 1);
-
-                if (entries.Length > 0)
-                {
-                    await ProcessEntry(db, entries[0], stoppingToken);
-                    continue;
-                }
+                // Le stream prioritaire (validations de coups) est toujours vidé avant
+                // le stream normal (hints optimaux) pour que les requêtes rapides ne
+                // fassent pas la queue derrière les gros solves de chevalet complet.
+                if (await TryReadAndProcess(db, PriorityStreamKey, stoppingToken)) continue;
+                if (await TryReadAndProcess(db, StreamKey, stoppingToken)) continue;
 
                 // Pas de nouveau message : tente de réclamer un message abandonné
-                // par un worker mort, sinon attend un réveil (Pub/Sub ou périodique).
-                var claimed = await ClaimAbandonedEntry(db);
-                if (claimed is { } entry)
-                {
-                    await ProcessEntry(db, entry, stoppingToken);
-                    continue;
-                }
+                // par un worker mort (prioritaire d'abord), sinon attend un réveil.
+                if (await TryClaimAndProcess(db, PriorityStreamKey, stoppingToken)) continue;
+                if (await TryClaimAndProcess(db, StreamKey, stoppingToken)) continue;
 
                 await WaitForWakeSignal(wakeSignal.Reader, stoppingToken);
             }
@@ -88,16 +74,51 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         }
     }
 
+    private async Task EnsureConsumerGroup(IDatabase db, string streamKey)
+    {
+        try
+        {
+            await db.StreamCreateConsumerGroupAsync(streamKey, GroupName, "0-0", createStream: true);
+            logger.LogInformation("Consumer group '{GroupName}' created on stream '{StreamKey}'", GroupName, streamKey);
+        }
+        catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP"))
+        {
+            // Le groupe existe déjà — c'est normal avec plusieurs replicas
+        }
+    }
+
+    /// <summary>Lit une entrée du stream donné et la traite. Retourne true si une entrée a été traitée.</summary>
+    private async Task<bool> TryReadAndProcess(IDatabase db, string streamKey, CancellationToken ct)
+    {
+        var entries = await db.StreamReadGroupAsync(streamKey, GroupName, _workerId, count: 1);
+        if (entries.Length == 0)
+            return false;
+
+        await ProcessEntry(db, streamKey, entries[0], ct);
+        return true;
+    }
+
+    /// <summary>Réclame puis traite un message abandonné du stream donné. Retourne true si traité.</summary>
+    private async Task<bool> TryClaimAndProcess(IDatabase db, string streamKey, CancellationToken ct)
+    {
+        var entry = await ClaimAbandonedEntry(db, streamKey);
+        if (entry is not { } e)
+            return false;
+
+        await ProcessEntry(db, streamKey, e, ct);
+        return true;
+    }
+
     /// <summary>
     /// Réclame un message pending d'un consumer mort (XAUTOCLAIM). Sans cela, un
     /// message non-ACKé après un crash resterait orphelin pour toujours : le nom de
     /// consumer contient un GUID régénéré à chaque démarrage, donc personne ne relit
     /// jamais le PEL du consumer disparu.
     /// </summary>
-    private async Task<StreamEntry?> ClaimAbandonedEntry(IDatabase db)
+    private async Task<StreamEntry?> ClaimAbandonedEntry(IDatabase db, string streamKey)
     {
         var result = await db.StreamAutoClaimAsync(
-            StreamKey, GroupName, _workerId,
+            streamKey, GroupName, _workerId,
             (long)AbandonedMessageIdleTime.TotalMilliseconds,
             "0-0", count: 1);
 
@@ -105,8 +126,8 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
             return null;
 
         var entry = result.ClaimedEntries[0];
-        logger.LogWarning("[{WorkerId}] Claimed abandoned message {EntryId} from a dead consumer",
-            _workerId, entry.Id);
+        logger.LogWarning("[{WorkerId}] Claimed abandoned message {EntryId} from a dead consumer on '{StreamKey}'",
+            _workerId, entry.Id, streamKey);
         return entry;
     }
 
@@ -124,7 +145,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         }
     }
 
-    private async Task ProcessEntry(IDatabase db, StreamEntry entry, CancellationToken ct)
+    private async Task ProcessEntry(IDatabase db, string streamKey, StreamEntry entry, CancellationToken ct)
     {
         var contentHash = entry["contentHash"].ToString();
         var payload = entry["payload"];
@@ -132,14 +153,14 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         // Entrée vide (ex. supprimée par le trim du stream) : ACK et on passe.
         if (payload.IsNullOrEmpty)
         {
-            await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
+            await db.StreamAcknowledgeAsync(streamKey, GroupName, entry.Id);
             return;
         }
 
         var request = JsonSerializer.Deserialize<SolveRequest>(payload.ToString(), RummiJsonOptions.Default);
         if (request is null)
         {
-            await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
+            await db.StreamAcknowledgeAsync(streamKey, GroupName, entry.Id);
             return;
         }
 
@@ -158,7 +179,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         await subscriber.PublishAsync(RedisChannel.Literal(RedisKeys.SolveDoneChannel(contentHash)), "done");
 
         // 3. ACK le message dans le stream
-        await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
+        await db.StreamAcknowledgeAsync(streamKey, GroupName, entry.Id);
 
         // 4. Libère le verrou de déduplication
         await db.KeyDeleteAsync(RedisKeys.SolveLock(contentHash));

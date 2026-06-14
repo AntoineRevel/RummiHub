@@ -240,4 +240,41 @@ public class GameEngineTests
         engine.IsGameOver.Should().BeTrue();
         engine.WinnerName.Should().Be(player.Name);
     }
+
+    // ========== SOLVE REQUEST PRIORITY ==========
+
+    [Fact]
+    public void BuildValidateRequest_IsPrioritized()
+    {
+        var engine = CreateEngine();
+        var selected = new List<Tile> { new(5, TileColor.Red), new(6, TileColor.Red) };
+
+        var request = engine.BuildValidateRequest(selected);
+
+        request.Priority.Should().BeTrue();
+        request.Hand.Should().BeEquivalentTo(selected);
+    }
+
+    [Fact]
+    public void BuildSolveRequest_IsNotPrioritized()
+    {
+        var engine = CreateEngine();
+
+        var request = engine.BuildSolveRequest();
+
+        request.Priority.Should().BeFalse();
+        request.Hand.Should().BeEquivalentTo(
+            engine.CurrentPlayer.Rack.GetAllTilesIncludingJokers());
+    }
+
+    [Fact]
+    public void BuildValidateRequest_PropagatesHasPlayed()
+    {
+        var engine = CreateEngine();
+        engine.CurrentPlayer.HasPlayed = true;
+
+        var request = engine.BuildValidateRequest([new Tile(1, TileColor.Blue)]);
+
+        request.HasPlayed.Should().BeTrue();
+    }
 }
