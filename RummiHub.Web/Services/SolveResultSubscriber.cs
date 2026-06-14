@@ -12,6 +12,11 @@ namespace RummiHub.Web.Services;
 /// </summary>
 public sealed class SolveResultSubscriber : IDisposable
 {
+    // Garde-fou : Pub/Sub Redis est fire-and-forget. Une notification perdue
+    // (connexion coupée, worker mort) ne doit pas suspendre la partie indéfiniment.
+    private static readonly TimeSpan ResultTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan CachePollInterval = TimeSpan.FromSeconds(5);
+
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<SolveResultSubscriber> _logger;
     private readonly ConcurrentDictionary<string, List<TaskCompletionSource<SolveResponse>>> _waiters = new();
@@ -25,17 +30,13 @@ public sealed class SolveResultSubscriber : IDisposable
     /// <summary>
     /// Waits for a solve result identified by its contentHash.
     /// Subscribes to Pub/Sub channel, then checks cache (race condition safety).
+    /// The cache is then re-checked periodically as a fallback for lost Pub/Sub
+    /// notifications, and the wait is capped by <see cref="ResultTimeout"/>.
     /// </summary>
+    /// <exception cref="TimeoutException">No result within <see cref="ResultTimeout"/>.</exception>
     public async Task<SolveResponse> WaitForResult(string contentHash, CancellationToken ct)
     {
         var tcs = new TaskCompletionSource<SolveResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        ct.Register(() =>
-        {
-            tcs.TrySetCanceled();
-            if (_waiters.TryGetValue(contentHash, out var waitList))
-                lock (waitList) { waitList.Remove(tcs); }
-        }, useSynchronizationContext: false);
 
         _waiters.AddOrUpdate(
             contentHash,
@@ -51,34 +52,79 @@ public sealed class SolveResultSubscriber : IDisposable
             RedisChannel.Literal($"solve:done:{contentHash}"),
             (_, _) => _ = OnResultReady(contentHash));
 
-        // Subscribe-then-check: verify cache immediately after subscribing
-        var db = _redis.GetDatabase();
-        var existing = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
-        if (!existing.IsNull)
+        try
         {
-            var result = JsonSerializer.Deserialize<SolveResponse>(existing.ToString()!, RummiJsonOptions.Default);
-            if (result is not null)
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(ResultTimeout);
+
+            // Subscribe-then-check, puis re-vérification périodique du cache :
+            // couvre la notification Pub/Sub perdue en plus de la race initiale.
+            while (true)
             {
-                tcs.TrySetResult(result);
+                var cached = await TryReadResult(contentHash);
+                if (cached is not null)
+                    return cached;
+
+                var delay = Task.Delay(CachePollInterval, timeout.Token);
+                var completed = await Task.WhenAny(tcs.Task, delay);
+                if (completed == tcs.Task)
+                    return await tcs.Task;
+
+                await delay; // propage l'annulation (ct appelant ou timeout)
             }
         }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"No solve result received for {contentHash} within {ResultTimeout.TotalSeconds:F0}s.");
+        }
+        finally
+        {
+            await RemoveWaiter(contentHash, tcs);
+        }
+    }
 
-        return await tcs.Task;
+    private async Task<SolveResponse?> TryReadResult(string contentHash)
+    {
+        var db = _redis.GetDatabase();
+        var json = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
+        if (json.IsNull) return null;
+
+        return JsonSerializer.Deserialize<SolveResponse>(json.ToString()!, RummiJsonOptions.Default);
+    }
+
+    /// <summary>
+    /// Detaches a waiter once it has completed (result, cancellation or timeout),
+    /// and unsubscribes from the Pub/Sub channel when it was the last one —
+    /// including on the cache-hit path, which previously leaked the subscription.
+    /// </summary>
+    private async Task RemoveWaiter(string contentHash, TaskCompletionSource<SolveResponse> tcs)
+    {
+        if (!_waiters.TryGetValue(contentHash, out var list))
+            return; // OnResultReady already removed the entry and unsubscribed
+
+        bool empty;
+        lock (list)
+        {
+            list.Remove(tcs);
+            empty = list.Count == 0;
+        }
+
+        if (empty && _waiters.TryRemove(new KeyValuePair<string, List<TaskCompletionSource<SolveResponse>>>(contentHash, list)))
+        {
+            await _redis.GetSubscriber()
+                .UnsubscribeAsync(RedisChannel.Literal($"solve:done:{contentHash}"));
+        }
     }
 
     private async Task OnResultReady(string contentHash)
     {
-        var db = _redis.GetDatabase();
-        var json = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
-
-        if (json.IsNull)
+        var result = await TryReadResult(contentHash);
+        if (result is null)
         {
             _logger.LogWarning("Pub/Sub notification for {ContentHash} but no result in cache", contentHash);
             return;
         }
-
-        var result = JsonSerializer.Deserialize<SolveResponse>(json.ToString()!, RummiJsonOptions.Default);
-        if (result is null) return;
 
         if (_waiters.TryRemove(contentHash, out var list))
         {
