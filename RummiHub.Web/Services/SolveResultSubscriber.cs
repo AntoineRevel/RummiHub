@@ -49,7 +49,7 @@ public sealed class SolveResultSubscriber : IDisposable
 
         var subscriber = _redis.GetSubscriber();
         await subscriber.SubscribeAsync(
-            RedisChannel.Literal($"solve:done:{contentHash}"),
+            RedisChannel.Literal(RedisKeys.SolveDoneChannel(contentHash)),
             (_, _) => _ = OnResultReady(contentHash));
 
         try
@@ -87,7 +87,7 @@ public sealed class SolveResultSubscriber : IDisposable
     private async Task<SolveResponse?> TryReadResult(string contentHash)
     {
         var db = _redis.GetDatabase();
-        var json = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
+        var json = await db.ExecuteAsync("JSON.GET", RedisKeys.SolveResult(contentHash));
         if (json.IsNull) return null;
 
         return JsonSerializer.Deserialize<SolveResponse>(json.ToString()!, RummiJsonOptions.Default);
@@ -113,7 +113,7 @@ public sealed class SolveResultSubscriber : IDisposable
         if (empty && _waiters.TryRemove(new KeyValuePair<string, List<TaskCompletionSource<SolveResponse>>>(contentHash, list)))
         {
             await _redis.GetSubscriber()
-                .UnsubscribeAsync(RedisChannel.Literal($"solve:done:{contentHash}"));
+                .UnsubscribeAsync(RedisChannel.Literal(RedisKeys.SolveDoneChannel(contentHash)));
         }
     }
 
@@ -136,7 +136,7 @@ public sealed class SolveResultSubscriber : IDisposable
         }
 
         var subscriber = _redis.GetSubscriber();
-        await subscriber.UnsubscribeAsync(RedisChannel.Literal($"solve:done:{contentHash}"));
+        await subscriber.UnsubscribeAsync(RedisChannel.Literal(RedisKeys.SolveDoneChannel(contentHash)));
 
         _logger.LogDebug("Result dispatched for {ContentHash}", contentHash);
     }
