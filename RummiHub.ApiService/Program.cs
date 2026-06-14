@@ -40,13 +40,13 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
     var contentHash = ContentHasher.ComputeHash(request.Hand, request.Board, request.HasPlayed);
 
     // 1. Check if result is already cached
-    var cached = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
+    var cached = await db.ExecuteAsync("JSON.GET", RedisKeys.SolveResult(contentHash));
 
     if (cached.IsNull)
     {
         // 2. Try to acquire the deduplication lock (SET NX, TTL 10 min)
         var lockAcquired = await db.StringSetAsync(
-            $"solve-lock:{contentHash}",
+            RedisKeys.SolveLock(contentHash),
             request.RequestId,
             TimeSpan.FromMinutes(10),
             When.NotExists);
@@ -55,14 +55,14 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
         {
             // 3. Enqueue into Redis Stream
             var payload = JsonSerializer.Serialize(request, RummiJsonOptions.Default);
-            await db.StreamAddAsync("solve-stream", [
+            await db.StreamAddAsync(RedisKeys.SolveStream, [
                 new NameValueEntry("contentHash", contentHash),
                 new NameValueEntry("payload", payload)
             ], maxLength: 1000, useApproximateMaxLength: true);
 
             // 4. Wake up waiting workers
             var subscriber = redis.GetSubscriber();
-            await subscriber.PublishAsync(RedisChannel.Literal(RedisChannels.SolveEnqueue), "new");
+            await subscriber.PublishAsync(RedisChannel.Literal(RedisKeys.SolveEnqueueChannel), "new");
         }
     }
 
@@ -78,7 +78,7 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
 app.MapGet("/solve/{contentHash}", async (string contentHash, IConnectionMultiplexer redis) =>
 {
     var db = redis.GetDatabase();
-    var json = await db.ExecuteAsync("JSON.GET", $"solve-result:{contentHash}");
+    var json = await db.ExecuteAsync("JSON.GET", RedisKeys.SolveResult(contentHash));
 
     if (json.IsNull)
         return Results.Ok(new { ContentHash = contentHash, Status = "pending" });

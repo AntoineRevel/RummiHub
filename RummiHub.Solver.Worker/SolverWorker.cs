@@ -11,9 +11,9 @@ namespace RummiHub.Solver.Worker;
 
 public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> logger) : BackgroundService
 {
-    private const string StreamKey = "solve-stream";
-    private const string GroupName = "solvers";
-    private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal(RedisChannels.SolveEnqueue);
+    private const string StreamKey = RedisKeys.SolveStream;
+    private const string GroupName = RedisKeys.SolversGroup;
+    private static readonly RedisChannel EnqueueChannel = RedisChannel.Literal(RedisKeys.SolveEnqueueChannel);
 
     // Un message pending dont le consumer ne donne plus signe de vie depuis ce délai
     // est considéré abandonné (worker crashé) et peut être réclamé via XAUTOCLAIM.
@@ -150,18 +150,18 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
         var resultJson = JsonSerializer.Serialize(response, RummiJsonOptions.Default);
 
         // 1. Stocke le résultat en JSON natif (1h TTL)
-        await db.ExecuteAsync("JSON.SET", $"solve-result:{contentHash}", "$", resultJson);
-        await db.KeyExpireAsync($"solve-result:{contentHash}", TimeSpan.FromHours(1));
+        await db.ExecuteAsync("JSON.SET", RedisKeys.SolveResult(contentHash), "$", resultJson);
+        await db.KeyExpireAsync(RedisKeys.SolveResult(contentHash), TimeSpan.FromHours(1));
 
         // 2. Publie la notification pour les subscribers (Blazor Server)
         var subscriber = redis.GetSubscriber();
-        await subscriber.PublishAsync(RedisChannel.Literal($"solve:done:{contentHash}"), "done");
+        await subscriber.PublishAsync(RedisChannel.Literal(RedisKeys.SolveDoneChannel(contentHash)), "done");
 
         // 3. ACK le message dans le stream
         await db.StreamAcknowledgeAsync(StreamKey, GroupName, entry.Id);
 
         // 4. Libère le verrou de déduplication
-        await db.KeyDeleteAsync($"solve-lock:{contentHash}");
+        await db.KeyDeleteAsync(RedisKeys.SolveLock(contentHash));
 
         logger.LogInformation("[{WorkerId}] {ContentHash} done. Found={Found}",
             _workerId, contentHash, response.Found);
