@@ -13,7 +13,14 @@ public static class RedisKeys
     /// <summary>Redis Stream carrying solve requests, read by the <see cref="SolversGroup"/> group.</summary>
     public const string SolveStream = "solve-stream";
 
-    /// <summary>Consumer group name reading <see cref="SolveStream"/>.</summary>
+    /// <summary>
+    /// High-priority Redis Stream drained before <see cref="SolveStream"/>. Carries
+    /// move-validation requests so they jump ahead of background optimal-play hints.
+    /// Read by the same <see cref="SolversGroup"/> group.
+    /// </summary>
+    public const string SolvePriorityStream = "solve-stream-priority";
+
+    /// <summary>Consumer group name reading <see cref="SolveStream"/> and <see cref="SolvePriorityStream"/>.</summary>
     public const string SolversGroup = "solvers";
 
     /// <summary>RedisJSON key holding the cached <c>SolveResponse</c> for a content hash.</summary>

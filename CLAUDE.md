@@ -41,9 +41,9 @@ RummiHub.AppHost (Aspire orchestrator)
 
 The solver is fully asynchronous and distributed across services:
 
-1. **Web → API** (`GameEngine.SubmitAndWaitForResult`): POST `/solve` with `SolveRequest` (hand tiles, board, `hasPlayed` flag).
-2. **API** (`Program.cs /solve`): Computes a 16-char `contentHash` (SHA-256 of canonical JSON), checks Redis JSON cache (`solve-result:{hash}`), acquires a dedup lock (`solve-lock:{hash}` SET NX), enqueues into `solve-stream` (Redis Stream), then publishes to `solve:enqueue` Pub/Sub to wake workers. Returns **202** with the `contentHash`.
-3. **Worker** (`SolverWorker`): Consumer group `"solvers"` reads one entry at a time. Recovers pending (unACKed) messages on startup. Runs `GraphStrategy.GetSolverResult`, writes result as RedisJSON to `solve-result:{hash}` with 1h TTL, publishes to `solve:done:{hash}`, ACKs the stream entry, and removes the dedup lock.
+1. **Web → API** (`GameEngine.SubmitAndWaitForResult`): POST `/solve` with `SolveRequest` (hand tiles, board, `hasPlayed` flag, `Priority` flag).
+2. **API** (`Program.cs /solve`): Computes a 16-char `contentHash` (SHA-256 of canonical JSON — `Priority` is **not** part of the hash), checks Redis JSON cache (`solve-result:{hash}`), acquires a dedup lock (`solve-lock:{hash}` SET NX), enqueues into `solve-stream` (or `solve-stream-priority` when `Priority` is set), then publishes to `solve:enqueue` Pub/Sub to wake workers. Returns **202** with the `contentHash`.
+3. **Worker** (`SolverWorker`): Consumer group `"solvers"` reads one entry at a time, **draining `solve-stream-priority` before `solve-stream`** so move validations jump ahead of slow full-rack hint solves. Recovers pending (unACKed) messages from both streams on startup. Runs `GraphStrategy.GetSolverResult`, writes result as RedisJSON to `solve-result:{hash}` with 1h TTL, publishes to `solve:done:{hash}`, ACKs the stream entry, and removes the dedup lock.
 4. **Web** (`SolveResultSubscriber`): Subscribes to `solve:done:{hash}` Pub/Sub *before* checking cache ("subscribe-then-check" pattern to eliminate race conditions). Resolves a `TaskCompletionSource<SolveResponse>` when the notification arrives.
 
 ### Domain Model (RummiHub.Core)
@@ -67,8 +67,8 @@ The solver is fully asynchronous and distributed across services:
 - **`GameHub`** (SignalR) — the single entry point for all game actions. All event names are string constants in `HubEvents`.
 - **`Game.ActionLock`** (`SemaphoreSlim(1,1)`) — serializes all mutating hub calls per game instance. Always `await game.ActionLock.WaitAsync()` before mutating game state.
 - **`GameManager`** — singleton `ConcurrentDictionary<string, Game>` holding all active games. Players disconnecting from started games are **not removed** (reconnection is supported via `UpdatePlayerConnection`).
-- **`GameEngine`** — per-game engine (server-side only, lives inside `Game.Engine`). Manages tile pool, player racks, board state, and turn order. Delegates solve calls to the API via `SolveForCurrentPlayer` / `ValidateHumanPlay`.
-- **Optimal play hint**: At the start of each turn, `StartOptimalSolveForCurrentPlayerIfNeeded` fires a background solve for the current player's full rack. After the player acts (draw or play), the hub sends `HubEvents.OptimalPlay` privately to that player with what the solver would have played.
+- **`GameEngine`** — per-game engine (server-side only, lives inside `Game.Engine`). Manages tile pool, player racks, board state, and turn order. Delegates solve calls to the API via `SolveForCurrentPlayer` (full rack, low priority) / `ValidateHumanPlay` (selected tiles, `Priority = true`).
+- **Optimal play hint**: At the start of each turn, `StartOptimalSolveForCurrentPlayerIfNeeded` fires a background solve for the current player's full rack. After the player acts (draw or play), the hub sends `HubEvents.OptimalPlay` privately to that player with what the solver would have played. The actual move validation goes through the priority stream, so it never queues behind the slow hint solve.
 - **`SolveResultSubscriber`** — singleton that manages Redis Pub/Sub subscriptions for pending solve results. Multiple waiters for the same hash are stored in a `List<TaskCompletionSource>`.
 - **Blazor pages**: `GameSetup` (create/configure game) → `Lobby` (wait for players, host starts) → `GamePage` (active game). `GamePage` uses a code-behind (`GamePage.razor.cs`) and connects to `GameHub` via its own `HubConnection`.
 

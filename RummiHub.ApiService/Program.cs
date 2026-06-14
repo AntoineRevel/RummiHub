@@ -53,9 +53,11 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
 
         if (lockAcquired)
         {
-            // 3. Enqueue into Redis Stream
+            // 3. Enqueue into the Redis Stream — priority requests (move validation)
+            //    go to a dedicated stream the workers drain first.
+            var streamKey = request.Priority ? RedisKeys.SolvePriorityStream : RedisKeys.SolveStream;
             var payload = JsonSerializer.Serialize(request, RummiJsonOptions.Default);
-            await db.StreamAddAsync(RedisKeys.SolveStream, [
+            await db.StreamAddAsync(streamKey, [
                 new NameValueEntry("contentHash", contentHash),
                 new NameValueEntry("payload", payload)
             ], maxLength: 1000, useApproximateMaxLength: true);

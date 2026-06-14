@@ -50,16 +50,24 @@ public sealed class GameEngine
         SolveResultSubscriber resultSubscriber,
         CancellationToken ct)
     {
+        return await SubmitAndWaitForResult(httpClient, resultSubscriber, BuildSolveRequest(), ct);
+    }
+
+    /// <summary>
+    /// Builds the solve request for the current player's full rack (the background
+    /// optimal-play hint). Not prioritized — it must not jump ahead of move validations.
+    /// </summary>
+    public SolveRequest BuildSolveRequest()
+    {
         var player = CurrentPlayer;
-        var request = new SolveRequest
+        return new SolveRequest
         {
             RequestId = $"game-{Id.ToString()[..8]}-t{Turn}-p{PlayerIndex}",
             Hand = player.Rack.GetAllTilesIncludingJokers().ToList(),
             Board = Board,
-            HasPlayed = player.HasPlayed
+            HasPlayed = player.HasPlayed,
+            Priority = false
         };
-
-        return await SubmitAndWaitForResult(httpClient, resultSubscriber, request, ct);
     }
 
     /// <summary>
@@ -72,15 +80,25 @@ public sealed class GameEngine
         SolveResultSubscriber resultSubscriber,
         CancellationToken ct)
     {
-        var request = new SolveRequest
+        return await SubmitAndWaitForResult(
+            httpClient, resultSubscriber, BuildValidateRequest(selectedTiles), ct);
+    }
+
+    /// <summary>
+    /// Builds the solve request validating a human's actual move (only the selected tiles).
+    /// Marked <c>Priority = true</c> so it is routed to the priority stream and never queues
+    /// behind the slow full-rack hint solve.
+    /// </summary>
+    public SolveRequest BuildValidateRequest(List<Tile> selectedTiles)
+    {
+        return new SolveRequest
         {
             RequestId = $"validate-{Guid.NewGuid().ToString()[..8]}",
             Hand = selectedTiles,
             Board = Board,
-            HasPlayed = CurrentPlayer.HasPlayed
+            HasPlayed = CurrentPlayer.HasPlayed,
+            Priority = true
         };
-
-        return await SubmitAndWaitForResult(httpClient, resultSubscriber, request, ct);
     }
 
     /// <summary>
