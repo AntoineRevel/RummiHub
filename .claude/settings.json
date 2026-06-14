@@ -16,7 +16,23 @@
       "mcp__aspire__search_docs",
       "mcp__aspire__refresh_tools",
       "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Skill(update-config:*)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet test *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --base master --head priority-solve-validation --title 'Prioritize move validation in the solve pipeline' --body ' *)",
+      "Bash(echo \"gh-exit:$?\")",
+      "Bash(env)",
+      "Bash(apt-cache policy *)",
+      "Bash(python3 -c \"import sys; print\\(sys.path[:3]\\)\")",
+      "Bash(python3 -I -c \"import json; print\\('json ok', json.__file__\\)\")",
+      "Bash(jq --version)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }
