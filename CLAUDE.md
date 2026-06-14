@@ -43,7 +43,7 @@ The solver is fully asynchronous and distributed across services:
 
 1. **Web → API** (`GameEngine.SubmitAndWaitForResult`): POST `/solve` with `SolveRequest` (hand tiles, board, `hasPlayed` flag, `Priority` flag).
 2. **API** (`Program.cs /solve`): Computes a 16-char `contentHash` (SHA-256 of canonical JSON — `Priority` is **not** part of the hash), checks Redis JSON cache (`solve-result:{hash}`), acquires a dedup lock (`solve-lock:{hash}` SET NX), enqueues into `solve-stream` (or `solve-stream-priority` when `Priority` is set), then publishes to `solve:enqueue` Pub/Sub to wake workers. Returns **202** with the `contentHash`.
-3. **Worker** (`SolverWorker`): Consumer group `"solvers"` reads one entry at a time, **draining `solve-stream-priority` before `solve-stream`** so move validations jump ahead of slow full-rack hint solves. Recovers pending (unACKed) messages from both streams on startup. Runs `GraphStrategy.GetSolverResult`, writes result as RedisJSON to `solve-result:{hash}` with 1h TTL, publishes to `solve:done:{hash}`, ACKs the stream entry, and removes the dedup lock.
+3. **Worker** (`SolverWorker`): Consumer group `"solvers"` reads one entry at a time, **draining `solve-stream-priority` before `solve-stream`** so move validations jump ahead of slow full-rack hint solves. Recovers pending (unACKed) messages from both streams on startup. Runs `DynamicStrategy.GetSolverResult`, writes result as RedisJSON to `solve-result:{hash}` with 1h TTL, publishes to `solve:done:{hash}`, ACKs the stream entry, and removes the dedup lock.
 4. **Web** (`SolveResultSubscriber`): Subscribes to `solve:done:{hash}` Pub/Sub *before* checking cache ("subscribe-then-check" pattern to eliminate race conditions). Resolves a `TaskCompletionSource<SolveResponse>` when the notification arrives.
 
 ### Domain Model (RummiHub.Core)
@@ -58,7 +58,9 @@ The solver is fully asynchronous and distributed across services:
 
 - **`IStrategy`** wraps one or more `ISolver` implementations and returns `SolverResult`.
 - **`ISolver.SearchSolution()`** is synchronous and returns a `SolverResult`. `ISolver.MinScore = 30` (first-play threshold).
-- **`GraphStrategy`** (active default): uses `GraphSolver` when `hasPlayed` is true, `GraphFirstSolver` for first play. `GraphSolver` does a parallel BFS using `RummiNode` / `ConcurrentBag`, expanding the tree level by level, then picks the leaf node with the highest `(PlayerTilePlayed, Score)`.
+- **`DynamicStrategy`** (active default): runs the polynomial-time `DynamicSolver`, **validates** its result with `SolutionValidator`, and transparently **falls back to `GraphStrategy`** if validation ever fails. This is the fast, exact path.
+- **`DynamicSolver`** — exact solver based on the Den Hertog & Hulshof (2006) dynamic-programming formulation. Sweeps values 1→13 once, carrying a bounded per-color run state (open runs of length 1/2/≥3) plus a joker budget; groups are resolved locally per value. Because only two copies of each tile exist, the state space is bounded by a constant, making the search **polynomial** instead of exponential. `Create(board, rack)` (during game, forces all board tiles, maximizes rack tiles then score) and `CreateFirst(rack)` (first play, maximizes score, gated at 30). Measured ~300× faster than `GraphSolver` on heavy tables while returning the identical optimum.
+- **`GraphStrategy`** (fallback / reference): uses `GraphSolver` when `hasPlayed` is true, `GraphFirstSolver` for first play. `GraphSolver` does a parallel BFS using `RummiNode` / `ConcurrentBag`, expanding the tree level by level, then picks the leaf node with the highest `(PlayerTilePlayed, Score)`. Note: its `GetRuns` can let a joker represent a value above 13 (an over-scoring bug `DynamicSolver` does not have).
 - **`ParallelStrategy`** (alternative): races `IncrementalComplexSolver` vs `ParallelCombinationsSolver`, cancels the slower one.
 - **`BaseSolver`** — abstract base with `GetRuns()` and `GetGroups()` generators and tile marking/unmarking logic. Tiles must be **sorted** before being passed in. The solver input tile array merges board tiles and player tiles, tracked by an `isPlayerTile[]` boolean array.
 
@@ -80,7 +82,7 @@ The solver is fully asynchronous and distributed across services:
 
 1. Implement `IStrategy` in `RummiHub.Solver.Worker/Strategies/`.
 2. Optionally implement `ISolver` in `RummiHub.Solver.Worker/Solver/` with a static `Create(Set board, Set rack)` factory.
-3. Wire it in `SolverWorker.Solve()` by replacing `new GraphStrategy()`.
+3. Wire it in `SolverWorker.Solve()` by replacing `new DynamicStrategy()`.
 
 ### Debugging with Aspire
 
