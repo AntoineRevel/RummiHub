@@ -1,0 +1,253 @@
+@page "/bench"
+@rendermode InteractiveServer
+@using RummiHub.SolverBench.Model
+@using RummiHub.SolverBench.Solvers
+
+<PageTitle>Solver Bench</PageTitle>
+
+<div class="bench">
+    <header>
+        <h1>Solver performance comparator</h1>
+        <p>
+            Exact solvers return the same optimal move, so the criterion here is <strong>performance</strong>.
+            Every captured position is solved by all selected solvers; time / memory / CPU are measured and each
+            result is checked for legality (independently) and against the <em>DynamicSolver</em> optimum.
+            Measurements are indicative (sequential, warmed up, median/p95) — not BenchmarkDotNet.
+        </p>
+    </header>
+
+    <section class="panel">
+        <h2>1. Corpus</h2>
+        <div class="row">
+            <label><input type="radio" name="src" checked="@(_source == SourceKind.Trace)"
+                          @onchange="@(() => _source = SourceKind.Trace)" /> Seeded trace</label>
+            <label><input type="radio" name="src" checked="@(_source == SourceKind.Bank)"
+                          @onchange="@(() => _source = SourceKind.Bank)" /> Move bank (@_bankEntries.Count)</label>
+        </div>
+        @if (_source == SourceKind.Trace)
+        {
+            <div class="grid">
+                <label>Seed <input type="number" @bind="_seed" /></label>
+                <label>Games <input type="number" @bind="_games" min="1" /></label>
+                <label>Max positions <input type="number" @bind="_maxPositions" min="1" /></label>
+                <label>Players <input type="number" @bind="_players" min="2" max="4" /></label>
+            </div>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>2. Measurement</h2>
+        <div class="grid">
+            <label>Repetitions <input type="number" @bind="_reps" min="1" /></label>
+            <label>Warmup <input type="number" @bind="_warmup" min="0" /></label>
+            <label>Timeout (ms) <input type="number" @bind="_timeoutMs" min="1" /></label>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>3. Solvers</h2>
+        <div class="solvers">
+            <div>
+                <h3>First play</h3>
+                @foreach (var s in SolverRegistry.FirstPlay)
+                {
+                    <label class="solver">
+                        <input type="checkbox" checked="@_firstSelected[s.Name]"
+                               @onchange="e => _firstSelected[s.Name] = (bool)e.Value!" />
+                        @s.Name @(s.IsBaseline ? "★" : "")
+                    </label>
+                }
+            </div>
+            <div>
+                <h3>During game</h3>
+                @foreach (var s in SolverRegistry.DuringGame)
+                {
+                    <label class="solver">
+                        <input type="checkbox" checked="@_duringSelected[s.Name]"
+                               @onchange="e => _duringSelected[s.Name] = (bool)e.Value!" />
+                        @s.Name @(s.IsBaseline ? "★" : "")
+                    </label>
+                }
+            </div>
+        </div>
+        <button class="run" @onclick="RunComparison" disabled="@_running">
+            @(_running ? "Running…" : "Run comparison")
+        </button>
+    </section>
+
+    @if (_error is not null)
+    {
+        <div class="msg error">@_error</div>
+    }
+    @if (_info is not null)
+    {
+        <div class="msg info">@_info</div>
+    }
+
+    @if (_result is not null)
+    {
+        <section class="panel">
+            <h2>Summary (★ = baseline · ranked fastest first)</h2>
+            <p class="meta">
+                @_result.Source · illegal @_result.IllegalCount · divergences vs DP @_result.DivergenceCount
+                · timeouts @_result.TimeoutCount
+            </p>
+            <table class="grid-table">
+                <thead>
+                <tr>
+                    <th>Solver</th><th>Phase</th><th>Pos</th><th>Found</th><th>Median ms</th><th>p95 ms</th>
+                    <th>Alloc/solve</th><th>GC 0/1/2</th><th>CPU/wall</th><th>Illegal</th><th>Diverge</th><th>Timeout</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var s in _result.Summaries)
+                {
+                    <tr>
+                        <td>@(s.IsBaseline ? "★ " : "")@s.SolverName</td>
+                        <td>@s.Phase</td>
+                        <td>@s.Positions</td>
+                        <td>@s.Found</td>
+                        <td>@Ms(s.TimeMsMedian)</td>
+                        <td>@Ms(s.TimeMsP95)</td>
+                        <td>@Bytes(s.AllocBytesMean)</td>
+                        <td>@s.Gc0/@s.Gc1/@s.Gc2</td>
+                        <td>@Ratio(s.CpuRatioMean)</td>
+                        <td class="@(s.Illegal > 0 ? "bad" : "")">@s.Illegal</td>
+                        <td class="@(s.Divergences > 0 ? "warn" : "")">@s.Divergences</td>
+                        <td class="@(s.Timeouts > 0 ? "warn" : "")">@s.Timeouts</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+
+        <section class="panel">
+            <h2>Detail (click a header to sort)</h2>
+            <p class="legend">
+                <span class="swatch row-illegal"></span> illegal
+                <span class="swatch row-diverge"></span> diverges from DP
+                <span class="swatch row-nomove"></span> no move
+                <span class="swatch row-timeout"></span> timeout
+            </p>
+            <table class="grid-table sortable">
+                <thead>
+                <tr>
+                    <th @onclick="() => SortBy(SortColumn.Solver)">Solver</th>
+                    <th>Position</th>
+                    <th @onclick="() => SortBy(SortColumn.Found)">Found</th>
+                    <th @onclick="() => SortBy(SortColumn.Tiles)">Tiles</th>
+                    <th @onclick="() => SortBy(SortColumn.Score)">Score</th>
+                    <th>Legal</th>
+                    <th @onclick="() => SortBy(SortColumn.Median)">Median ms</th>
+                    <th @onclick="() => SortBy(SortColumn.P95)">p95 ms</th>
+                    <th @onclick="() => SortBy(SortColumn.Alloc)">Alloc/solve</th>
+                    <th>GC 0/1/2</th>
+                    <th @onclick="() => SortBy(SortColumn.Cpu)">CPU ms</th>
+                    <th @onclick="() => SortBy(SortColumn.CpuRatio)">CPU/wall</th>
+                    <th @onclick="() => SortBy(SortColumn.Optimum)">=opt?</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var r in SortedRows())
+                {
+                    <tr class="@RowClass(r)">
+                        <td>@(r.IsBaseline ? "★ " : "")@r.SolverName</td>
+                        <td title="@r.OptimumNote">@r.PositionId[..8]</td>
+                        <td>@(r.TimedOut ? "—" : r.Found ? "✓" : "✗")</td>
+                        <td>@(r.Found ? r.RackTilesPlayed.ToString() : "")</td>
+                        <td>@(r.Found ? r.Score.ToString() : "")</td>
+                        <td>@(r.TimedOut || !r.Found ? "—" : r.Legal ? "✓" : "✗")</td>
+                        <td>@(r.TimedOut ? "—" : Ms(r.TimeMsMedian))</td>
+                        <td>@(r.TimedOut ? "—" : Ms(r.TimeMsP95))</td>
+                        <td>@(r.TimedOut ? "—" : Bytes(r.AllocBytesPerSolve))</td>
+                        <td>@r.Gc0/@r.Gc1/@r.Gc2</td>
+                        <td>@(r.TimedOut ? "—" : Ms(r.CpuMsTotal))</td>
+                        <td>@(r.TimedOut ? "—" : Ratio(r.CpuRatio))</td>
+                        <td>@(r.TimedOut ? "TIMEOUT" : r.MatchesOptimum ? "✓" : "✗")</td>
+                        <td><button class="link" @onclick="() => AddFromCorpus(r.PositionId)">+bank</button></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+            <button class="secondary" @onclick="AutoBank">Auto-bank interesting positions</button>
+        </section>
+    }
+
+    <section class="panel">
+        <h2>Move bank (@_bankEntries.Count)</h2>
+        <div class="manual">
+            <input placeholder="Hand e.g. 10B,11B,12B,J" @bind="_manualHand" class="wide" />
+            <input placeholder="name" @bind="_manualName" />
+            <input placeholder="tags (comma)" @bind="_manualTags" />
+            <button class="secondary" @onclick="AddManualPosition">Add opening</button>
+        </div>
+        <small>Tiles: value + colour (B/R/M/K), joker = J. Manual entry adds an opening (first-play) position.</small>
+
+        @if (_bankEntries.Count > 0)
+        {
+            <table class="grid-table">
+                <thead>
+                <tr><th>Id</th><th>Name</th><th>Phase</th><th>Tags</th><th>Ref score</th><th>Hand</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var e in _bankEntries)
+                {
+                    <tr>
+                        <td>@e.Id[..8]</td>
+                        <td>@e.Name</td>
+                        <td>@e.Phase</td>
+                        <td>@string.Join(", ", e.Tags)</td>
+                        <td>@(e.ReferenceBest.Found ? e.ReferenceBest.Score.ToString() : "—")</td>
+                        <td>@e.Hand.Count tiles</td>
+                        <td>
+                            <button class="link" @onclick="() => ReplayBankEntry(e.Id)" disabled="@_running">replay</button>
+                            <button class="link danger" @onclick="() => DeleteBankEntry(e.Id)">delete</button>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+</div>
+
+<style>
+    .bench { max-width: 1200px; margin: 20px auto; padding: 0 16px; font-family: Arial, sans-serif; color: #222; }
+    .bench header p { color: #555; line-height: 1.5; }
+    .panel { background: #fff; border: 1px solid #e6e6e6; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px; }
+    .panel h2 { margin-top: 0; font-size: 1.2rem; }
+    .row { display: flex; gap: 24px; align-items: center; margin-bottom: 10px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 16px; }
+    .grid label, .row label { display: flex; flex-direction: column; font-size: 0.85rem; color: #444; gap: 4px; }
+    .grid input { width: 120px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
+    .solvers { display: flex; gap: 48px; flex-wrap: wrap; }
+    .solvers h3 { font-size: 0.95rem; margin: 0 0 8px; }
+    .solver { display: block; font-size: 0.9rem; margin-bottom: 4px; cursor: pointer; }
+    button.run { margin-top: 14px; padding: 10px 22px; background: #2196f3; color: #fff; border: none;
+                 border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    button.run:disabled { background: #9bc9ef; cursor: default; }
+    button.secondary { margin-top: 12px; padding: 8px 16px; background: #607d8b; color: #fff; border: none;
+                       border-radius: 6px; cursor: pointer; }
+    button.link { background: none; border: none; color: #1976d2; cursor: pointer; padding: 2px 4px; font-size: 0.85rem; }
+    button.link.danger { color: #c62828; }
+    .msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+    .msg.error { background: #fdecea; color: #b71c1c; }
+    .msg.info { background: #e8f5e9; color: #1b5e20; }
+    .meta, .legend { color: #666; font-size: 0.85rem; }
+    table.grid-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.85rem; }
+    table.grid-table th, table.grid-table td { border: 1px solid #eee; padding: 6px 8px; text-align: right; }
+    table.grid-table th:first-child, table.grid-table td:first-child,
+    table.grid-table th:nth-child(2), table.grid-table td:nth-child(2) { text-align: left; }
+    table.sortable th { cursor: pointer; user-select: none; background: #f7f7f7; }
+    .row-illegal { background: #fdecea; }
+    .row-diverge { background: #fff8e1; }
+    .row-nomove { color: #999; }
+    .row-timeout { background: #eceff1; color: #777; }
+    td.bad { color: #b71c1c; font-weight: bold; }
+    td.warn { color: #ef6c00; font-weight: bold; }
+    .swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid #ccc; margin: 0 4px 0 12px; vertical-align: middle; }
+    .manual { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+    .manual input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
+    .manual input.wide { min-width: 280px; }
+</style>
