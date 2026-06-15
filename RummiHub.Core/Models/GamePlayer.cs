@@ -10,4 +10,10 @@ public class GamePlayer
     public Set Rack { get; set; } = new();
     public bool HasPlayed { get; set; }
     public List<Tile> TilesToPlay { get; set; } = [];
+
+    /// <summary>
+    /// When true, this player is driven by the solver: the server plays the optimal
+    /// move automatically on their turn instead of waiting for a human action.
+    /// </summary>
+    public bool IsAuto { get; set; }
 }

@@ -78,6 +78,25 @@ public class GameEngineTests
     }
 
     [Fact]
+    public void Initialize_AssignsAutoFlagsPerSeat()
+    {
+        var engine = new GameEngine();
+
+        engine.Initialize(["Human", "Bot"], "seed", autoPlayers: [false, true]);
+
+        engine.Players[0].IsAuto.Should().BeFalse();
+        engine.Players[1].IsAuto.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Initialize_WithoutAutoFlags_DefaultsToNoAutoPlayers()
+    {
+        var engine = CreateEngine();
+
+        engine.Players.Should().OnlyContain(p => !p.IsAuto);
+    }
+
+    [Fact]
     public void AdvanceToNextPlayer_CyclesThroughPlayers()
     {
         var engine = CreateEngine(3);

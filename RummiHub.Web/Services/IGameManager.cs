@@ -5,6 +5,13 @@ namespace RummiHub.Web.Services;
 public interface IGameManager
 {
     Game CreateGame(string playerName, string connectionId, string? distributionSeed = null);
+
+    /// <summary>
+    /// Adds an AI (auto-play) seat to a not-yet-started game. Returns null if the game is
+    /// missing or already started.
+    /// </summary>
+    Player? AddAiPlayer(string gameId);
+
     IReadOnlyList<string> GetAvailableGameIds();
     Game? GetGame(string gameId);
     Player? AddPlayer(string gameId, string playerName, string connectionId);

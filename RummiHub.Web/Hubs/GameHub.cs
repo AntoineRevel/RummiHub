@@ -13,6 +13,15 @@ public partial class GameHub(
     IHubContext<GameHub> hubContext,
     ILogger<GameHub> logger) : Hub
 {
+    /// <summary>
+    /// Watchable pause before an AI seat plays its automatic move, so humans can
+    /// follow the action rather than seeing the board jump instantly.
+    /// </summary>
+    private static readonly TimeSpan AutoPlayDelay = TimeSpan.FromSeconds(1);
+
+    /// <summary>Maximum number of seats (human + AI) in a game.</summary>
+    private const int MaxPlayers = 4;
+
     // ========== LOBBY PHASE ==========
 
     public async Task GetAvailableGameIds()
@@ -85,6 +94,41 @@ public partial class GameHub(
         {
             LogHubError(ex, nameof(JoinGame), Context.ConnectionId);
             await Clients.Caller.SendAsync(HubEvents.Error, "An error occurred while joining the game.");
+        }
+    }
+
+    /// <summary>
+    /// Host adds an AI (auto-play) seat to the game while still in the lobby.
+    /// </summary>
+    public async Task AddAiPlayer(string gameId)
+    {
+        try
+        {
+            gameId = gameId?.Trim() ?? string.Empty;
+
+            var game = gameManager.GetGame(gameId);
+            if (game == null || game.HostConnectionId != Context.ConnectionId || game.IsStarted)
+                return;
+
+            if (game.PlayerCount >= MaxPlayers)
+            {
+                await Clients.Caller.SendAsync(HubEvents.Error, $"A game can have at most {MaxPlayers} players.");
+                return;
+            }
+
+            var player = gameManager.AddAiPlayer(gameId);
+            if (player == null)
+            {
+                await Clients.Caller.SendAsync(HubEvents.Error, "Could not add an AI player.");
+                return;
+            }
+
+            await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetPlayerNames());
+        }
+        catch (Exception ex)
+        {
+            LogHubError(ex, nameof(AddAiPlayer), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.Error, "An error occurred while adding an AI player.");
         }
     }
 
@@ -242,18 +286,8 @@ public partial class GameHub(
                     await SendOptimalPlayToCallerAsync(
                         game, turnAtAction, playerAtAction, Context.ConnectionAborted);
 
-                    // Advance turn
-                    game.Engine.AdvanceToNextPlayer();
-
-                    // Broadcast new game state to all (no highlight info — it's private)
-                    var state = BuildGameState(game);
-                    await Clients.Group(gameId).SendAsync(HubEvents.GameStateUpdated, state);
-
-                    // Send the next player their rack (in case they just connected and need it)
-                    await SendCurrentPlayerRack(game, gameId);
-
-                    // Kick off the next player's optimal solve in the background.
-                    StartOptimalSolveForCurrentPlayerIfNeeded(game);
+                    // Advance the turn, broadcast the new state, and arm the next solve.
+                    await AdvanceTurnAndNotifyAsync(game);
                 }
                 else
                 {
@@ -322,18 +356,8 @@ public partial class GameHub(
             await SendOptimalPlayToCallerAsync(
                 game, turnAtAction, playerAtAction, Context.ConnectionAborted);
 
-            // Advance turn
-            game.Engine.AdvanceToNextPlayer();
-
-            // Broadcast state to all
-            var state = BuildGameState(game);
-            await Clients.Group(gameId).SendAsync(HubEvents.GameStateUpdated, state);
-
-            // Send next player their rack
-            await SendCurrentPlayerRack(game, gameId);
-
-            // Kick off the next player's optimal solve in the background.
-            StartOptimalSolveForCurrentPlayerIfNeeded(game);
+            // Advance the turn, broadcast the new state, and arm the next solve.
+            await AdvanceTurnAndNotifyAsync(game);
         }
         catch (Exception ex)
         {
@@ -408,23 +432,38 @@ public partial class GameHub(
     }
 
     /// <summary>
-    /// Sends the current player their rack (useful after turn advancement).
+    /// Shared turn-completion tail used by every action (human play/draw and AI auto-play):
+    /// advances to the next player, broadcasts the new state, sends that player their rack,
+    /// and arms their optimal solve. Uses <c>hubContext</c> so it works both inside and
+    /// outside a hub invocation. Callers must hold <see cref="Game.ActionLock"/>.
     /// </summary>
-    private async Task SendCurrentPlayerRack(Game game, string gameId)
+    private async Task AdvanceTurnAndNotifyAsync(Game game)
+    {
+        game.Engine!.AdvanceToNextPlayer();
+
+        var state = BuildGameState(game);
+        await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
+
+        await SendCurrentPlayerRack(game);
+
+        StartOptimalSolveForCurrentPlayerIfNeeded(game);
+    }
+
+    /// <summary>
+    /// Sends the current player their rack. No-op for AI seats, which have no connection.
+    /// </summary>
+    private async Task SendCurrentPlayerRack(Game game)
     {
         var engine = game.Engine!;
         var currentPlayerIndex = engine.PlayerIndex;
         var lobbyPlayers = game.GetPlayers();
+        if (currentPlayerIndex >= lobbyPlayers.Count) return;
 
-        if (currentPlayerIndex < lobbyPlayers.Count)
-        {
-            var connectionId = lobbyPlayers[currentPlayerIndex].ConnectionId;
-            if (!string.IsNullOrEmpty(connectionId))
-            {
-                var rack = GetRackTiles(engine, currentPlayerIndex);
-                await Clients.Client(connectionId).SendAsync(HubEvents.RackUpdated, rack);
-            }
-        }
+        var connectionId = lobbyPlayers[currentPlayerIndex].ConnectionId;
+        if (string.IsNullOrEmpty(connectionId)) return;
+
+        var rack = GetRackTiles(engine, currentPlayerIndex);
+        await hubContext.Clients.Client(connectionId).SendAsync(HubEvents.RackUpdated, rack);
     }
 
     // ========== OPTIMAL-PLAY HINT ==========
@@ -489,6 +528,13 @@ public partial class GameHub(
         if (game.Engine is not { } engine) return;
         if (engine.IsGameOver || engine.Turn != turn || engine.PlayerIndex != playerIndex) return;
 
+        // AI seats play automatically; humans just get the "hint ready" indicator.
+        if (engine.CurrentPlayer.IsAuto)
+        {
+            await PerformAutoPlayAsync(game, turn, playerIndex, task, ct);
+            return;
+        }
+
         // Resolve the player's current connection (may have changed via reconnect).
         var lobbyPlayers = game.GetPlayers();
         if (playerIndex >= lobbyPlayers.Count) return;
@@ -502,6 +548,60 @@ public partial class GameHub(
         catch (Exception ex)
         {
             LogOptimalReadyNotifyFailed(ex, game.Id, turn, playerIndex);
+        }
+    }
+
+    /// <summary>
+    /// Plays the AI seat's optimal move automatically after a short, watchable delay:
+    /// applies the solved move (or draws when there's nothing to play), advances the turn,
+    /// broadcasts the new state, and re-arms the chain for the next player (which auto-plays
+    /// too if it is also an AI). Runs outside a hub invocation, so it uses <c>hubContext</c>.
+    /// </summary>
+    private async Task PerformAutoPlayAsync(
+        Game game, int turn, int playerIndex, Task<SolveResponse> task, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(AutoPlayDelay, ct);
+            await game.ActionLock.WaitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // turn was replaced/cancelled before we could act
+        }
+
+        try
+        {
+            // Re-validate under the lock: this solve must still be the current one for the
+            // same turn/player. The turn changing once we apply makes any stale task bail,
+            // which prevents a double move (e.g. after a reconnect relaunched the solve).
+            var pending = game.PendingOptimalSolve;
+            if (pending is null || !ReferenceEquals(pending.Task, task)) return;
+            if (game.Engine is not { } engine) return;
+            if (engine.IsGameOver || engine.Turn != turn || engine.PlayerIndex != playerIndex) return;
+            if (!engine.CurrentPlayer.IsAuto) return;
+
+            var result = task.IsCompletedSuccessfully ? task.Result : null;
+            var hasMove = result is { Found: true }
+                          && result.TilesToPlay.Count + result.JokersToPlay > 0;
+
+            if (hasMove)
+                engine.ApplySolveResult(result!);
+            else if (engine.TilePoolCount > 0)
+                engine.DrawTile();
+            // else: nothing to play and an empty pool — the turn simply passes.
+
+            // Advance the turn, broadcast, and arm the next solve. If that player is also
+            // an AI, the chain continues automatically.
+            await AdvanceTurnAndNotifyAsync(game);
+        }
+        catch (Exception ex)
+        {
+            LogAutoPlayFailed(ex, game.Id, turn, playerIndex);
+        }
+        finally
+        {
+            game.ActionLock.Release();
         }
     }
 
@@ -579,4 +679,7 @@ public partial class GameHub(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to notify optimal-ready for game {GameId} turn {Turn} player {PlayerIndex}")]
     private partial void LogOptimalReadyNotifyFailed(Exception ex, string gameId, int turn, int playerIndex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Auto-play failed for game {GameId} turn {Turn} player {PlayerIndex}")]
+    private partial void LogAutoPlayFailed(Exception ex, string gameId, int turn, int playerIndex);
 }

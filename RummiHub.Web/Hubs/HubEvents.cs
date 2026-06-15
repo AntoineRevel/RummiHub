@@ -13,6 +13,7 @@ public static class HubEvents
     // === Lobby phase: Client -> Server ===
     public const string CreateGame = nameof(CreateGame);
     public const string JoinGame = nameof(JoinGame);
+    public const string AddAiPlayer = nameof(AddAiPlayer);
     public const string StartGame = nameof(StartGame);
     public const string GetAvailableGameIds = nameof(GetAvailableGameIds);
 

@@ -8,6 +8,9 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 {
     private readonly ConcurrentDictionary<string, Game> _games = new();
 
+    /// <summary>Short, unique-enough identifier used for game seeds and player ids.</summary>
+    private static string NewShortId() => Guid.NewGuid().ToString("N")[..8];
+
     public IReadOnlyList<string> GetAvailableGameIds()
     {
         var predefined = options.Value.PredefinedIds;
@@ -21,13 +24,13 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         {
             HostConnectionId = connectionId,
             DistributionSeed = string.IsNullOrWhiteSpace(distributionSeed)
-                ? Guid.NewGuid().ToString("N")[..8]
+                ? NewShortId()
                 : distributionSeed
         };
 
         var player = new Player
         {
-            Id = Guid.NewGuid().ToString("N")[..8],
+            Id = NewShortId(),
             Name = playerName,
             ConnectionId = connectionId
         };
@@ -36,6 +39,32 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         _games[game.Id] = game;
         LogGameCreated(game.Id, playerName);
         return game;
+    }
+
+    /// <summary>
+    /// Adds an AI (auto-play) seat to a not-yet-started game, with a unique generated name.
+    /// AI seats have no connection — they are driven by the solver. Returns null if the game
+    /// is missing or already started.
+    /// </summary>
+    public Player? AddAiPlayer(string gameId)
+    {
+        if (!_games.TryGetValue(gameId, out var game) || game.IsStarted)
+            return null;
+
+        var n = 1;
+        string name;
+        do { name = $"AI {n++}"; } while (game.HasPlayerWithName(name));
+
+        var player = new Player
+        {
+            Id = NewShortId(),
+            Name = name,
+            IsAuto = true
+        };
+
+        game.AddPlayer(player);
+        LogPlayerJoined(name, gameId);
+        return player;
     }
 
     public Game? GetGame(string gameId)
@@ -54,7 +83,7 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 
         var player = new Player
         {
-            Id = Guid.NewGuid().ToString("N")[..8],
+            Id = NewShortId(),
             Name = playerName,
             ConnectionId = connectionId
         };
@@ -93,9 +122,11 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         if (!_games.TryGetValue(gameId, out var game))
             return false;
 
-        var playerNames = game.GetPlayerNames();
+        var players = game.GetPlayers();
+        var playerNames = players.Select(p => p.Name).ToList();
+        var autoPlayers = players.Select(p => p.IsAuto).ToList();
         var engine = new GameEngine();
-        engine.Initialize(playerNames, game.DistributionSeed);
+        engine.Initialize(playerNames, game.DistributionSeed, autoPlayers);
         game.Engine = engine;
 
         LogEngineInitialized(gameId, playerNames.Count);

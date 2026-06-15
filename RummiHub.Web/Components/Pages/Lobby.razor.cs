@@ -157,6 +157,12 @@ public partial class Lobby
             await _hubConnection.SendAsync(HubEvents.JoinGame, _joinGameId, _playerName);
     }
 
+    private async Task AddAiPlayer()
+    {
+        if (_hubConnection is not null && _gameId is not null)
+            await _hubConnection.SendAsync(HubEvents.AddAiPlayer, _gameId);
+    }
+
     private async Task StartGame()
     {
         if (_hubConnection is not null && _gameId is not null)

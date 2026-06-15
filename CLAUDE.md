@@ -84,6 +84,18 @@ The solver is fully asynchronous and distributed across services:
 2. Optionally implement `ISolver` in `RummiHub.Solver.Worker/Solver/` with a static `Create(Set board, Set rack)` factory.
 3. Wire it in `SolverWorker.Solve()` by replacing `new DynamicStrategy()`.
 
+### Solver Performance Bench (RummiHub.SolverBench)
+
+A self-contained, in-memory benchmark for comparing solver **performance** (no Redis/SignalR/Aspire, no new NuGet). The exact solvers return the same optimal move, so the criterion is time/memory/CPU, not move quality.
+
+- **`GameTraceGenerator`** — a light, standalone game loop (Core models + the 30-rule) piloted by `DynamicSolver`. It does **not** use `RummiHub.Web/GameEngine`. Seeded ⇒ reproducible. Captures each real position (board + hand + `hasPlayed`), tagged by phase.
+- **`SolverRegistry`** — the à-la-carte solver catalogue by phase (mirrors `ConcreteSolverTests`). Each solver gets a **copy** of the sets.
+- **`SolveMeasurer`** — honest sequential measurement: clean GC + warmup, median/p95 time, `GC.GetTotalAllocatedBytes(precise)` allocations, GC counts, `Process.TotalProcessorTime` + CPU/wall ratio, per-solve `CancellationTokenSource` timeout. Measurements are **indicative, not BenchmarkDotNet**.
+- **`MoveEvaluator`** — normalizes joker values/score so `SolutionValidator` judges the tiles fairly; also flags over-scoring (the `GraphSolver` "joker > 13" bug).
+- **`BenchComparer`** — runs the corpus × solvers, checks legality independently and divergence vs the DynamicSolver baseline (during-game: rack-tiles-played; first-play: existence).
+- **`MoveBank`** (`solver-bench/bank/`) — one JSON per position via `RummiJsonOptions.Default`; reload as a non-regression corpus; enrich manually or automatically (interest heuristics).
+- **UI**: Blazor page `/bench` (`RummiHub.Web`). **Headless**: `RummiHub.SolverBench.Runner` (CSV/Markdown export, same verdicts). See `solver-bench/README.md`.
+
 ### Debugging with Aspire
 
 Use Aspire's built-in diagnostic tools before making changes:

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    The benchmark library is self-contained: it references Core (domain) and the
+    Worker (solver implementations) only. It never touches Redis / SignalR / Aspire —
+    everything runs in-memory so the harness stays measurable and reproducible.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj" />
+    <ProjectReference Include="..\RummiHub.Solver.Worker\RummiHub.Solver.Worker.csproj" />
+  </ItemGroup>
+
+</Project>

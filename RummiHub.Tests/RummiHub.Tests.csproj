@@ -22,6 +22,7 @@
     <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj" />
     <ProjectReference Include="..\RummiHub.Web\RummiHub.Web.csproj" />
     <ProjectReference Include="..\RummiHub.Solver.Worker\RummiHub.Solver.Worker.csproj" />
+    <ProjectReference Include="..\RummiHub.SolverBench\RummiHub.SolverBench.csproj" />
   </ItemGroup>
 
 </Project>

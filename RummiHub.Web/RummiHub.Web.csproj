@@ -9,10 +9,12 @@
     <ItemGroup>
         <ProjectReference Include="..\RummiHub.ServiceDefaults\RummiHub.ServiceDefaults.csproj" />
         <ProjectReference Include="..\RummiHub.Core\RummiHub.Core.csproj" />
+        <!-- The /bench page drives the in-memory benchmark library (no Redis/SignalR/Aspire). -->
+        <ProjectReference Include="..\RummiHub.SolverBench\RummiHub.SolverBench.csproj" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aspire.StackExchange.Redis" Version="13.4.3" />
+        <PackageReference Include="Aspire.StackExchange.Redis" Version="13.4.4" />
         <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="*" />
     </ItemGroup>
 
