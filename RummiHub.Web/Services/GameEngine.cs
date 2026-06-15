@@ -23,7 +23,10 @@ public sealed class GameEngine
     public int TilePoolCount => _tilePool.Count;
     public string? WinnerName { get; private set; }
 
-    public void Initialize(List<string> playerNames, string? distributionSeed = null)
+    public void Initialize(
+        List<string> playerNames,
+        string? distributionSeed = null,
+        IReadOnlyList<bool>? autoPlayers = null)
     {
         Id = Guid.NewGuid();
         Turn = 0;
@@ -38,7 +41,7 @@ public sealed class GameEngine
             ? new Random(GetStableHash(distributionSeed))
             : new Random();
         Shuffle(tiles, rng);
-        DistributeTiles(tiles, playerNames);
+        DistributeTiles(tiles, playerNames, autoPlayers);
     }
 
     /// <summary>
@@ -209,7 +212,7 @@ public sealed class GameEngine
         }
     }
 
-    private void DistributeTiles(Tile[] tiles, List<string> playerNames)
+    private void DistributeTiles(Tile[] tiles, List<string> playerNames, IReadOnlyList<bool>? autoPlayers)
     {
         const int tilesPerPlayer = 14;
 
@@ -222,7 +225,8 @@ public sealed class GameEngine
             Players.Add(new GamePlayer
             {
                 Name = playerNames[i],
-                Rack = new Set(playerTiles.ToList())
+                Rack = new Set(playerTiles.ToList()),
+                IsAuto = autoPlayers is not null && i < autoPlayers.Count && autoPlayers[i]
             });
         }
 

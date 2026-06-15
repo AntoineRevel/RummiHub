@@ -124,6 +124,13 @@
 
             @if (_isHost)
             {
+                <button class="btn-add-ai" @onclick="AddAiPlayer" disabled="@(_players.Count >= 4)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="4" y="8" width="16" height="11" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/>
+                        <line x1="9" y1="13" x2="9" y2="15"/><line x1="15" y1="13" x2="15" y2="15"/>
+                    </svg>
+                    Add AI player
+                </button>
                 <button class="btn-start" @onclick="StartGame" disabled="@(_players.Count < 2)">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
@@ -419,6 +426,36 @@
     }
 
     .btn-start:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .btn-add-ai {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 12px 24px;
+        font-size: 1rem;
+        font-weight: 600;
+        color: white;
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 14px rgba(33, 150, 243, 0.3);
+    }
+
+    .btn-add-ai:hover:not(:disabled) {
+        background: linear-gradient(135deg, #1976d2, #1565c0);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(33, 150, 243, 0.4);
+    }
+
+    .btn-add-ai:disabled {
         opacity: 0.45;
         cursor: not-allowed;
         transform: none;
