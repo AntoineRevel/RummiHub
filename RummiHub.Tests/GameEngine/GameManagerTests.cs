@@ -10,6 +10,10 @@ public class GameManagerTests
     private static GameManager CreateManager() =>
         new(NullLogger<GameManager>.Instance, Options.Create(new GameOptions()));
 
+    private static GameManager CreateManager(params string[] predefinedIds) =>
+        new(NullLogger<GameManager>.Instance,
+            Options.Create(new GameOptions { PredefinedIds = predefinedIds.ToList() }));
+
     [Fact]
     public void AddAiPlayer_AddsAutoSeatWithUniqueName()
     {
@@ -67,5 +71,57 @@ public class GameManagerTests
 
         game.Engine!.Players.Single(p => p.Name == "Alice").IsAuto.Should().BeFalse();
         game.Engine.Players.Single(p => p.Name == ai!.Name).IsAuto.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddSeed_MakesSeedAvailableInLobbyList()
+    {
+        var manager = CreateManager();
+
+        manager.AddSeed("replay-me").Should().BeTrue();
+
+        manager.GetAvailableGameIds().Should().Contain("replay-me");
+    }
+
+    [Fact]
+    public void AddSeed_IsIdempotent_AndListedOnce()
+    {
+        var manager = CreateManager();
+
+        manager.AddSeed("dup").Should().BeTrue();
+        manager.AddSeed("dup").Should().BeFalse();
+
+        manager.GetAvailableGameIds().Where(id => id == "dup").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void AddSeed_TrimsWhitespace()
+    {
+        var manager = CreateManager();
+
+        manager.AddSeed("  spaced  ").Should().BeTrue();
+
+        manager.GetAvailableGameIds().Should().Contain("spaced");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddSeed_ReturnsFalse_WhenBlank(string seed)
+    {
+        var manager = CreateManager();
+
+        manager.AddSeed(seed).Should().BeFalse();
+        manager.GetAvailableGameIds().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetAvailableGameIds_UnionsPredefinedAndSavedSeeds()
+    {
+        var manager = CreateManager("predef-1", "predef-2");
+
+        manager.AddSeed("saved-1");
+
+        manager.GetAvailableGameIds().Should().BeEquivalentTo(["predef-1", "predef-2", "saved-1"]);
     }
 }

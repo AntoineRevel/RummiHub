@@ -8,14 +8,32 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 {
     private readonly ConcurrentDictionary<string, Game> _games = new();
 
+    /// <summary>Distribution seeds saved at runtime (e.g. from the in-game "replay" button).</summary>
+    private readonly ConcurrentDictionary<string, byte> _savedSeeds = new();
+
     /// <summary>Short, unique-enough identifier used for game seeds and player ids.</summary>
     private static string NewShortId() => Guid.NewGuid().ToString("N")[..8];
 
     public IReadOnlyList<string> GetAvailableGameIds()
     {
-        var predefined = options.Value.PredefinedIds;
-        if (predefined.Count == 0) return [];
-        return predefined.Where(id => !_games.ContainsKey(id)).ToList();
+        return options.Value.PredefinedIds
+            .Concat(_savedSeeds.Keys)
+            .Distinct()
+            .Where(id => !_games.ContainsKey(id))
+            .ToList();
+    }
+
+    public bool AddSeed(string seed)
+    {
+        seed = seed?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(seed))
+            return false;
+
+        if (!_savedSeeds.TryAdd(seed, 0))
+            return false;
+
+        LogSeedSaved(seed);
+        return true;
     }
 
     public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null)
@@ -155,4 +173,7 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Engine initialized for game {GameId} with {PlayerCount} players")]
     private partial void LogEngineInitialized(string gameId, int playerCount);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} saved to the lobby list")]
+    private partial void LogSeedSaved(string seed);
 }

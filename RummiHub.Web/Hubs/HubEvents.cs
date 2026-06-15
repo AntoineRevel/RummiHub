@@ -25,9 +25,11 @@ public static class HubEvents
     public const string HighlightTilesUpdated = nameof(HighlightTilesUpdated);
     public const string OptimalPlay = nameof(OptimalPlay);
     public const string OptimalReady = nameof(OptimalReady);
+    public const string SeedSaved = nameof(SeedSaved);
 
     // === Game phase: Client -> Server ===
     public const string JoinGameSession = nameof(JoinGameSession);
     public const string PlayTiles = nameof(PlayTiles);
     public const string DrawTile = nameof(DrawTile);
+    public const string SaveSeed = nameof(SaveSeed);
 }
