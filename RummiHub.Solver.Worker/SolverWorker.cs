@@ -197,7 +197,7 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
             var boardSet = request.Board.ToSet();
             var rackSet = new Set(request.Hand);
 
-            IStrategy strategy = new GraphStrategy();
+            IStrategy strategy = new DynamicStrategy();
             var result = await strategy.GetSolverResult(boardSet, rackSet, request.HasPlayed, ct);
 
             stopwatch.Stop();

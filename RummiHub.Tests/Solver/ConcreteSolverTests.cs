@@ -3,6 +3,7 @@ using RummiHub.Core.Models;
 using RummiHub.Core.Solver;
 using RummiHub.Solver.Worker.Solver.Combinations;
 using RummiHub.Solver.Worker.Solver.Combinations.First;
+using RummiHub.Solver.Worker.Solver.Dynamic;
 using RummiHub.Solver.Worker.Solver.Graph;
 using RummiHub.Solver.Worker.Solver.Graph.First;
 using RummiHub.Solver.Worker.Solver.Incremental;
@@ -27,12 +28,13 @@ public class FirstPlaySolverTests
         "GraphFirstSolver" => GraphFirstSolver.Create(rack),
         "IncrementalFirstBaseSolver" => IncrementalFirstBaseSolver.Create(rack),
         "CombinationsFirstSolver" => CombinationsFirstSolver.Create(rack),
+        "DynamicSolver" => DynamicSolver.CreateFirst(rack),
         _ => throw new ArgumentOutOfRangeException(nameof(name))
     };
 
     public static TheoryData<string> Solvers => new()
     {
-        "GraphFirstSolver", "IncrementalFirstBaseSolver", "CombinationsFirstSolver"
+        "GraphFirstSolver", "IncrementalFirstBaseSolver", "CombinationsFirstSolver", "DynamicSolver"
     };
 
     [Theory]
@@ -126,12 +128,13 @@ public class DuringGameSolverTests
         "IncrementalComplexSolver" => IncrementalComplexSolver.Create(board, rack),
         "CombinationsSolver" => CombinationsSolver.Create(board, rack),
         "ParallelCombinationsSolver" => ParallelCombinationsSolver.Create(board, rack),
+        "DynamicSolver" => DynamicSolver.Create(board, rack),
         _ => throw new ArgumentOutOfRangeException(nameof(name))
     };
 
     public static TheoryData<string> Solvers => new()
     {
-        "GraphSolver", "IncrementalComplexSolver", "CombinationsSolver", "ParallelCombinationsSolver"
+        "GraphSolver", "IncrementalComplexSolver", "CombinationsSolver", "ParallelCombinationsSolver", "DynamicSolver"
     };
 
     private static Set BoardRun() =>
@@ -241,5 +244,29 @@ public class StrategyTests
         var parallel = await new ParallelStrategy().GetSolverResult(BoardRun(), ExtendingTile(), hasPlayed: true);
 
         graph.Found.Should().Be(parallel.Found);
+    }
+
+    [Fact]
+    public async Task DynamicStrategy_FirstPlayValid_IsFound()
+        => (await new DynamicStrategy().GetSolverResult(Sets.Empty(), ValidFirstPlay(), hasPlayed: false))
+            .Found.Should().BeTrue();
+
+    [Fact]
+    public async Task DynamicStrategy_FirstPlayBelowMinScore_IsNotFound()
+        => (await new DynamicStrategy().GetSolverResult(Sets.Empty(), BelowMinScore(), hasPlayed: false))
+            .Found.Should().BeFalse();
+
+    [Fact]
+    public async Task DynamicStrategy_DuringGameExtend_IsFound()
+        => (await new DynamicStrategy().GetSolverResult(BoardRun(), ExtendingTile(), hasPlayed: true))
+            .Found.Should().BeTrue();
+
+    [Fact]
+    public async Task DynamicStrategy_AgreesWithGraphStrategy_OnExistence()
+    {
+        var dynamic = await new DynamicStrategy().GetSolverResult(BoardRun(), ExtendingTile(), hasPlayed: true);
+        var graph = await new GraphStrategy().GetSolverResult(BoardRun(), ExtendingTile(), hasPlayed: true);
+
+        dynamic.Found.Should().Be(graph.Found);
     }
 }
