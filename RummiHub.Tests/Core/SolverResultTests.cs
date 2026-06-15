@@ -23,6 +23,23 @@ public class SolverResultTests
     }
 
     [Fact]
+    public void Invalid_DefaultsScoreToZero()
+    {
+        SolverResult.Invalid("test").Score.Should().Be(0);
+    }
+
+    [Fact]
+    public void Invalid_PropagatesScore()
+    {
+        // An invalid result may still carry the best score it could reach (e.g. a first play
+        // that forms a legal set but falls short of 30), so the UI can show it instead of 0.
+        var result = SolverResult.Invalid("test", score: 27);
+
+        result.Found.Should().BeFalse();
+        result.Score.Should().Be(27);
+    }
+
+    [Fact]
     public void FromSolution_InvalidSolution_ReturnsInvalid()
     {
         var solution = new Solution { IsValid = false };

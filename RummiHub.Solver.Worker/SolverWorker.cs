@@ -212,6 +212,8 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
                     RequestId = request.RequestId,
                     Found = false,
                     NewBoard = request.Board,
+                    // Carries the best first-play score even when below 30, so the UI can show it.
+                    Score = result.Score,
                     WorkerId = _workerId
                 };
             }

@@ -201,6 +201,10 @@ public class StrategyTests
     private static Set BelowMinScore() =>
         Sets.Of(new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue));
 
+    // Three 9s: a legal group worth 27 — valid, but short of the 30-point first-play threshold.
+    private static Set BelowMinScoreValidGroup() =>
+        Sets.Of(new Tile(9, TileColor.Blue), new Tile(9, TileColor.Red), new Tile(9, TileColor.Black));
+
     private static Set BoardRun() =>
         Sets.Of(new Tile(10, TileColor.Blue), new Tile(11, TileColor.Blue), new Tile(12, TileColor.Blue));
 
@@ -215,6 +219,11 @@ public class StrategyTests
     public async Task GraphStrategy_FirstPlayBelowMinScore_IsNotFound()
         => (await new GraphStrategy().GetSolverResult(Sets.Empty(), BelowMinScore(), hasPlayed: false))
             .Found.Should().BeFalse();
+
+    [Fact]
+    public async Task GraphStrategy_FirstPlayBelowMinScore_ReportsBestScore()
+        => (await new GraphStrategy().GetSolverResult(Sets.Empty(), BelowMinScoreValidGroup(), hasPlayed: false))
+            .Score.Should().Be(27, because: "the best achievable score is reported even when the move is rejected");
 
     [Fact]
     public async Task GraphStrategy_DuringGameExtend_IsFound()
@@ -255,6 +264,18 @@ public class StrategyTests
     public async Task DynamicStrategy_FirstPlayBelowMinScore_IsNotFound()
         => (await new DynamicStrategy().GetSolverResult(Sets.Empty(), BelowMinScore(), hasPlayed: false))
             .Found.Should().BeFalse();
+
+    [Fact]
+    public async Task DynamicStrategy_FirstPlayBelowMinScore_ReportsBestScore()
+    {
+        // Full production path (DynamicStrategy, including its GraphStrategy fallback): a sub-30
+        // first play must be rejected but still surface its real score so the UI shows it, not 0.
+        var result = await new DynamicStrategy()
+            .GetSolverResult(Sets.Empty(), BelowMinScoreValidGroup(), hasPlayed: false);
+
+        result.Found.Should().BeFalse();
+        result.Score.Should().Be(27);
+    }
 
     [Fact]
     public async Task DynamicStrategy_DuringGameExtend_IsFound()

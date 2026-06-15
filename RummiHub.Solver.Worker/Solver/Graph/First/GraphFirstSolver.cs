@@ -41,7 +41,8 @@ public class GraphFirstSolver : ISolver
 
         var bestNode = root.LeafNodes.MaxBy(node => node.Score);
 
-        if (bestNode!.Score < ISolver.MinScore) return SolverResult.Invalid(nameof(GraphFirstSolver));
+        // No play reaches 30: no legal move, but carry the best score so the UI can display it.
+        if (bestNode!.Score < ISolver.MinScore) return SolverResult.Invalid(nameof(GraphFirstSolver), bestNode!.Score);
 
         var bestSolution = bestNode.GetSolution();
 

@@ -21,12 +21,18 @@ public class SolverResult
     public int JokersToPlay { get; private init; }
     public int Score { get; private init; }
 
-    public static SolverResult Invalid(string source) =>
+    /// <summary>
+    /// A result with no playable move. <paramref name="score"/> lets a solver still report the
+    /// best score it could reach (e.g. a first play that forms a legal set but falls short of the
+    /// 30-point threshold), so the UI can tell the player how close they were instead of showing 0.
+    /// </summary>
+    public static SolverResult Invalid(string source, int score = 0) =>
         new()
         {
             Source = source,
             Found = false,
-            BestSolution = new Solution()
+            BestSolution = new Solution(),
+            Score = score
         };
 
     public static SolverResult FromSolution(string source, Solution solution, IEnumerable<Tile> tilesToPlay,
