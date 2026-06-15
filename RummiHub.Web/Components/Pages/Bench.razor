@@ -86,40 +86,71 @@
 
     @if (_result is not null)
     {
-        <section class="panel">
-            <h2>Summary (★ = baseline · ranked fastest first)</h2>
-            <p class="meta">
-                @_result.Source · illegal @_result.IllegalCount · divergences vs DP @_result.DivergenceCount
-                · timeouts @_result.TimeoutCount
-            </p>
-            <table class="grid-table">
-                <thead>
-                <tr>
-                    <th>Solver</th><th>Phase</th><th>Pos</th><th>Found</th><th>Median ms</th><th>p95 ms</th>
-                    <th>Alloc/solve</th><th>GC 0/1/2</th><th>CPU/wall</th><th>Illegal</th><th>Diverge</th><th>Timeout</th>
-                </tr>
-                </thead>
-                <tbody>
-                @foreach (var s in _result.Summaries)
-                {
-                    <tr>
-                        <td>@(s.IsBaseline ? "★ " : "")@s.SolverName</td>
-                        <td>@s.Phase</td>
-                        <td>@s.Positions</td>
-                        <td>@s.Found</td>
-                        <td>@Ms(s.TimeMsMedian)</td>
-                        <td>@Ms(s.TimeMsP95)</td>
-                        <td>@Bytes(s.AllocBytesMean)</td>
-                        <td>@s.Gc0/@s.Gc1/@s.Gc2</td>
-                        <td>@Ratio(s.CpuRatioMean)</td>
-                        <td class="@(s.Illegal > 0 ? "bad" : "")">@s.Illegal</td>
-                        <td class="@(s.Divergences > 0 ? "warn" : "")">@s.Divergences</td>
-                        <td class="@(s.Timeouts > 0 ? "warn" : "")">@s.Timeouts</td>
-                    </tr>
-                }
-                </tbody>
-            </table>
-        </section>
+        <p class="meta result-meta">
+            @_result.Source · illegal @_result.IllegalCount · divergences vs DP @_result.DivergenceCount
+            · timeouts @_result.TimeoutCount · ★ = baseline
+        </p>
+
+        @foreach (var phase in new[] { BenchPhase.FirstPlay, BenchPhase.DuringGame })
+        {
+            @if (HasPhase(phase))
+            {
+                var best = Best(phase);
+                <section class="panel">
+                    <h2>@PhaseLabel(phase) — ranking</h2>
+
+                    @if (best is not null)
+                    {
+                        <div class="winner">
+                            <div class="trophy">🏆</div>
+                            <div>
+                                <div class="winner-name">@best.SolverName@(best.Summary.IsBaseline ? " ★" : "")</div>
+                                <div class="winner-meta">
+                                    Best solver — fastest one that solved every position legally with no divergence.
+                                    Median <strong>@Ms(best.Summary.TimeMsMedian) ms</strong> ·
+                                    <strong>@Bytes(best.Summary.AllocBytesMean)</strong>/solve ·
+                                    CPU/wall @Ratio(best.Summary.CpuRatioMean)
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="winner none">
+                            No solver completed every position legally without diverging — inspect the verdicts below.
+                        </div>
+                    }
+
+                    <table class="grid-table rank">
+                        <thead>
+                        <tr>
+                            <th>#</th><th>Solver</th><th class="speed-col">Relative speed</th><th>Median ms</th>
+                            <th>p95 ms</th><th>Alloc/solve</th><th>GC 0/1/2</th><th>CPU/wall</th><th>vs DP</th><th>Verdict</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var r in Ranks(phase))
+                        {
+                            <tr class="@(r.IsBest ? "best" : r.Qualified ? "" : "dq")">
+                                <td>@(r.Qualified ? Medal(r.Rank) : "—")</td>
+                                <td>@(r.Summary.IsBaseline ? "★ " : "")@r.SolverName</td>
+                                <td class="bar-cell">
+                                    <div class="bar @(r.IsBest ? "gold" : "")" style="width:@Pct(r.SpeedScore)"></div>
+                                </td>
+                                <td>@Ms(r.Summary.TimeMsMedian)</td>
+                                <td>@Ms(r.Summary.TimeMsP95)</td>
+                                <td>@Bytes(r.Summary.AllocBytesMean)</td>
+                                <td>@r.Summary.Gc0/@r.Summary.Gc1/@r.Summary.Gc2</td>
+                                <td>@Ratio(r.Summary.CpuRatioMean)</td>
+                                <td>@(r.Qualified ? SpeedupLabel(r.SpeedupVsBaseline) : "—")</td>
+                                <td class="@(r.Qualified ? "ok" : "bad")">@r.Verdict</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
 
         <section class="panel">
             <h2>Detail (click a header to sort)</h2>
@@ -246,6 +277,27 @@
     .row-timeout { background: #eceff1; color: #777; }
     td.bad { color: #b71c1c; font-weight: bold; }
     td.warn { color: #ef6c00; font-weight: bold; }
+    td.ok { color: #2e7d32; }
+    .result-meta { margin: 0 0 12px; }
+
+    /* winner callout */
+    .winner { display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-radius: 10px;
+              background: linear-gradient(135deg, #e8f5e9, #f1f8e9); border: 1px solid #c8e6c9; margin-bottom: 12px; }
+    .winner.none { background: #fff8e1; border-color: #ffe082; color: #795548; }
+    .winner .trophy { font-size: 2rem; }
+    .winner-name { font-size: 1.3rem; font-weight: 700; color: #1b5e20; }
+    .winner-meta { color: #33691e; font-size: 0.9rem; }
+
+    /* ranking table */
+    table.rank td, table.rank th { vertical-align: middle; }
+    table.rank th.speed-col, table.rank td.bar-cell { text-align: left; width: 180px; }
+    .bar-cell { padding: 4px 8px !important; }
+    .bar { height: 14px; border-radius: 7px; background: #90caf9; min-width: 2px; }
+    .bar.gold { background: linear-gradient(90deg, #ffd54f, #ffb300); }
+    tr.best { background: #f1f8e9; font-weight: 600; }
+    tr.best td:first-child { font-size: 1.1rem; }
+    tr.dq { color: #9e9e9e; }
+    tr.dq .bar { background: #e0e0e0; }
     .swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid #ccc; margin: 0 4px 0 12px; vertical-align: middle; }
     .manual { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
     .manual input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }

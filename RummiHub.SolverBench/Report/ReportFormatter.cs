@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using RummiHub.SolverBench.Comparison;
 using RummiHub.SolverBench.Measure;
+using RummiHub.SolverBench.Model;
 
 namespace RummiHub.SolverBench.Report;
 
@@ -53,19 +54,38 @@ public static class ReportFormatter
                   $"timeout {result.Options.Timeout.TotalMilliseconds:0} ms\n");
         sb.Append($"- Illegal: {result.IllegalCount} · Divergences vs DP: {result.DivergenceCount} · " +
                   $"Timeouts: {result.TimeoutCount}\n");
-        sb.Append("- Measurements are indicative (sequential, warmed up, median/p95), not BenchmarkDotNet.\n\n");
+        sb.Append("- Measurements are indicative (sequential, warmed up, median/p95), not BenchmarkDotNet.\n");
+        sb.Append("- Best = fastest solver that completed every position legally with no divergence vs DP.\n");
 
-        sb.Append("| Solver | Phase | Pos | Found | Median ms | p95 ms | Alloc/solve | GC 0/1/2 | CPU/wall | Illegal | Diverge | Timeout |\n");
-        sb.Append("|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|\n");
-        foreach (var s in result.Summaries)
+        foreach (var phase in new[] { BenchPhase.FirstPlay, BenchPhase.DuringGame })
         {
-            sb.Append($"| {Mark(s.IsBaseline)}{s.SolverName} | {s.Phase} | {s.Positions} | {s.Found} | " +
-                      $"{Num(s.TimeMsMedian)} | {Num(s.TimeMsP95)} | {Bytes(s.AllocBytesMean)} | " +
-                      $"{s.Gc0}/{s.Gc1}/{s.Gc2} | {Num(s.CpuRatioMean)} | {s.Illegal} | {s.Divergences} | {s.Timeouts} |\n");
+            var ranks = BenchRanking.ForPhase(result.Summaries, phase);
+            if (ranks.Count == 0) continue;
+
+            var best = ranks.FirstOrDefault(r => r.IsBest);
+            sb.Append($"\n## {phase}\n\n");
+            sb.Append(best is null
+                ? "🏆 Best: none (no solver was complete and correct).\n\n"
+                : $"🏆 Best: **{best.SolverName}** — {Num(best.Summary.TimeMsMedian)} ms median, " +
+                  $"{Bytes(best.Summary.AllocBytesMean)}/solve.\n\n");
+
+            sb.Append("| # | Solver | Median ms | p95 ms | Alloc/solve | GC 0/1/2 | CPU/wall | vs DP | Verdict |\n");
+            sb.Append("|--:|---|--:|--:|--:|--:|--:|--:|---|\n");
+            foreach (var r in ranks)
+            {
+                var s = r.Summary;
+                sb.Append($"| {(r.Qualified ? Rank(r.Rank) : "—")} | {Mark(s.IsBaseline)}{(r.IsBest ? "**" : "")}{s.SolverName}{(r.IsBest ? "**" : "")} | " +
+                          $"{Num(s.TimeMsMedian)} | {Num(s.TimeMsP95)} | {Bytes(s.AllocBytesMean)} | " +
+                          $"{s.Gc0}/{s.Gc1}/{s.Gc2} | {Num(s.CpuRatioMean)} | {(r.Qualified ? Speedup(r.SpeedupVsBaseline) : "—")} | {r.Verdict} |\n");
+            }
         }
 
         return sb.ToString();
     }
+
+    private static string Rank(int rank) => rank switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => rank.ToString() };
+
+    private static string Speedup(double s) => s <= 0 ? "—" : $"{s:0.0}×";
 
     public static string FullMarkdown(ComparisonResult result)
     {

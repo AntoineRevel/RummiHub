@@ -31,6 +31,14 @@ NuGet package was added.
 > clean GC between solvers, a warmup, and median/p95 reporting. Use a Release build for the most
 > meaningful numbers, and always note the seed.
 
+### Picking the best solver
+
+The results are ranked **per phase** and the winner is highlighted (🏆 / 🥇). Ranking by raw median
+time alone would be misleading — a solver that times out on the hard positions looks "fast" because
+only its easy solves count toward the median. So a solver must first be **qualified** (complete and
+correct over the corpus: no timeout, no illegal move, no divergence from the baseline), and only
+then is it ranked by speed and memory. The best solver is the fastest qualified one.
+
 ## Move bank
 
 `solver-bench/bank/` holds one JSON file per position (`RummiJsonOptions.Default`), usable as a

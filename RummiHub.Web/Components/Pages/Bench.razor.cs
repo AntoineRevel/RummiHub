@@ -254,6 +254,30 @@ public partial class Bench
     }
 
     // ── display helpers ─────────────────────────────────────────────────────────────────
+    private IReadOnlyList<SolverRank> Ranks(BenchPhase phase) =>
+        _result is null ? [] : BenchRanking.ForPhase(_result.Summaries, phase);
+
+    private SolverRank? Best(BenchPhase phase) =>
+        _result is null ? null : BenchRanking.Best(_result.Summaries, phase);
+
+    private bool HasPhase(BenchPhase phase) =>
+        _result is not null && _result.Summaries.Any(s => s.Phase == phase);
+
+    private static string PhaseLabel(BenchPhase phase) =>
+        phase == BenchPhase.FirstPlay ? "First play" : "During game";
+
+    private static string Medal(int rank) => rank switch
+    {
+        1 => "🥇",
+        2 => "🥈",
+        3 => "🥉",
+        _ => $"#{rank}"
+    };
+
+    private static string Pct(double fraction) => $"{Math.Clamp(fraction, 0, 1) * 100:0}%";
+
+    private static string SpeedupLabel(double s) => s <= 0 ? "—" : $"{s:0.0}×";
+
     private static string Ms(double v) => v.ToString("0.###");
     private static string Ratio(double v) => v.ToString("0.##");
 
