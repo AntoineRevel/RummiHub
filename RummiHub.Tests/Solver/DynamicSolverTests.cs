@@ -70,6 +70,36 @@ public class DynamicSolverTests
         SolutionValidator.IsValid(result, new Set(), rack, hasPlayed: false).Should().BeTrue();
     }
 
+    [Fact]
+    public void FirstPlay_BelowMinScore_ReportsBestAchievableScore()
+    {
+        // Three 9s form a legal group worth 27 — a valid set, but below the 30-point first-play
+        // threshold. The move is rejected, yet the solver must still report 27 so the UI can tell
+        // the player how close they were (regression: it used to report 0).
+        var rack = new Set([
+            new Tile(9, TileColor.Blue), new Tile(9, TileColor.Red), new Tile(9, TileColor.Black)
+        ]);
+
+        var result = DynamicSolver.CreateFirst(rack).SearchSolution();
+
+        result.Found.Should().BeFalse();
+        result.Score.Should().Be(27);
+    }
+
+    [Fact]
+    public void FirstPlay_NoValidSet_ReportsZeroScore()
+    {
+        // Tiles that form no run and no group can score nothing — 0 is the correct report here.
+        var rack = new Set([
+            new Tile(1, TileColor.Blue), new Tile(3, TileColor.Red), new Tile(5, TileColor.Black)
+        ]);
+
+        var result = DynamicSolver.CreateFirst(rack).SearchSolution();
+
+        result.Found.Should().BeFalse();
+        result.Score.Should().Be(0);
+    }
+
     // ── differential: during game ──────────────────────────────────────────────────
 
     [Fact]

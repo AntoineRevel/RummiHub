@@ -290,7 +290,9 @@ public sealed class DynamicSolver : ISolver
 
         if (_firstPlay)
         {
-            if (score < ISolver.MinScore) return SolverResult.Invalid(nameof(DynamicSolver));
+            // Below the first-play threshold there is no legal move, but report the best score
+            // the rack could reach so the UI can show it (e.g. "Current score: 27") instead of 0.
+            if (score < ISolver.MinScore) return SolverResult.Invalid(nameof(DynamicSolver), score);
         }
         else if (tilesToPlay.Count == 0 && rackJokersPlayed == 0)
         {
