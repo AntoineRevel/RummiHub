@@ -13,6 +13,13 @@ public interface IGameManager
     Player? AddAiPlayer(string gameId);
 
     IReadOnlyList<string> GetAvailableGameIds();
+
+    /// <summary>
+    /// Saves a distribution seed to the lobby seed list so players can replay the same
+    /// game later. Returns true if it was newly added (false if blank or already present).
+    /// </summary>
+    bool AddSeed(string seed);
+
     Game? GetGame(string gameId);
     Player? AddPlayer(string gameId, string playerName, string connectionId);
     bool RemovePlayer(string connectionId);

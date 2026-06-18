@@ -33,6 +33,7 @@ public partial class GamePage : IAsyncDisposable
     private List<Tile>? _optimalPlayTiles;
     private bool _optimalSeenFirstUpdate;
     private bool _optimalReady;
+    private bool _seedSaved;
 
     [Inject] private IServer Server { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
@@ -156,6 +157,12 @@ public partial class GamePage : IAsyncDisposable
             InvokeAsync(StateHasChanged);
         });
 
+        hub.On<string>(HubEvents.SeedSaved, _ =>
+        {
+            _seedSaved = true;
+            InvokeAsync(StateHasChanged);
+        });
+
         hub.On<List<Tile>>(HubEvents.RackUpdated, rack =>
         {
             _rackTiles = rack;
@@ -222,6 +229,20 @@ public partial class GamePage : IAsyncDisposable
         {
             _errorPlay = $"Error: {ex.Message}";
             _isLoading = false;
+        }
+    }
+
+    private async Task OnSaveSeed()
+    {
+        if (_hubConnection is null || _seedSaved) return;
+
+        try
+        {
+            await _hubConnection.SendAsync(HubEvents.SaveSeed, GameId);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error: {ex.Message}";
         }
     }
 

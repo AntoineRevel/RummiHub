@@ -30,6 +30,28 @@ public partial class GameHub(
         await Clients.Caller.SendAsync(HubEvents.AvailableGameIds, ids);
     }
 
+    /// <summary>
+    /// Saves the current game's distribution seed to the lobby seed list so the caller can
+    /// easily replay the same game later. Triggered from the in-game header.
+    /// </summary>
+    public async Task SaveSeed(string gameId)
+    {
+        try
+        {
+            gameId = gameId?.Trim() ?? string.Empty;
+            var seed = gameManager.GetGame(gameId)?.DistributionSeed;
+            if (string.IsNullOrWhiteSpace(seed))
+                return;
+
+            gameManager.AddSeed(seed);
+            await Clients.Caller.SendAsync(HubEvents.SeedSaved, seed);
+        }
+        catch (Exception ex)
+        {
+            LogHubError(ex, nameof(SaveSeed), Context.ConnectionId);
+        }
+    }
+
     public async Task CreateGame(string playerName, string? gameId = null)
     {
         try
