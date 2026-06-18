@@ -1,4 +1,5 @@
 using RummiHub.Core.Contracts;
+using RummiHub.Core.Models;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Web.Models;
@@ -35,6 +36,20 @@ public class Game
     /// Read/written only inside ActionLock.
     /// </summary>
     public PendingOptimalSolve? PendingOptimalSolve { get; set; }
+
+    /// <summary>
+    /// The board exactly as last shown to clients (after cosmetic alignment). The next board is
+    /// aligned against it, and the tile-animation duration is computed from the difference.
+    /// Read/written only inside <see cref="ActionLock"/>.
+    /// </summary>
+    public Solution? LastBroadcastBoard { get; set; }
+
+    /// <summary>
+    /// How long (ms) the client animation for the most recently broadcast transition runs. The
+    /// next AI move waits this long (plus the watchable pause) so its move never overlaps the
+    /// in-progress animation. Read/written only inside <see cref="ActionLock"/>.
+    /// </summary>
+    public int PendingAnimationMs { get; set; }
 
     public int PlayerCount
     {

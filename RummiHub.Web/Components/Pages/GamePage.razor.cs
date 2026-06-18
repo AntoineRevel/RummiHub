@@ -7,6 +7,7 @@ using Microsoft.JSInterop;
 using RummiHub.Core.Models;
 using RummiHub.Web.Hubs;
 using RummiHub.Web.Models;
+using RummiHub.Web.Rendering;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Timer = System.Timers.Timer;
@@ -114,6 +115,8 @@ public partial class GamePage : IAsyncDisposable
             try
             {
                 _flipModule = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tileFlip.js");
+                await _flipModule.InvokeVoidAsync(
+                    "configure", BoardAnimation.MoveStepMs, BoardAnimation.EnterStepMs);
                 _flipReady = true;
             }
             catch

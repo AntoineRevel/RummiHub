@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Web.Models;
+using RummiHub.Web.Rendering;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Web.Hubs;
@@ -225,6 +226,9 @@ public partial class GameHub(
             try
             {
                 StartOptimalSolveForCurrentPlayerIfNeeded(game);
+                // Seed the alignment baseline with the initial board so the first move animates
+                // from it (and isn't treated as a from-nothing board with no animation).
+                game.LastBroadcastBoard ??= game.Engine!.Board;
             }
             finally
             {
@@ -441,7 +445,9 @@ public partial class GameHub(
             }).ToList(),
             CurrentPlayerIndex = engine.PlayerIndex,
             Turn = engine.Turn,
-            Board = engine.Board,
+            // The aligned board kept in LastBroadcastBoard is what clients render and animate;
+            // engine.Board (unaligned) is only the solver's input for the next turn.
+            Board = game.LastBroadcastBoard ?? engine.Board,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,
             TilePoolCount = engine.TilePoolCount
@@ -461,7 +467,20 @@ public partial class GameHub(
     /// </summary>
     private async Task AdvanceTurnAndNotifyAsync(Game game)
     {
-        game.Engine!.AdvanceToNextPlayer();
+        var engine = game.Engine!;
+        engine.AdvanceToNextPlayer();
+
+        // Align the post-move board to the one currently shown so unchanged sets keep their
+        // place, then estimate how long the client's one-tile-at-a-time animation runs so the
+        // next AI move can wait for it to finish before playing.
+        var previous = game.LastBroadcastBoard;
+        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
+        var moved = 0;
+        var entered = 0;
+        if (previous is not null)
+            (moved, entered) = BoardTransition.Compute(previous, aligned);
+        game.PendingAnimationMs = BoardAnimation.Duration(moved, entered);
+        game.LastBroadcastBoard = aligned;
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
@@ -584,7 +603,9 @@ public partial class GameHub(
     {
         try
         {
-            await Task.Delay(AutoPlayDelay, ct);
+            // Wait for the currently-shown transition's animation to finish, then the watchable
+            // pause, so an AI move never lands on top of the still-running board animation.
+            await Task.Delay(TimeSpan.FromMilliseconds(game.PendingAnimationMs) + AutoPlayDelay, ct);
             await game.ActionLock.WaitAsync(ct);
         }
         catch (OperationCanceledException)

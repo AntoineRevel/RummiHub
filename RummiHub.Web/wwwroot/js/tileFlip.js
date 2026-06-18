@@ -1,30 +1,37 @@
-// FLIP (First, Last, Invert, Play) animation for the RummiHub board.
+// FLIP (First, Last, Invert, Play) animation for the RummiHub board, played ONE TILE AT A TIME.
 //
-// The board is re-rendered wholesale by Blazor on every move, so tiles would "teleport"
-// to their new layout. To make them glide like real tiles:
+// The board is re-rendered wholesale by Blazor on every move, so tiles would "teleport" to
+// their new layout. To make them glide like real tiles, and slowly enough to follow how the
+// board was rearranged:
 //   1. snapshot()  — called BEFORE the new board renders: record each tile's screen rect,
 //                    keyed by its stable [data-flip-id].
-//   2. play()      — called AFTER the new board has rendered: for each tile that existed
-//                    before, invert it back to its old position, then transition it to its
-//                    natural (new) position. Tiles with no "before" rect are entering tiles
-//                    (played from the hand) and simply fade + zoom in.
+//   2. play()      — called AFTER the new board renders: invert every moved tile back to its
+//                    old position, then animate them to their final position SEQUENTIALLY, in
+//                    board reading order (run by run, then group by group) — so at most one tile
+//                    moves at a time and the board appears to be reassembled set by set. Tiles
+//                    with no "before" rect are entering tiles (played from a hand) and fade+zoom
+//                    in at their turn in the sequence.
 //
-// Inline styles set here are not tracked by Blazor's diff (the .tile root has no style
-// attribute), so they survive intermediate re-renders and are cleared after each animation.
+// The board is aligned server-side so unchanged sets keep their position; only genuinely moved
+// or new tiles animate. Inline styles set here are not tracked by Blazor's diff (the .tile root
+// has no style attribute), so they survive intermediate re-renders and are cleared per tile.
 
-const FLIP = {
-    durationMs: 700,                              // glissement lisible
-    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',    // départ vif, arrivée douce
-    enterDelayMs: 250,                           // les nouvelles tuiles attendent la fin du réarrangement
-    enterDurationMs: 400,
-    staggerMsPerTile: 12,                        // léger décalage entre tuiles
-    maxStaggerMs: 180,
-};
+const EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'; // quick start, gentle settle
+
+// Per-tile durations, kept in sync with the server (RummiHub.Web/Rendering/BoardAnimation.cs)
+// via configure(); the server uses the same numbers to pace AI moves after the animation.
+let MOVE_STEP_MS = 350;
+let ENTER_STEP_MS = 300;
 
 // Map<flipId, {left, top}> captured by the most recent snapshot(), or null.
 let snapshotRects = null;
-// Bumped on every snapshot so stale cleanup timers never clobber a fresh animation.
+// Bumped on every snapshot so a newer transition cleanly abandons an in-progress sequence.
 let generation = 0;
+
+export function configure(moveStepMs, enterStepMs) {
+    if (moveStepMs > 0) MOVE_STEP_MS = moveStepMs;
+    if (enterStepMs > 0) ENTER_STEP_MS = enterStepMs;
+}
 
 function prefersReducedMotion() {
     return window.matchMedia
@@ -32,6 +39,7 @@ function prefersReducedMotion() {
 }
 
 function boardTiles() {
+    // Document order = board reading order = runs left-to-right then groups, contiguous per set.
     return Array.from(document.querySelectorAll('[data-flip-id]'));
 }
 
@@ -41,8 +49,8 @@ function clearInlineAnim(el) {
     el.style.opacity = '';
 }
 
-// Record the resting position of every board tile. Any in-flight animation is settled
-// first so we always measure the natural layout, even on rapid successive moves.
+// Record the resting position of every board tile. Any in-flight animation is settled first so
+// we always measure the natural layout, even when a new move lands mid-animation.
 export function snapshot() {
     generation++;
     if (prefersReducedMotion()) {
@@ -54,6 +62,7 @@ export function snapshot() {
     for (const el of tiles) {
         el.style.transition = 'none';
         el.style.transform = '';
+        el.style.opacity = '';
     }
     if (tiles.length) void tiles[0].getBoundingClientRect(); // force reflow
 
@@ -65,8 +74,9 @@ export function snapshot() {
     }
 }
 
-// Animate the new board from the snapshotted positions.
-export function play() {
+// Animate the new board from the snapshotted positions, one tile at a time. Returns a Promise
+// that resolves when the last tile settles.
+export async function play() {
     if (prefersReducedMotion() || !snapshotRects) {
         snapshotRects = null;
         return;
@@ -76,60 +86,65 @@ export function play() {
     snapshotRects = null;
     const gen = generation;
 
-    const tiles = boardTiles();
-    const moves = [];
-    const enters = [];
-
-    for (const el of tiles) {
+    const sequence = [];
+    for (const el of boardTiles()) {
         const id = el.getAttribute('data-flip-id');
         const before = prev.get(id);
         const after = el.getBoundingClientRect();
         if (before) {
             const dx = before.left - after.left;
             const dy = before.top - after.top;
-            if (dx !== 0 || dy !== 0) moves.push({ el, dx, dy, dist: Math.hypot(dx, dy) });
+            if (dx !== 0 || dy !== 0) sequence.push({ el, kind: 'move', dx, dy });
         } else {
-            enters.push(el);
+            sequence.push({ el, kind: 'enter' });
         }
     }
+    if (sequence.length === 0) return;
 
-    // Invert: snap moved tiles back to their old position (no transition yet).
-    for (const m of moves) {
-        m.el.style.transition = 'none';
-        m.el.style.transform = `translate(${m.dx}px, ${m.dy}px)`;
-    }
-    // Entering tiles start hidden and slightly shrunk.
-    for (const el of enters) {
-        el.style.transition = 'none';
-        el.style.opacity = '0';
-        el.style.transform = 'scale(0.85)';
-    }
-
-    if (tiles.length) void tiles[0].getBoundingClientRect(); // commit the inverted state
-
-    requestAnimationFrame(() => {
-        // Stagger by travel distance so a complex rearrangement stays readable.
-        moves.sort((a, b) => a.dist - b.dist);
-        moves.forEach((m, i) => {
-            const delay = Math.min(i * FLIP.staggerMsPerTile, FLIP.maxStaggerMs);
-            m.el.style.transition = `transform ${FLIP.durationMs}ms ${FLIP.easing} ${delay}ms`;
-            m.el.style.transform = 'translate(0, 0)';
-            scheduleCleanup(m.el, FLIP.durationMs + delay, gen);
-        });
-
-        for (const el of enters) {
-            const t = `${FLIP.enterDurationMs}ms ease-out ${FLIP.enterDelayMs}ms`;
-            el.style.transition = `opacity ${t}, transform ${t}`;
-            el.style.opacity = '1';
-            el.style.transform = 'scale(1)';
-            scheduleCleanup(el, FLIP.enterDurationMs + FLIP.enterDelayMs, gen);
+    // Invert every moved tile to its old position and hide every entering tile — all up front,
+    // with no transition — so the not-yet-animated tiles wait in place until their turn.
+    for (const item of sequence) {
+        item.el.style.transition = 'none';
+        if (item.kind === 'move') {
+            item.el.style.transform = `translate(${item.dx}px, ${item.dy}px)`;
+        } else {
+            item.el.style.opacity = '0';
+            item.el.style.transform = 'scale(0.85)';
         }
-    });
+    }
+    void sequence[0].el.getBoundingClientRect(); // commit the inverted state
+
+    // Release the tiles one at a time, in reading order: build each set, then the next.
+    for (const item of sequence) {
+        if (gen !== generation) return; // a newer transition took over — abandon this one
+        await animateOne(item);
+        if (gen === generation) clearInlineAnim(item.el);
+    }
 }
 
-function scheduleCleanup(el, afterMs, gen) {
-    setTimeout(() => {
-        if (gen !== generation) return; // a newer move took over; leave it alone
-        clearInlineAnim(el);
-    }, afterMs + 50);
+function animateOne(item) {
+    return new Promise(resolve => {
+        const durationMs = item.kind === 'move' ? MOVE_STEP_MS : ENTER_STEP_MS;
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            item.el.removeEventListener('transitionend', finish);
+            resolve();
+        };
+
+        requestAnimationFrame(() => {
+            if (item.kind === 'move') {
+                item.el.style.transition = `transform ${durationMs}ms ${EASING}`;
+                item.el.style.transform = 'translate(0, 0)';
+            } else {
+                item.el.style.transition = `opacity ${durationMs}ms ease-out, transform ${durationMs}ms ease-out`;
+                item.el.style.opacity = '1';
+                item.el.style.transform = 'scale(1)';
+            }
+            item.el.addEventListener('transitionend', finish);
+            // Safety net: transitionend may not fire (interrupted, zero-delta, off-screen, …).
+            setTimeout(finish, durationMs + 80);
+        });
+    });
 }
