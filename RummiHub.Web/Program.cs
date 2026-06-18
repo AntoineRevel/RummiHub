@@ -21,6 +21,7 @@ builder.Services.AddSignalR()
         options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 builder.Services.Configure<GameOptions>(builder.Configuration.GetSection("GameOptions"));
+builder.Services.AddSingleton<ISeedStore, AppSettingsSeedStore>();
 builder.Services.AddSingleton<IGameManager, GameManager>();
 
 builder.Services.AddHttpClient("apiservice",

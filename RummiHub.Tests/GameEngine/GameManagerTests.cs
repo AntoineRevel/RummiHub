@@ -7,12 +7,21 @@ namespace RummiHub.Tests.GameEngineTests;
 
 public class GameManagerTests
 {
+    private sealed class RecordingSeedStore : ISeedStore
+    {
+        public List<string> Persisted { get; } = [];
+        public void Persist(string seed) => Persisted.Add(seed);
+    }
+
     private static GameManager CreateManager() =>
-        new(NullLogger<GameManager>.Instance, Options.Create(new GameOptions()));
+        new(NullLogger<GameManager>.Instance, Options.Create(new GameOptions()), new RecordingSeedStore());
 
     private static GameManager CreateManager(params string[] predefinedIds) =>
         new(NullLogger<GameManager>.Instance,
-            Options.Create(new GameOptions { PredefinedIds = predefinedIds.ToList() }));
+            Options.Create(new GameOptions { PredefinedIds = predefinedIds.ToList() }), new RecordingSeedStore());
+
+    private static GameManager CreateManager(ISeedStore seedStore) =>
+        new(NullLogger<GameManager>.Instance, Options.Create(new GameOptions()), seedStore);
 
     [Fact]
     public void AddAiPlayer_AddsAutoSeatWithUniqueName()
@@ -123,5 +132,28 @@ public class GameManagerTests
         manager.AddSeed("saved-1");
 
         manager.GetAvailableGameIds().Should().BeEquivalentTo(["predef-1", "predef-2", "saved-1"]);
+    }
+
+    [Fact]
+    public void AddSeed_PersistsSeed_WhenNewlyAdded()
+    {
+        var store = new RecordingSeedStore();
+        var manager = CreateManager(store);
+
+        manager.AddSeed("  spaced  ").Should().BeTrue();
+
+        store.Persisted.Should().Equal("spaced");
+    }
+
+    [Fact]
+    public void AddSeed_DoesNotPersist_WhenDuplicate()
+    {
+        var store = new RecordingSeedStore();
+        var manager = CreateManager(store);
+
+        manager.AddSeed("dup").Should().BeTrue();
+        manager.AddSeed("dup").Should().BeFalse();
+
+        store.Persisted.Should().Equal("dup");
     }
 }
