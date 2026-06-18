@@ -3,11 +3,14 @@
     <div class="valid-tiles">
         @{
             var tileIndex = StartIndex;
+            var localIndex = 0;
         }
         @foreach (var tile in ValidSet.Tiles)
         {
-            <TileComponent Tile="tile" TileIndex="tileIndex" HighlightIndices="HighlightIndices"/>
+            <TileComponent Tile="tile" TileIndex="tileIndex" HighlightIndices="HighlightIndices"
+                           FlipId="@(FlipIds is not null && localIndex < FlipIds.Length ? FlipIds[localIndex] : null)"/>
             tileIndex++;
+            localIndex++;
         }
     </div>
 </div>
@@ -16,6 +19,7 @@
     [Parameter] public required ValidSet ValidSet { get; set; }
     [Parameter] public int StartIndex { get; set; }
     [Parameter] public HashSet<int>? HighlightIndices { get; set; }
+    [Parameter] public string[]? FlipIds { get; set; }
 }
 
 <style>

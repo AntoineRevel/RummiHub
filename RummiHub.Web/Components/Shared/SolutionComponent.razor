@@ -1,16 +1,19 @@
 @using RummiHub.Core.Models
+@using RummiHub.Web.Rendering
 <div class="solution-container">
     @foreach (var setWithIndex in GetRunsWithIndices())
     {
         <ValidSetComponent ValidSet="setWithIndex.Set" StartIndex="setWithIndex.StartIndex"
-                           HighlightIndices="HighlightIndices"/>
+                           HighlightIndices="HighlightIndices"
+                           FlipIds="GetFlipSlice(setWithIndex.StartIndex, setWithIndex.Set.Tiles.Length)"/>
     }
 </div>
 <div class="solution-container">
     @foreach (var setWithIndex in GetGroupsWithIndices())
     {
         <ValidSetComponent ValidSet="setWithIndex.Set" StartIndex="setWithIndex.StartIndex"
-                           HighlightIndices="HighlightIndices"/>
+                           HighlightIndices="HighlightIndices"
+                           FlipIds="GetFlipSlice(setWithIndex.StartIndex, setWithIndex.Set.Tiles.Length)"/>
     }
 </div>
 
@@ -20,6 +23,13 @@
 
     private HashSet<int> HighlightIndices => _highlightIndices ??= ComputeHighlightIndices();
     private HashSet<int>? _highlightIndices;
+
+    // Flip ids in board reading order (Runs then Groups), aligned with each set's StartIndex.
+    private List<string> FlipIds => _flipIds ??= BoardFlipKeys.Assign(Solution);
+    private List<string>? _flipIds;
+
+    private string[] GetFlipSlice(int startIndex, int length) =>
+        FlipIds.GetRange(startIndex, length).ToArray();
 
     private List<(ValidSet Set, int StartIndex)> GetRunsWithIndices()
     {
@@ -81,6 +91,7 @@
     protected override void OnParametersSet()
     {
         _highlightIndices = null;
+        _flipIds = null;
     }
 
 }

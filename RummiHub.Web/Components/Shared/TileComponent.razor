@@ -1,5 +1,5 @@
 @using RummiHub.Core.Models
-<div class="tile @(Tile.IsJoker ? "joker" : "") @(ShouldHighlight ? "highlight" : "")">
+<div class="tile @(Tile.IsJoker ? "joker" : "") @(ShouldHighlight ? "highlight" : "")" data-flip-id="@FlipId">
     <div class="tile-number" style="color:@(Tile.IsJoker ? "purple" : GetColor(Tile.Color))">
         <b>@(Tile.IsJoker ? "J" : Tile.Value.ToString())</b>
     </div>
@@ -11,6 +11,10 @@
     [Parameter] public bool ShouldHighlight { get; set; }
     [Parameter] public int? TileIndex { get; set; }
     [Parameter] public HashSet<int>? HighlightIndices { get; set; }
+
+    // Stable id used by the FLIP board animation. Null for non-board usages (rack, toasts,
+    // optimal-play hint); Blazor omits the attribute when the value is null.
+    [Parameter] public string? FlipId { get; set; }
 
     protected override void OnParametersSet()
     {

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.JSInterop;
 using RummiHub.Core.Models;
 using RummiHub.Web.Hubs;
 using RummiHub.Web.Models;
@@ -35,8 +36,14 @@ public partial class GamePage : IAsyncDisposable
     private bool _optimalReady;
     private bool _seedSaved;
 
+    // Board "before → after" FLIP animation (wwwroot/js/tileFlip.js).
+    private IJSObjectReference? _flipModule;
+    private bool _flipReady;
+    private bool _pendingFlip;
+
     [Inject] private IServer Server { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IJSRuntime JS { get; set; } = null!;
 
     [Parameter] public string? GameId { get; set; }
 
@@ -100,12 +107,60 @@ public partial class GamePage : IAsyncDisposable
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _flipModule = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tileFlip.js");
+                _flipReady = true;
+            }
+            catch
+            {
+                // Module failed to load — the board simply won't animate.
+            }
+
+            return;
+        }
+
+        // The board has just re-rendered after a GameStateUpdated: run the FLIP now that the
+        // new layout is committed to the DOM. Other re-renders leave _pendingFlip false.
+        if (_pendingFlip && _flipReady && _flipModule is not null)
+        {
+            _pendingFlip = false;
+            try
+            {
+                await _flipModule.InvokeVoidAsync("play");
+            }
+            catch
+            {
+                // Ignore — a dropped circuit or unmounted board is not fatal.
+            }
+        }
+    }
+
     private void RegisterHubEvents()
     {
         var hub = _hubConnection!;
 
-        hub.On<GameStateDto>(HubEvents.GameStateUpdated, state =>
+        hub.On<GameStateDto>(HubEvents.GameStateUpdated, async state =>
         {
+            // FLIP: snapshot the current board's tile positions BEFORE re-rendering, so the
+            // new layout can animate from them. Skipped on the first board (nothing to glide).
+            if (_flipReady && _flipModule is not null && _gameState is not null)
+            {
+                try
+                {
+                    await _flipModule.InvokeVoidAsync("snapshot");
+                    _pendingFlip = true;
+                }
+                catch
+                {
+                    // JS interop unavailable (e.g. circuit dropping) — skip the animation.
+                }
+            }
+
             _gameState = state;
             _errorPlay = null;
             _isLoading = false;
@@ -132,7 +187,7 @@ public partial class GamePage : IAsyncDisposable
                 }
             }
 
-            InvokeAsync(StateHasChanged);
+            await InvokeAsync(StateHasChanged);
         });
 
         hub.On<List<Tile>>(HubEvents.HighlightTilesUpdated, tiles =>
@@ -388,6 +443,19 @@ public partial class GamePage : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _toastTimer?.Dispose();
+
+        if (_flipModule is not null)
+        {
+            try
+            {
+                await _flipModule.DisposeAsync();
+            }
+            catch
+            {
+                // Circuit already gone — nothing to dispose.
+            }
+        }
+
         if (_hubConnection is not null)
             await _hubConnection.DisposeAsync();
     }
