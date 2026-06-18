@@ -29,7 +29,25 @@
       "Bash(apt-cache policy *)",
       "Bash(python3 -c \"import sys; print\\(sys.path[:3]\\)\")",
       "Bash(python3 -I -c \"import json; print\\('json ok', json.__file__\\)\")",
-      "Bash(jq --version)"
+      "Bash(jq --version)",
+      "Bash(xargs cat)",
+      "Bash(dmesg)",
+      "Read(//sys/fs/cgroup/**)",
+      "Bash(ps -eo pid,ppid,lstart,etime,rss,comm,args --sort=lstart)",
+      "Bash(ps -o pid,lstart,etime,args -p 32060,31814)",
+      "Read(//home/vscode/.aspire/logs/**)",
+      "Read(//home/vscode/.cache/dcp-work/**)",
+      "Bash(awk '$6 >= \"18:33:00\" && $6 <= \"18:37:00\"')",
+      "Bash(git rm *)",
+      "Bash(git ls-tree *)",
+      "Bash(gh pr create --base master --head claude/awesome-carson-0g6yba --title 'Add AI auto-play and unify game setup into the lobby' --body ' *)",
+      "Bash(python3 -c \"import sys; print\\(sys.version\\); print\\(sys.executable\\)\")",
+      "Bash(ps -eo pid,lstart,args)",
+      "Bash(chmod +x /tmp/worker-sig-watcher.sh)",
+      "Bash(nohup /tmp/worker-sig-watcher.sh)",
+      "Bash(echo \"watcher PID: $!\")",
+      "Bash(sudo cat /proc/77888/status)",
+      "Bash(git -C /workspaces/RummiHub diff --stat RummiHub.Solver.Worker/SolverWorker.cs)"
     ],
     "additionalDirectories": [
       "/tmp"
