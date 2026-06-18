@@ -4,7 +4,7 @@ using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
-public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptions> options) : IGameManager
+public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptions> options, ISeedStore seedStore) : IGameManager
 {
     private readonly ConcurrentDictionary<string, Game> _games = new();
 
@@ -31,6 +31,9 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 
         if (!_savedSeeds.TryAdd(seed, 0))
             return false;
+
+        // Persist the seed "in hard" to appsettings.json so it survives a restart.
+        seedStore.Persist(seed);
 
         LogSeedSaved(seed);
         return true;
