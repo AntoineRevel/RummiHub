@@ -3,9 +3,9 @@ using RummiHub.Core.Models;
 namespace RummiHub.Web.Rendering;
 
 /// <summary>
-/// Computes stable per-tile "flip ids" used by the client-side FLIP animation
-/// (<c>wwwroot/js/tileFlip.js</c>) to match a tile's position on the previous board to
-/// its position on the next board, so tiles glide instead of teleporting.
+/// Computes stable per-tile "flip ids" for a board, used server-side by
+/// <see cref="BoardTransition"/> to count how many tiles moved/entered between two boards
+/// (which drives the animation duration and AI pacing).
 ///
 /// Tiles of the same (value, color, isJoker) are visually interchangeable and can appear
 /// in duplicate, so each tile gets an occurrence index within its type, assigned by walking

@@ -16,8 +16,6 @@ namespace RummiHub.Web.Components.Pages;
 
 public partial class GamePage : IAsyncDisposable
 {
-    private readonly HashSet<Guid> _newTiles = [];
-    private readonly HashSet<Guid> _removingTiles = [];
     private readonly List<TileInstance> _selectedTileInstances = [];
 
     private HubConnection? _hubConnection;
@@ -37,10 +35,9 @@ public partial class GamePage : IAsyncDisposable
     private bool _optimalReady;
     private bool _seedSaved;
 
-    // Board "before → after" FLIP animation (wwwroot/js/tileFlip.js).
-    private IJSObjectReference? _flipModule;
-    private bool _flipReady;
-    private bool _pendingFlip;
+    // Whole-page tile animation module (wwwroot/js/tile-animations.js). It runs a FLIP pass,
+    // one tile at a time, after every render, diffing DOM positions itself.
+    private IJSObjectReference? _tileAnimations;
 
     [Inject] private IServer Server { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
@@ -110,36 +107,23 @@ public partial class GamePage : IAsyncDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        try
         {
-            try
+            if (firstRender)
             {
-                _flipModule = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tileFlip.js");
-                await _flipModule.InvokeVoidAsync(
+                _tileAnimations = await JS.InvokeAsync<IJSObjectReference>("import", "./js/tile-animations.js");
+                await _tileAnimations.InvokeVoidAsync(
                     "configure", BoardAnimation.MoveStepMs, BoardAnimation.EnterStepMs);
-                _flipReady = true;
-            }
-            catch
-            {
-                // Module failed to load — the board simply won't animate.
             }
 
-            return;
+            // The module diffs tile positions against the previous render, so it needs to run
+            // after every render. It animates only tiles that actually moved.
+            if (_tileAnimations is not null)
+                await _tileAnimations.InvokeVoidAsync("animate");
         }
-
-        // The board has just re-rendered after a GameStateUpdated: run the FLIP now that the
-        // new layout is committed to the DOM. Other re-renders leave _pendingFlip false.
-        if (_pendingFlip && _flipReady && _flipModule is not null)
+        catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
         {
-            _pendingFlip = false;
-            try
-            {
-                await _flipModule.InvokeVoidAsync("play");
-            }
-            catch
-            {
-                // Ignore — a dropped circuit or unmounted board is not fatal.
-            }
+            // Animations are best-effort: never let a JS hiccup break the page.
         }
     }
 
@@ -147,23 +131,8 @@ public partial class GamePage : IAsyncDisposable
     {
         var hub = _hubConnection!;
 
-        hub.On<GameStateDto>(HubEvents.GameStateUpdated, async state =>
+        hub.On<GameStateDto>(HubEvents.GameStateUpdated, state =>
         {
-            // FLIP: snapshot the current board's tile positions BEFORE re-rendering, so the
-            // new layout can animate from them. Skipped on the first board (nothing to glide).
-            if (_flipReady && _flipModule is not null && _gameState is not null)
-            {
-                try
-                {
-                    await _flipModule.InvokeVoidAsync("snapshot");
-                    _pendingFlip = true;
-                }
-                catch
-                {
-                    // JS interop unavailable (e.g. circuit dropping) — skip the animation.
-                }
-            }
-
             _gameState = state;
             _errorPlay = null;
             _isLoading = false;
@@ -190,7 +159,7 @@ public partial class GamePage : IAsyncDisposable
                 }
             }
 
-            await InvokeAsync(StateHasChanged);
+            InvokeAsync(StateHasChanged);
         });
 
         hub.On<List<Tile>>(HubEvents.HighlightTilesUpdated, tiles =>
@@ -337,17 +306,12 @@ public partial class GamePage : IAsyncDisposable
     {
         _selectedTileInstances.Clear();
         SelectedTilesForPlay.Clear();
-        _removingTiles.Clear();
-        _newTiles.Clear();
     }
 
-    private async Task OnTileInstanceClick(TileInstance tileInstance)
+    private void OnTileInstanceClick(TileInstance tileInstance)
     {
-        _removingTiles.Add(tileInstance.Id);
-        StateHasChanged();
-        await Task.Delay(300);
+        // The FLIP pass animates the tile flying back to its rack stack.
         _selectedTileInstances.Remove(tileInstance);
-        _removingTiles.Remove(tileInstance.Id);
         SyncSelectedTiles();
         StateHasChanged();
     }
@@ -358,7 +322,7 @@ public partial class GamePage : IAsyncDisposable
         SelectedTilesForPlay.AddRange(_selectedTileInstances.Select(ti => ti.Tile));
     }
 
-    private async Task OnTileStackClick(Tile tileType)
+    private void OnTileStackClick(Tile tileType)
     {
         var totalAvailable = _rackTiles.Count(t => t.Equals(tileType));
         var currentSelectedCount = GetSelectedCountForTile(tileType);
@@ -368,13 +332,9 @@ public partial class GamePage : IAsyncDisposable
         {
             var tilesToAdd = newSelectedCount - currentSelectedCount;
             for (var i = 0; i < tilesToAdd; i++)
-            {
-                var newInstance = new TileInstance(tileType);
-                _selectedTileInstances.Add(newInstance);
-                _newTiles.Add(newInstance.Id);
-            }
+                _selectedTileInstances.Add(new TileInstance(tileType));
         }
-        else if (newSelectedCount < currentSelectedCount)
+        else
         {
             var tilesToRemove = currentSelectedCount - newSelectedCount;
             for (var i = 0; i < tilesToRemove; i++)
@@ -385,27 +345,9 @@ public partial class GamePage : IAsyncDisposable
                 break;
             }
         }
-        else
-        {
-            var instancesToRemove = _selectedTileInstances.Where(ti => ti.Tile.Equals(tileType)).ToList();
-            foreach (var instance in instancesToRemove)
-            {
-                _selectedTileInstances.Remove(instance);
-                _newTiles.Remove(instance.Id);
-            }
-        }
 
         SyncSelectedTiles();
         StateHasChanged();
-
-        if (newSelectedCount > currentSelectedCount)
-        {
-            await Task.Delay(300);
-            var instancesToClean = _selectedTileInstances
-                .Where(ti => ti.Tile.Equals(tileType) && _newTiles.Contains(ti.Id)).ToList();
-            foreach (var instance in instancesToClean) _newTiles.Remove(instance.Id);
-            StateHasChanged();
-        }
     }
 
     private int GetSelectedCountForTile(Tile tileType) =>
@@ -447,20 +389,20 @@ public partial class GamePage : IAsyncDisposable
     {
         _toastTimer?.Dispose();
 
-        if (_flipModule is not null)
+        if (_hubConnection is not null)
+            await _hubConnection.DisposeAsync();
+
+        if (_tileAnimations is not null)
         {
             try
             {
-                await _flipModule.DisposeAsync();
+                await _tileAnimations.DisposeAsync();
             }
-            catch
+            catch (JSDisconnectedException)
             {
-                // Circuit already gone — nothing to dispose.
+                // Circuit already closed — nothing to clean up client-side.
             }
         }
-
-        if (_hubConnection is not null)
-            await _hubConnection.DisposeAsync();
     }
 
     private readonly record struct TileInstance(Tile Tile)

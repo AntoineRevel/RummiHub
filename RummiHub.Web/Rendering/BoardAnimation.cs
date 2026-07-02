@@ -2,7 +2,7 @@ namespace RummiHub.Web.Rendering;
 
 /// <summary>
 /// Timing for the sequential board tile animation, and the single source of truth for it.
-/// The same values are pushed to the JS module (<c>wwwroot/js/tileFlip.js</c>) via its
+/// The same values are pushed to the JS module (<c>wwwroot/js/tile-animations.js</c>) via its
 /// <c>configure()</c> export, and used server-side to estimate how long a transition's
 /// animation runs so AI pacing can wait for it to finish before the next move.
 /// Tiles animate one at a time, so per-step durations add up.

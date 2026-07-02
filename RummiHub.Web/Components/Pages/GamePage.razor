@@ -134,7 +134,7 @@ else
         }
 
         <!-- Board -->
-        <div class="solution-section">
+        <div class="solution-section" data-anim-scope>
             <SolutionComponent Solution="_gameState.Board" HighlightTiles="_highlightTiles"/>
         </div>
 
@@ -186,10 +186,10 @@ else
                     {
                         <div class="selected-tiles-section">
                             <h4>Selected tiles (@SelectedTilesForPlay.Count)</h4>
-                            <div class="selected-tiles-display">
+                            <div class="selected-tiles-display" data-anim-scope>
                                 @foreach (var tileInstance in _selectedTileInstances)
                                 {
-                                    <div class="selected-tile-wrapper @(_removingTiles.Contains(tileInstance.Id) ? "removing" : "") @(_newTiles.Contains(tileInstance.Id) ? "new-tile" : "")"
+                                    <div class="selected-tile-wrapper"
                                          @onclick="() => OnTileInstanceClick(tileInstance)">
                                         <TileComponent Tile="tileInstance.Tile" ShouldHighlight="false"/>
                                     </div>
@@ -201,7 +201,7 @@ else
                     <!-- Available tiles (clickable) -->
                     <div class="available-tiles-section">
                         <h4>Available tiles</h4>
-                        <div class="tiles-container">
+                        <div class="tiles-container" data-anim-scope>
                             @foreach (var tileGroup in GetGroupedTiles())
                             {
                                 var tileType = tileGroup.Key;
@@ -877,43 +877,9 @@ else
         transition: opacity 0.2s ease, filter 0.2s ease;
     }
 
-    .selected-tile-wrapper.new-tile {
-        animation: slideIn 0.3s ease-out;
-    }
-
     .selected-tile-wrapper:hover {
         opacity: 0.5;
         filter: grayscale(70%);
-    }
-
-    .selected-tile-wrapper.removing {
-        animation: slideOut 0.3s ease-in forwards;
-    }
-
-    @@keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: scale(0.8) translateY(-10px);
-        }
-        to {
-            opacity: 1;
-            transform: scale(1) translateY(0);
-        }
-    }
-
-    @@keyframes slideOut {
-        from {
-            opacity: 1;
-            transform: scale(1);
-            max-width: 100px;
-            margin-right: 5px;
-        }
-        to {
-            opacity: 0;
-            transform: scale(0.8);
-            max-width: 0;
-            margin-right: 0;
-        }
     }
 
     /* Available tiles */
