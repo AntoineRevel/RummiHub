@@ -134,6 +134,10 @@ public partial class GamePage : IAsyncDisposable
             _gameState = state;
             _errorPlay = null;
             _isLoading = false;
+            // Cleared here rather than on RackUpdated so the selected tiles are still
+            // on-screen one render earlier — their positions are what the played tiles
+            // fly from when the new board arrives in this same update.
+            ClearSelection();
 
             if (_highlightTiles != null)
             {
@@ -191,7 +195,6 @@ public partial class GamePage : IAsyncDisposable
         hub.On<List<Tile>>(HubEvents.RackUpdated, rack =>
         {
             _rackTiles = rack;
-            ClearSelection();
             InvokeAsync(StateHasChanged);
         });
 

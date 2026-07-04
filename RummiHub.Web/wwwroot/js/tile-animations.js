@@ -25,8 +25,12 @@
 // reconnects and window resizes just (re)snapshot — nothing animates from nothing.
 
 let MOVE_MS = 350, POP_MS = 300, START_INTERVAL_MS = 350;
-const MIN_DELTA = 4;   // px — below this a tile counts as stationary
-const BLOCK_DELTA = 6; // px — same-set deltas this close glide together as one block
+const MIN_DELTA = 4;    // px — cross-scope flights below this just display
+// An intra-scope move below this counts as "didn't move". Real moves span at least one
+// tile (~50px); this absorbs the whole grid compacting a few px when a scrollbar appears,
+// which would otherwise break stationary claims and let new tiles steal their slots.
+const STILL_DELTA = 18;
+const BLOCK_DELTA = 6;  // px — same-set deltas this close glide together as one block
 const MOVE_EASING = 'cubic-bezier(0.22, 0.9, 0.26, 1)';
 const POP_EASING = 'cubic-bezier(0.34, 1.4, 0.64, 1)';
 
@@ -166,7 +170,7 @@ function matchTiles(snap, prev) {
         if (tile.from) continue;
         const slots = free.get(tile.type) ?? [];
         const i = slots.findIndex(o => o.scope === tile.scope
-            && Math.abs(o.sx - tile.sx) < MIN_DELTA && Math.abs(o.sy - tile.sy) < MIN_DELTA);
+            && Math.abs(o.sx - tile.sx) < STILL_DELTA && Math.abs(o.sy - tile.sy) < STILL_DELTA);
         if (i >= 0) tile.from = slots.splice(i, 1)[0];
         else pending.push(tile);
     }
@@ -195,7 +199,8 @@ function buildSteps(snap) {
     for (const tile of snap.tiles) {
         if (!tile.from) { pops.push({ items: [{ tile }] }); continue; }
         const { dx, dy } = deltaOf(tile);
-        if (Math.abs(dx) < MIN_DELTA && Math.abs(dy) < MIN_DELTA) continue;
+        const still = tile.from.scope === tile.scope ? STILL_DELTA : MIN_DELTA;
+        if (Math.abs(dx) < still && Math.abs(dy) < still) continue;
         if (tile.from.scope !== tile.scope) { flights.push({ items: [{ tile, dx, dy }] }); continue; }
         if (tile.enterOnly) continue; // rack-internal reshuffle: instant by design
         // Same-scope slide: joins its paired set's block when the deltas agree.
