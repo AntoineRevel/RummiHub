@@ -47,7 +47,10 @@
       "Bash(nohup /tmp/worker-sig-watcher.sh)",
       "Bash(echo \"watcher PID: $!\")",
       "Bash(sudo cat /proc/77888/status)",
-      "Bash(git -C /workspaces/RummiHub diff --stat RummiHub.Solver.Worker/SolverWorker.cs)"
+      "Bash(git -C /workspaces/RummiHub diff --stat RummiHub.Solver.Worker/SolverWorker.cs)",
+      "Bash(node --check --input-type=module -)",
+      "Read(//usr/local/share/nvm/versions/**)",
+      "Read(//home/vscode/.nvm/versions/**)"
     ],
     "additionalDirectories": [
       "/tmp"

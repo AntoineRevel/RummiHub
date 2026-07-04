@@ -134,7 +134,7 @@ else
         }
 
         <!-- Board -->
-        <div class="solution-section" data-anim-scope>
+        <div class="solution-section" data-anim-scope="board">
             <SolutionComponent Solution="_gameState.Board" HighlightTiles="_highlightTiles"/>
         </div>
 
@@ -186,7 +186,7 @@ else
                     {
                         <div class="selected-tiles-section">
                             <h4>Selected tiles (@SelectedTilesForPlay.Count)</h4>
-                            <div class="selected-tiles-display" data-anim-scope>
+                            <div class="selected-tiles-display" data-anim-scope="selection">
                                 @foreach (var tileInstance in _selectedTileInstances)
                                 {
                                     <div class="selected-tile-wrapper"
@@ -201,7 +201,9 @@ else
                     <!-- Available tiles (clickable) -->
                     <div class="available-tiles-section">
                         <h4>Available tiles</h4>
-                        <div class="tiles-container" data-anim-scope>
+                        <!-- Static scope: the rack always displays instantly (tiles are still
+                             tracked so a selected tile can fly out of / back into its stack). -->
+                        <div class="tiles-container" data-anim-scope="rack" data-anim-static>
                             @foreach (var tileGroup in GetGroupedTiles())
                             {
                                 var tileType = tileGroup.Key;
@@ -281,8 +283,10 @@ else
                 }
                 else
                 {
-                    <!-- Read-only rack display when not my turn -->
-                    <div class="tiles-container readonly">
+                    <!-- Read-only rack display when not my turn. Same "rack" static scope as the
+                         interactive rack, so tiles stay tracked across turn changes and never
+                         replay a pop-in when the turn comes back. -->
+                    <div class="tiles-container readonly" data-anim-scope="rack" data-anim-static>
                         @foreach (var tileGroup in GetGroupedTiles())
                         {
                             var tileType = tileGroup.Key;
