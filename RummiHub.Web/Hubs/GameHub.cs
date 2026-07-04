@@ -471,15 +471,11 @@ public partial class GameHub(
         engine.AdvanceToNextPlayer();
 
         // Align the post-move board to the one currently shown so unchanged sets keep their
-        // place, then estimate how long the client's one-tile-at-a-time animation runs so the
+        // place, then estimate how long the client's step-by-step animation runs so the
         // next AI move can wait for it to finish before playing.
         var previous = game.LastBroadcastBoard;
         var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
-        var moved = 0;
-        var entered = 0;
-        if (previous is not null)
-            (moved, entered) = BoardTransition.Compute(previous, aligned);
-        game.PendingAnimationMs = BoardAnimation.Duration(moved, entered);
+        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
         game.LastBroadcastBoard = aligned;
 
         var state = BuildGameState(game);

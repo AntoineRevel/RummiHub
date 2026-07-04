@@ -113,7 +113,7 @@ public partial class GamePage : IAsyncDisposable
             {
                 _tileAnimations = await JS.InvokeAsync<IJSObjectReference>("import", "./js/tile-animations.js");
                 await _tileAnimations.InvokeVoidAsync(
-                    "configure", BoardAnimation.MoveStepMs, BoardAnimation.EnterStepMs);
+                    "configure", BoardPacing.MoveMs, BoardPacing.PopMs, BoardPacing.StartIntervalMs);
             }
 
             // The module diffs tile positions against the previous render, so it needs to run
