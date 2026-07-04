@@ -2,34 +2,26 @@
 //
 // After every Blazor render, animate() measures every tile inside the [data-anim-scope]
 // containers and diffs against the previous render. Matching runs at two levels:
-//   1. Set level (board): [data-anim-set] containers are paired prev↔next by maximal
-//      multiset overlap of their tile types — mirroring the server's BoardAlignment and
-//      BoardPacing. Common tiles are matched occurrence-by-occurrence in set order, so
-//      each gets its exact origin and consumes its old slot.
-//   2. Tile level (everything else): a tile that didn't move claims its own old spot;
-//      the rest fly from the nearest freed slot — what makes plays fly hand → board and
-//      deselections fly back to their stack — and tiles left without a slot pop in.
+//   1. Board sets ([data-anim-set]) are paired prev↔next by maximal multiset overlap of
+//      their tile types (mirroring the server's BoardAlignment/BoardPacing); common tiles
+//      match occurrence-by-occurrence in set order — exact origins, old slots consumed.
+//   2. Every other tile claims its own old spot if it didn't move, else flies from the
+//      nearest freed slot (plays fly hand → board, deselections fly back to their stack),
+//      else it's new and pops in.
 //
-// A step is the unit of sequencing: animable tiles of one PAIRED set sharing one delta
-// form ONE step (the whole run/group glides as a block); every other mover and every
-// pop-in is a step of its own. Steps are released one at a time — board rearrangements
-// first, then cross-scope flights, then pop-ins, each in DOM reading order — one step
-// starting every START_INTERVAL_MS. No duration cap: big rearrangements take their time.
+// A step is the unit of sequencing: animable tiles of one PAIRED set sharing one delta are
+// ONE step (the run/group glides as a block); every other mover or pop is a step of its
+// own. Steps are released one per START_INTERVAL_MS — board rearrangements, then flights,
+// then pops, each in DOM order — with NO duration cap: big rearrangements take their time.
+// The rack ([data-anim-enter-only]) only pops newcomers (the draw) and glides cross-scope
+// arrivals; internal reshuffles are instant. [data-anim-ignore] subtrees (the greyed-out
+// placeholder of an emptied stack) are never measured.
 //
-// Scope semantics:
-//   • board / selection: full animation (moves glide, newcomers pop).
-//   • rack, marked [data-anim-enter-only]: newcomers pop (the draw) and cross-scope
-//     arrivals glide home, but internal moves are instant — re-sorting the rack must
-//     not cascade a stack-by-stack replay.
-//   • [data-anim-ignore] subtrees are not measured (the greyed-out placeholder of an
-//     emptied stack), so selecting the LAST copy of a type flies instead of popping.
-//
-// Every tile is measured in TWO frames of reference: root-relative (flight deltas across
-// the page) and scope-relative (did it really move inside its own container?). A section
-// appearing above shifts everything root-relatively but nothing scope-relatively — zero
-// false moves. Positions are TRANSFORM-FREE (offsetLeft/offsetTop), so hover effects and
-// the running animations never pollute the snapshots: an unrelated re-render mid-sequence
-// sees "nothing moved" and leaves the in-flight sequence untouched. First render,
+// Each tile is measured in TWO frames: root-relative (flight deltas) and scope-relative
+// (did it really move inside its container?) — a section appearing above the board shifts
+// nothing scope-relatively, so it animates nothing. Positions are TRANSFORM-FREE
+// (offsetLeft/offsetTop), so hovers and the running animations never pollute snapshots:
+// a re-render without a real diff leaves the in-flight sequence untouched. First render,
 // reconnects and window resizes just (re)snapshot — nothing animates from nothing.
 
 let MOVE_MS = 350, POP_MS = 300, START_INTERVAL_MS = 350;

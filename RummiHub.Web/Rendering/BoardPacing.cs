@@ -17,9 +17,9 @@ public static class BoardPacing
     public const int PopMs = 300;
 
     /// <summary>
-    /// THE tempo dial: interval between successive step starts. Equal to <see cref="MoveMs"/>,
-    /// each step finishes exactly when the next one begins — strict one-at-a-time, no duration
-    /// cap however many steps there are. (~100 would overlap the steps into a cascade.)
+    /// THE tempo dial: interval between successive step starts. Equal to <see cref="MoveMs"/>
+    /// each step ends exactly when the next begins — strict one-at-a-time, no duration cap.
+    /// (~100 would overlap the steps into a cascade.)
     /// </summary>
     public const int StartIntervalMs = MoveMs;
 
@@ -27,9 +27,9 @@ public static class BoardPacing
     private const int BufferMs = 200;
 
     /// <summary>
-    /// Estimated duration (ms) of the client animation for <paramref name="previous"/> →
-    /// <paramref name="next"/>. Expects <paramref name="next"/> to already be aligned
-    /// (see <see cref="BoardAlignment"/>) so unchanged sets keep their reading-order index.
+    /// Estimated client animation duration (ms) for <paramref name="previous"/> →
+    /// <paramref name="next"/>, which must already be aligned (<see cref="BoardAlignment"/>)
+    /// so unchanged sets keep their reading-order index.
     /// </summary>
     public static int EstimateMs(Solution previous, Solution next)
         => DurationForSteps(CountSteps(previous, next));
@@ -37,14 +37,11 @@ public static class BoardPacing
     public static int DurationForSteps(int steps)
         => steps == 0 ? 0 : steps * StartIntervalMs + BufferMs;
 
-    /// <summary>
-    /// Counts animation steps the way the client groups them: sets are paired prev↔next by
-    /// maximal multiset overlap (greedy in reading order, like <see cref="BoardAlignment"/>);
-    /// a paired set that changed reading-order index glides as ONE block step, plus one step
-    /// per tile that entered it; tiles of unpaired new sets are one step each. An estimate,
-    /// not an exact replay — <see cref="BufferMs"/> and the AI's watchable pause absorb the
-    /// difference.
-    /// </summary>
+    // Counts animation steps the way the client groups them: sets are paired prev↔next by
+    // maximal multiset overlap (greedy in reading order, like BoardAlignment); a paired set
+    // that changed reading-order index glides as ONE block step, plus one step per tile that
+    // entered it; tiles of unpaired new sets are one step each. An estimate, not an exact
+    // replay — BufferMs and the AI's watchable pause absorb the difference.
     private static int CountSteps(Solution previous, Solution next)
     {
         var prevSets = ReadingOrder(previous);
