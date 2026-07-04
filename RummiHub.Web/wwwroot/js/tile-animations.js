@@ -1,53 +1,78 @@
-// Tile animations for the game — a FLIP pass played ONE TILE AT A TIME.
+// Tile animations — a whole-page FLIP pass, replayed as a SEQUENCE of steps.
 //
-// After every Blazor render, `animate()` measures the position of each tile inside the
-// containers marked [data-anim-scope="<name>"] and compares it with the snapshot from the
-// previous render. Tiles are matched by their [data-tile-type] (value+color) using a two-pass
-// nearest-neighbour assignment: stationary tiles claim their own old spot first, so a tile
-// played from the rack/selection can fly onto the board while an identical tile sitting still
-// is never hijacked. Matched-but-moved tiles slide to their new spot; brand-new tiles pop in.
+// After every Blazor render, animate() measures every tile inside the [data-anim-scope]
+// containers and diffs against the previous render. Matching runs at two levels:
+//   1. Set level (board): [data-anim-set] containers are paired prev↔next by maximal
+//      multiset overlap of their tile types — mirroring the server's BoardAlignment and
+//      BoardPacing. Common tiles are matched occurrence-by-occurrence in set order, so
+//      each gets its exact origin and consumes its old slot.
+//   2. Tile level (everything else): a tile that didn't move claims its own old spot;
+//      the rest fly from the nearest freed slot — what makes plays fly hand → board and
+//      deselections fly back to their stack — and tiles left without a slot pop in.
 //
-// The animations are played SEQUENTIALLY, in DOM reading order (board runs then groups, left to
-// right), so at most one tile moves at a time and the move reads like a deliberate rearrangement.
-// Each pending animation is created PAUSED at its first keyframe, so tiles waiting their turn
-// stay at their old position (or hidden, for newcomers) until released. The board is aligned
-// server-side, so unchanged sets keep their place — only genuinely moved or new tiles animate.
+// A step is the unit of sequencing: animable tiles of one PAIRED set sharing one delta
+// form ONE step (the whole run/group glides as a block); every other mover and every
+// pop-in is a step of its own. Steps are released one at a time — board rearrangements
+// first, then cross-scope flights, then pop-ins, each in DOM reading order — one step
+// starting every START_INTERVAL_MS. No duration cap: big rearrangements take their time.
 //
-// What does NOT animate — the rules that keep the page feeling instant:
-//   • First tiles ever seen (page load / reconnect): if the previous snapshot had no tiles at
-//     all, everything just appears — no pop-in storm of the whole page.
-//   • STATIC scopes ([data-anim-static], i.e. the player's rack): their tiles are measured (so
-//     they stay tracked and can be flight origins) but display instantly. The one exception is
-//     a tile ARRIVING from another scope (deselection flying back from the selection area).
-//   • Container layout shifts: when every tile of a scope moved by the same delta from within
-//     that same scope (a section appearing above pushed it down), nothing really moved —
-//     the shift is skipped instead of replaying the whole container tile by tile.
-//   • Window resizes reset the snapshot entirely: reflowed positions never count as moves.
+// Scope semantics:
+//   • board / selection: full animation (moves glide, newcomers pop).
+//   • rack, marked [data-anim-enter-only]: newcomers pop (the draw) and cross-scope
+//     arrivals glide home, but internal moves are instant — re-sorting the rack must
+//     not cascade a stack-by-stack replay.
+//   • [data-anim-ignore] subtrees are not measured (the greyed-out placeholder of an
+//     emptied stack), so selecting the LAST copy of a type flies instead of popping.
 //
-// Positions are measured TRANSFORM-FREE (offsetLeft/offsetTop), so hover effects and the running
-// animations themselves never pollute the snapshots. A crucial consequence: a tile mid-animation
-// still measures at its final layout spot, so an unrelated re-render (highlight, hint, rack…) sees
-// "nothing moved" and leaves the in-flight sequence untouched.
+// Every tile is measured in TWO frames of reference: root-relative (flight deltas across
+// the page) and scope-relative (did it really move inside its own container?). A section
+// appearing above shifts everything root-relatively but nothing scope-relatively — zero
+// false moves. Positions are TRANSFORM-FREE (offsetLeft/offsetTop), so hover effects and
+// the running animations never pollute the snapshots: an unrelated re-render mid-sequence
+// sees "nothing moved" and leaves the in-flight sequence untouched. First render,
+// reconnects and window resizes just (re)snapshot — nothing animates from nothing.
 
-let MOVE_MS = 350;
-let POP_MS = 300;
-const MIN_DELTA = 4; // px — ignore sub-pixel / hover noise
+let MOVE_MS = 350, POP_MS = 300, START_INTERVAL_MS = 350;
+const MIN_DELTA = 4;   // px — below this a tile counts as stationary
+const BLOCK_DELTA = 6; // px — same-set deltas this close glide together as one block
 const MOVE_EASING = 'cubic-bezier(0.22, 0.9, 0.26, 1)';
 const POP_EASING = 'cubic-bezier(0.34, 1.4, 0.64, 1)';
 
-let lastPositions = null; // Map<tileType, Array<{x, y, scope}>>
-let generation = 0;       // bumped per real pass so a newer render abandons an in-flight sequence
-let activeAnims = [];      // animations of the current sequence (paused until their turn)
+let last = null;      // previous snapshot — plain data, never old DOM nodes
+let generation = 0;   // bumped per sequence so a newer render abandons an in-flight one
+let running = [];     // animations of the current sequence (paused until released)
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-// A resize reflows the whole page; the next render must re-snapshot, not "animate" the reflow.
+// A resize reflows the whole page; the next render must re-snapshot, not "animate" it.
 window.addEventListener('resize', () => reset());
 
-// Per-tile durations, kept in sync with the server (RummiHub.Web/Rendering/BoardAnimation.cs),
-// which uses the same numbers to pace AI moves until the animation finishes.
-export function configure(moveMs, popMs) {
+// Timing pushed from the server (Rendering/BoardPacing.cs), which paces AI moves so they
+// never land on top of a still-running animation.
+export function configure(moveMs, popMs, startIntervalMs) {
     if (moveMs > 0) MOVE_MS = moveMs;
     if (popMs > 0) POP_MS = popMs;
+    if (startIntervalMs > 0) START_INTERVAL_MS = startIntervalMs;
+}
+
+export function reset() {
+    cancelRunning();
+    last = null;
+    generation++;
+}
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+const bucket = (map, key) => {
+    let list = map.get(key);
+    if (!list) map.set(key, list = []);
+    return list;
+};
+
+function cancelRunning() {
+    for (const anim of running) {
+        try { anim.cancel(); } catch { /* element already gone */ }
+    }
+    running = [];
 }
 
 // Position of `el` relative to `root`, ignoring CSS transforms.
@@ -66,42 +91,130 @@ function positionIn(root, el) {
 }
 
 function collect(root) {
-    const byType = new Map();
-    const all = [];
-    const scopes = [];
-    let order = 0;
+    const tiles = [], sets = [], setIndexOf = new Map();
     for (const scopeEl of root.querySelectorAll('[data-anim-scope]')) {
         const scope = scopeEl.getAttribute('data-anim-scope') || 'default';
-        const isStatic = scopeEl.hasAttribute('data-anim-static');
-        const scopeEntries = [];
+        const enterOnly = scopeEl.hasAttribute('data-anim-enter-only');
+        const origin = positionIn(root, scopeEl);
         for (const el of scopeEl.querySelectorAll('[data-tile-type]')) {
             if (!(el.offsetWidth || el.offsetHeight)) continue;
-            const type = el.dataset.tileType;
-            const pos = positionIn(root, el);
-            const entry = { el, x: pos.x, y: pos.y, order: order++, scope, isStatic };
-            all.push(entry);
-            scopeEntries.push(entry);
-            let list = byType.get(type);
-            if (!list) byType.set(type, list = []);
-            list.push(entry);
+            if (el.closest('[data-anim-ignore]')) continue;
+            const setEl = el.closest('[data-anim-set]');
+            let setIndex = -1;
+            if (setEl) {
+                if (!setIndexOf.has(setEl)) { setIndexOf.set(setEl, sets.length); sets.push({ tiles: [] }); }
+                setIndex = setIndexOf.get(setEl);
+            }
+            const { x, y } = positionIn(root, el);
+            const tile = { el, type: el.dataset.tileType, scope, enterOnly, setIndex,
+                           x, y, sx: x - origin.x, sy: y - origin.y };
+            tiles.push(tile);
+            if (setIndex >= 0) sets[setIndex].tiles.push(tile);
         }
-        scopes.push(scopeEntries);
     }
-    return { byType, all, scopes };
+    return { tiles, sets };
 }
 
-function storePositions(byType) {
-    // Plain positions only — never keep references to old DOM nodes.
-    lastPositions = new Map();
-    for (const [type, entries] of byType)
-        lastPositions.set(type, entries.map(({ x, y, scope }) => ({ x, y, scope })));
+function store(snap) {
+    const tiles = snap.tiles.map(({ type, scope, setIndex, x, y, sx, sy }) =>
+        ({ type, scope, setIndex, x, y, sx, sy }));
+    const sets = snap.sets.map(() => ({ tiles: [] }));
+    for (const tile of tiles) if (tile.setIndex >= 0) sets[tile.setIndex].tiles.push(tile);
+    last = { tiles, sets };
 }
 
-function cancelActive() {
-    for (const anim of activeAnims) {
-        try { anim.cancel(); } catch { /* already gone */ }
+// Multiset overlap of two tile lists, by type, occurrence-aware.
+function overlap(aTiles, bTiles) {
+    const counts = new Map();
+    for (const t of aTiles) counts.set(t.type, (counts.get(t.type) ?? 0) + 1);
+    let shared = 0;
+    for (const t of bTiles) {
+        const count = counts.get(t.type) ?? 0;
+        if (count > 0) { counts.set(t.type, count - 1); shared++; }
     }
-    activeAnims = [];
+    return shared;
+}
+
+// Level 1 — pair board sets prev↔next greedily by overlap (ties go to the nearest), then
+// match their common tiles occurrence-by-occurrence in set order: exact deltas, slots used.
+function matchSets(snap, prev) {
+    const taken = new Set();
+    for (const prevSet of prev.sets) {
+        let best = null, bestShared = 0, bestDist = Infinity;
+        for (const set of snap.sets) {
+            if (taken.has(set)) continue;
+            const shared = overlap(prevSet.tiles, set.tiles);
+            if (shared === 0) continue;
+            const dist = (set.tiles[0].x - prevSet.tiles[0].x) ** 2
+                       + (set.tiles[0].y - prevSet.tiles[0].y) ** 2;
+            if (shared > bestShared || (shared === bestShared && dist < bestDist)) {
+                best = set; bestShared = shared; bestDist = dist;
+            }
+        }
+        if (!best) continue;
+        taken.add(best);
+        best.paired = true;
+        const pool = new Map();
+        for (const t of prevSet.tiles) bucket(pool, t.type).push(t);
+        for (const tile of best.tiles) {
+            const from = pool.get(tile.type)?.shift();
+            if (from) { tile.from = from; from.used = true; }
+        }
+    }
+}
+
+// Level 2 — remaining tiles: claim your own old spot if you didn't move (same scope,
+// scope-relative), else fly from the nearest freed slot, else you're new.
+function matchTiles(snap, prev) {
+    const free = new Map();
+    for (const t of prev.tiles) if (!t.used) bucket(free, t.type).push(t);
+
+    const pending = [];
+    for (const tile of snap.tiles) {
+        if (tile.from) continue;
+        const slots = free.get(tile.type) ?? [];
+        const i = slots.findIndex(o => o.scope === tile.scope
+            && Math.abs(o.sx - tile.sx) < MIN_DELTA && Math.abs(o.sy - tile.sy) < MIN_DELTA);
+        if (i >= 0) tile.from = slots.splice(i, 1)[0];
+        else pending.push(tile);
+    }
+
+    for (const tile of pending) {
+        const slots = free.get(tile.type) ?? [];
+        let best = -1, bestDist = Infinity;
+        for (let i = 0; i < slots.length; i++) {
+            const dist = (slots[i].x - tile.x) ** 2 + (slots[i].y - tile.y) ** 2;
+            if (dist < bestDist) { bestDist = dist; best = i; }
+        }
+        if (best >= 0) tile.from = slots.splice(best, 1)[0];
+    }
+}
+
+// Intra-scope moves animate their scope-relative delta (immune to sections above growing
+// or shrinking); cross-scope flights need the root-relative one.
+function deltaOf(tile) {
+    return tile.from.scope === tile.scope
+        ? { dx: tile.from.sx - tile.sx, dy: tile.from.sy - tile.sy }
+        : { dx: tile.from.x - tile.x, dy: tile.from.y - tile.y };
+}
+
+function buildSteps(snap) {
+    const rearrangements = [], flights = [], pops = [];
+    for (const tile of snap.tiles) {
+        if (!tile.from) { pops.push({ items: [{ tile }] }); continue; }
+        const { dx, dy } = deltaOf(tile);
+        if (Math.abs(dx) < MIN_DELTA && Math.abs(dy) < MIN_DELTA) continue;
+        if (tile.from.scope !== tile.scope) { flights.push({ items: [{ tile, dx, dy }] }); continue; }
+        if (tile.enterOnly) continue; // rack-internal reshuffle: instant by design
+        // Same-scope slide: joins its paired set's block when the deltas agree.
+        const block = tile.setIndex >= 0 && snap.sets[tile.setIndex].paired
+            && rearrangements.find(s => s.setIndex === tile.setIndex
+                && Math.abs(s.dx - dx) <= BLOCK_DELTA && Math.abs(s.dy - dy) <= BLOCK_DELTA);
+        if (block) block.items.push({ tile, dx, dy });
+        else rearrangements.push({ setIndex: tile.setIndex, dx, dy, items: [{ tile, dx, dy }] });
+    }
+    // The board settles first, then played/deselected tiles fly in, then new tiles pop.
+    return [...rearrangements, ...flights, ...pops];
 }
 
 function elevate(el, animation) {
@@ -110,19 +223,17 @@ function elevate(el, animation) {
     animation.finished.catch(() => {}).finally(() => { el.style.zIndex = prev; });
 }
 
-// Build a PAUSED animation held at its old position (move) or hidden (newcomer). With no fill,
-// it shows the first keyframe while paused, and reverts to the natural layout once finished.
-function makePaused(entry) {
+// Build each animation PAUSED at its first keyframe: movers hold their old position and
+// newcomers stay hidden until their step is released. No fill — natural layout wins after.
+function makePaused({ tile, dx, dy }) {
     let anim;
-    if (entry.from) {
-        const dx = entry.from.x - entry.x;
-        const dy = entry.from.y - entry.y;
-        anim = entry.el.animate(
+    if (tile.from) {
+        anim = tile.el.animate(
             [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
             { duration: MOVE_MS, easing: MOVE_EASING });
-        elevate(entry.el, anim);
+        elevate(tile.el, anim);
     } else {
-        anim = entry.el.animate(
+        anim = tile.el.animate(
             [{ opacity: 0, transform: 'translateY(-14px) scale(0.7)' }, { opacity: 1, transform: 'none' }],
             { duration: POP_MS, easing: POP_EASING });
     }
@@ -130,88 +241,34 @@ function makePaused(entry) {
     return anim;
 }
 
-// Should this entry actually play? Static scopes (the rack) display instantly, except for a
-// tile flying in from another scope; everything else animates as matched.
-function shouldAnimate(entry) {
-    if (!entry.isStatic) return Boolean(entry.from || entry.newcomer);
-    return Boolean(entry.from && entry.from.scope !== entry.scope);
-}
-
 export async function animate() {
     const root = document.querySelector('.game-container');
-    if (!root) { lastPositions = null; return; }
+    if (!root) { last = null; return; }
 
-    const { byType, all, scopes } = collect(root);
+    const snap = collect(root);
 
-    // No usable snapshot (first render, reconnect, resize) or no tiles seen before (loading
-    // screen → game): show everything as-is, animations start from the NEXT change.
-    if (!lastPositions || lastPositions.size === 0 || reducedMotion.matches) {
-        storePositions(byType);
-        return;
-    }
+    // No usable snapshot (first render, reconnect, resize, loading screen → game):
+    // show everything as-is; animations start from the NEXT change.
+    if (!last || last.tiles.length === 0 || reducedMotion.matches) { store(snap); return; }
 
-    // Decide, per tile type, which tiles moved (and from where) and which are new.
-    for (const [type, entries] of byType) {
-        const olds = (lastPositions.get(type) ?? []).slice();
+    const prev = last;
+    matchSets(snap, prev);
+    matchTiles(snap, prev);
+    const steps = buildSteps(snap);
+    store(snap);
 
-        // Pass 1 — tiles that did not move claim their own old position.
-        const pending = [];
-        for (const entry of entries) {
-            const i = olds.findIndex(o =>
-                Math.abs(o.x - entry.x) < MIN_DELTA && Math.abs(o.y - entry.y) < MIN_DELTA);
-            if (i >= 0) olds.splice(i, 1);
-            else pending.push(entry);
-        }
+    // Nothing really moved (highlight, hint, banner…): leave any running sequence alone.
+    if (steps.length === 0) return;
 
-        // Pass 2 — remaining tiles fly from the nearest freed old position; leftovers are new.
-        for (const entry of pending) {
-            let best = -1, bestDist = Infinity;
-            for (let i = 0; i < olds.length; i++) {
-                const d = (olds[i].x - entry.x) ** 2 + (olds[i].y - entry.y) ** 2;
-                if (d < bestDist) { bestDist = d; best = i; }
-            }
-            if (best >= 0) entry.from = olds.splice(best, 1)[0];
-            else entry.newcomer = true;
-        }
-    }
-
-    // A container-level layout shift (a section appearing above, a banner resizing…) moves every
-    // tile of a scope by one uniform delta without any tile changing place. Detect it per scope —
-    // every tile moved, from within the same scope, all by the same delta — and drop those moves.
-    // Any stationary tile, newcomer or cross-scope arrival in the scope proves a real change.
-    for (const scopeEntries of scopes) {
-        if (scopeEntries.length === 0) continue;
-        if (!scopeEntries.every(e => e.from && e.from.scope === e.scope)) continue;
-        const dx = scopeEntries[0].from.x - scopeEntries[0].x;
-        const dy = scopeEntries[0].from.y - scopeEntries[0].y;
-        const uniform = scopeEntries.every(e =>
-            Math.abs(e.from.x - e.x - dx) < MIN_DELTA &&
-            Math.abs(e.from.y - e.y - dy) < MIN_DELTA);
-        if (uniform)
-            for (const e of scopeEntries) delete e.from;
-    }
-
-    const sequence = all.filter(shouldAnimate);
-    storePositions(byType);
-
-    // Nothing actually moved (e.g. an unrelated re-render): leave any running sequence alone.
-    if (sequence.length === 0) return;
-
-    // A real change — supersede any sequence still running from a previous pass.
-    cancelActive();
+    // A real change supersedes whatever sequence was still playing.
+    cancelRunning();
     const gen = ++generation;
-    activeAnims = sequence.map(makePaused);
+    const releases = steps.map(step => step.items.map(makePaused));
+    running = releases.flat();
 
-    // Release one tile at a time, in DOM reading order.
-    for (const anim of activeAnims) {
-        if (gen !== generation) return; // a newer render took over (it cancelled these already)
-        anim.play();
-        await anim.finished.catch(() => {});
+    for (const anims of releases) {
+        if (gen !== generation) return; // a newer render took over (and cancelled these)
+        for (const anim of anims) anim.play();
+        await sleep(START_INTERVAL_MS);
     }
-}
-
-export function reset() {
-    cancelActive();
-    lastPositions = null;
-    generation++;
 }

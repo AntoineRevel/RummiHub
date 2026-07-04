@@ -16,8 +16,6 @@ namespace RummiHub.Web.Components.Pages;
 
 public partial class GamePage : IAsyncDisposable
 {
-    private readonly List<TileInstance> _selectedTileInstances = [];
-
     private HubConnection? _hubConnection;
     private bool _isConnected;
     private GameStateDto? _gameState;
@@ -304,54 +302,32 @@ public partial class GamePage : IAsyncDisposable
 
     private void ClearSelection()
     {
-        _selectedTileInstances.Clear();
         SelectedTilesForPlay.Clear();
     }
 
-    private void OnTileInstanceClick(TileInstance tileInstance)
+    private void OnSelectedTileClick(Tile tile)
     {
         // The FLIP pass animates the tile flying back to its rack stack.
-        _selectedTileInstances.Remove(tileInstance);
-        SyncSelectedTiles();
+        SelectedTilesForPlay.Remove(tile);
         StateHasChanged();
-    }
-
-    private void SyncSelectedTiles()
-    {
-        SelectedTilesForPlay.Clear();
-        SelectedTilesForPlay.AddRange(_selectedTileInstances.Select(ti => ti.Tile));
     }
 
     private void OnTileStackClick(Tile tileType)
     {
+        if (!IsMyTurn) return;
+
+        // Each click selects one more copy; a click past the last copy clears them all.
         var totalAvailable = _rackTiles.Count(t => t.Equals(tileType));
-        var currentSelectedCount = GetSelectedCountForTile(tileType);
-        var newSelectedCount = (currentSelectedCount + 1) % (totalAvailable + 1);
-
-        if (newSelectedCount > currentSelectedCount)
-        {
-            var tilesToAdd = newSelectedCount - currentSelectedCount;
-            for (var i = 0; i < tilesToAdd; i++)
-                _selectedTileInstances.Add(new TileInstance(tileType));
-        }
+        if (GetSelectedCountForTile(tileType) < totalAvailable)
+            SelectedTilesForPlay.Add(tileType);
         else
-        {
-            var tilesToRemove = currentSelectedCount - newSelectedCount;
-            for (var i = 0; i < tilesToRemove; i++)
-            for (var j = _selectedTileInstances.Count - 1; j >= 0; j--)
-            {
-                if (!_selectedTileInstances[j].Tile.Equals(tileType)) continue;
-                _selectedTileInstances.RemoveAt(j);
-                break;
-            }
-        }
+            SelectedTilesForPlay.RemoveAll(t => t.Equals(tileType));
 
-        SyncSelectedTiles();
         StateHasChanged();
     }
 
     private int GetSelectedCountForTile(Tile tileType) =>
-        _selectedTileInstances.Count(ti => ti.Tile.Equals(tileType));
+        SelectedTilesForPlay.Count(t => t.Equals(tileType));
 
     private IEnumerable<IGrouping<Tile, Tile>> GetGroupedTiles() =>
         _rackTiles
@@ -403,11 +379,5 @@ public partial class GamePage : IAsyncDisposable
                 // Circuit already closed — nothing to clean up client-side.
             }
         }
-    }
-
-    private readonly record struct TileInstance(Tile Tile)
-    {
-        public Tile Tile { get; } = Tile;
-        public Guid Id { get; } = Guid.NewGuid();
     }
 }
