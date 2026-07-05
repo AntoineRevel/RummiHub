@@ -110,20 +110,23 @@ else
                 @if (IsMyTurn)
                 {
                     <span class="turn-banner-text">Your turn — pick tiles to play, or draw.</span>
-                    <div class="solver-status @(_optimalReady ? "ready" : "computing")">
-                        @if (_optimalReady)
-                        {
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            <span>Hint ready</span>
-                        }
-                        else
-                        {
-                            <span class="solver-dot"></span>
-                            <span>Computing hint…</span>
-                        }
-                    </div>
+                    @if (_helperMode != HelperMode.None)
+                    {
+                        <div class="solver-status @(_optimalReady ? "ready" : "computing")">
+                            @if (_optimalReady)
+                            {
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                                <span>Hint ready</span>
+                            }
+                            else
+                            {
+                                <span class="solver-dot"></span>
+                                <span>Computing hint…</span>
+                            }
+                        </div>
+                    }
                 }
                 else
                 {
@@ -135,7 +138,7 @@ else
 
         <!-- Board -->
         <div class="solution-section" data-anim-scope="board">
-            <SolutionComponent Solution="_gameState.Board" HighlightTiles="_highlightTiles"/>
+            <SolutionComponent Solution="_gameState.Board" HighlightIndices="_highlightIndices"/>
         </div>
 
         <!-- Error play -->
@@ -148,20 +151,6 @@ else
                     <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
                 <span>@_errorPlay</span>
-            </div>
-        }
-
-        <!-- Optimal play hint (shown to the player who just acted, cleared next turn) -->
-        @if (_optimalPlayTiles is { Count: > 0 })
-        {
-            <div class="optimal-play-section">
-                <h4>Optimal play you could have made this turn</h4>
-                <div class="optimal-play-tiles">
-                    @foreach (var tile in _optimalPlayTiles)
-                    {
-                        <TileComponent Tile="tile" ShouldHighlight="false"/>
-                    }
-                </div>
             </div>
         }
 
@@ -178,23 +167,6 @@ else
                         </span>
                     }
                 </h3>
-
-                @if (IsMyTurn && SelectedTilesForPlay.Any())
-                {
-                    <!-- Selected tiles -->
-                    <div class="selected-tiles-section">
-                        <h4>Selected tiles (@SelectedTilesForPlay.Count)</h4>
-                        <div class="selected-tiles-display" data-anim-scope="selection">
-                            @foreach (var tile in SelectedTilesForPlay)
-                            {
-                                <div class="selected-tile-wrapper"
-                                     @onclick="() => OnSelectedTileClick(tile)">
-                                    <TileComponent Tile="tile" ShouldHighlight="false"/>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
 
                 <!-- One rack for both states (readonly out of turn): keeping the same DOM
                      subtree across turn flips lets a draw's pop-in survive the re-render.
@@ -242,49 +214,102 @@ else
                     </div>
                 </div>
 
-                @if (IsMyTurn)
-                {
-                    <!-- Action buttons -->
-                    <div class="human-actions-buttons">
-                        @if (SelectedTilesForPlay.Any())
+                <!-- Play zone, BELOW the rack and always rendered at a stable height, so
+                     picking tiles never shifts the rack. Shows the current selection during
+                     my turn, or (Hint mode) the optimal play I could have made after acting. -->
+                <div class="selected-tiles-section play-zone">
+                    <div class="play-zone-header">
+                        <h4>
+                            @if (ShowHint && !SelectedTilesForPlay.Any())
+                            {
+                                <text>Optimal play you could have made this turn</text>
+                            }
+                            else
+                            {
+                                <text>Tiles to play@(SelectedTilesForPlay.Any() ? $" ({SelectedTilesForPlay.Count})" : "")</text>
+                            }
+                        </h4>
+                        <div class="helper-toggle" title="Solver help: nothing, a hint after you act, or auto-picked tiles ready to play">
+                            <button type="button" class="@(_helperMode == HelperMode.None ? "active" : "")"
+                                    @onclick="() => SetHelperMode(HelperMode.None)">No help</button>
+                            <button type="button" class="@(_helperMode == HelperMode.Hint ? "active" : "")"
+                                    @onclick="() => SetHelperMode(HelperMode.Hint)">Hint</button>
+                            <button type="button" class="@(_helperMode == HelperMode.Auto ? "active" : "")"
+                                    @onclick="() => SetHelperMode(HelperMode.Auto)">Auto-pick</button>
+                        </div>
+                    </div>
+                    <div class="selected-tiles-display" data-anim-scope="selection">
+                        @if (IsMyTurn && SelectedTilesForPlay.Any())
                         {
-                            <button @onclick="OnClearSelection" class="btn-clear" disabled="@_isLoading">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                     stroke-width="2">
-                                    <path d="M18 6L6 18M6 6l12 12"/>
-                                </svg>
-                                Clear
-                            </button>
-                            <button @onclick="OnPlaySelection" class="btn-play" disabled="@_isLoading">
-                                @if (_isLoading)
+                            @foreach (var tile in SelectedTilesForPlay)
+                            {
+                                <div class="selected-tile-wrapper"
+                                     @onclick="() => OnSelectedTileClick(tile)">
+                                    <TileComponent Tile="tile" ShouldHighlight="false"/>
+                                </div>
+                            }
+                        }
+                        else if (ShowHint)
+                        {
+                            <!-- Informational only — excluded from tile-animation measuring so
+                                 these copies never lend their position to a real tile. -->
+                            <div class="hint-tiles" data-anim-ignore>
+                                @foreach (var tile in _optimalPlayTiles!)
                                 {
-                                    <span class="spinner"></span>
-                                    <span>Validating...</span>
+                                    <TileComponent Tile="tile" ShouldHighlight="false"/>
                                 }
-                                else
-                                {
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                         stroke-width="2">
-                                        <circle cx="12" cy="12" r="10"/>
-                                        <polygon points="10,8 16,12 10,16 10,8"/>
-                                    </svg>
-                                    <span>Play selection</span>
-                                }
-                            </button>
+                            </div>
                         }
                         else
                         {
-                            <button @onclick="OnDrawTile" class="btn-draw"
-                                    disabled="@(_isLoading || _gameState.TilePoolCount == 0)">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                     stroke-width="2">
-                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                </svg>
-                                Draw (@_gameState.TilePoolCount remaining)
-                            </button>
+                            <div class="play-zone-placeholder">
+                                @(IsMyTurn ? "Click your tiles to select them — they land here." : "")
+                            </div>
                         }
                     </div>
-                }
+                </div>
+
+                <!-- Action buttons: always rendered (Draw disabled out of turn) so the
+                     section height never jumps between turns. -->
+                <div class="human-actions-buttons">
+                    @if (SelectedTilesForPlay.Any())
+                    {
+                        <button @onclick="OnClearSelection" class="btn-clear" disabled="@_isLoading">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2">
+                                <path d="M18 6L6 18M6 6l12 12"/>
+                            </svg>
+                            Clear
+                        </button>
+                        <button @onclick="OnPlaySelection" class="btn-play" disabled="@_isLoading">
+                            @if (_isLoading)
+                            {
+                                <span class="spinner"></span>
+                                <span>Validating...</span>
+                            }
+                            else
+                            {
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polygon points="10,8 16,12 10,16 10,8"/>
+                                </svg>
+                                <span>Play selection</span>
+                            }
+                        </button>
+                    }
+                    else
+                    {
+                        <button @onclick="OnDrawTile" class="btn-draw"
+                                disabled="@(!IsMyTurn || _isLoading || _gameState.TilePoolCount == 0)">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2">
+                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                            </svg>
+                            Draw (@_gameState.TilePoolCount remaining)
+                        </button>
+                    }
+                </div>
             </div>
         }
     </div>
@@ -722,30 +747,6 @@ else
         }
     }
 
-    /* Optimal play hint */
-    .optimal-play-section {
-        background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
-        border: 2px solid #64b5f6;
-        border-radius: 10px;
-        padding: 15px 20px;
-        margin: 15px 0;
-        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
-    }
-
-    .optimal-play-section h4 {
-        margin: 0 0 12px 0;
-        color: #1565c0;
-        font-size: 1rem;
-        font-weight: 600;
-    }
-
-    .optimal-play-tiles {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        align-items: center;
-    }
-
     /* My rack section */
     .my-rack-section {
         position: sticky;
@@ -825,9 +826,9 @@ else
         margin: 0 auto;
     }
 
-    /* Selected tiles */
+    /* Play zone (selected tiles / solver hint) — constant height below the rack */
     .selected-tiles-section {
-        padding: 18px 12px 12px 12px;
+        padding: 12px;
         background-color: #f8f9fa;
         border: 2px solid #e3f2fd;
         border-radius: 10px;
@@ -835,21 +836,78 @@ else
     }
 
     .selected-tiles-section h4 {
-        margin: 0 0 10px 0;
+        margin: 0;
         color: #495057;
         font-size: 0.95rem;
         font-weight: 600;
+        text-align: left;
+    }
+
+    .play-zone-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+    }
+
+    .helper-toggle {
+        display: inline-flex;
+        border: 1px solid #cfd8dc;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #fff;
+    }
+
+    .helper-toggle button {
+        border: none;
+        background: transparent;
+        padding: 4px 11px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #667;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .helper-toggle button:hover {
+        background: #eceff1;
+    }
+
+    .helper-toggle button.active {
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        color: #fff;
     }
 
     .selected-tiles-display {
         display: flex;
         flex-wrap: wrap;
         gap: 5px;
-        min-height: 40px;
-        max-height: 150px;
+        min-height: 86px; /* one tile row + padding: the zone never collapses or jumps */
+        max-height: 170px;
         overflow-y: auto;
-        transition: all 0.3s ease;
-        padding: 10px 5px 5px 5px;
+        padding: 8px 5px 5px 5px;
+        align-items: flex-start;
+        align-content: flex-start;
+    }
+
+    .hint-tiles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        opacity: 0.85;
+    }
+
+    .play-zone-placeholder {
+        width: 100%;
+        min-height: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #a5aeb6;
+        font-size: 0.85rem;
+        font-style: italic;
     }
 
     .selected-tile-wrapper {
@@ -1026,14 +1084,13 @@ else
         transform: translateY(0);
     }
 
+    /* Narrow screens: keep the buttons on ONE row (they fit side by side down to ~330px),
+       so swapping Draw ↔ Clear+Play never changes the row height and never shifts the rack. */
     @@media (max-width: 768px) {
-        .human-actions-buttons {
-            flex-direction: column;
-            align-items: center;
-        }
-
         .btn-draw, .btn-play, .btn-clear {
-            min-width: 200px;
+            min-width: 140px;
+            flex: 1 1 0;
+            max-width: 240px;
         }
     }
 

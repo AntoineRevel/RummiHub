@@ -16,10 +16,13 @@
 
 @code {
     [Parameter] public required Solution Solution { get; set; }
-    [Parameter] public List<Tile>? HighlightTiles { get; set; }
 
-    private HashSet<int> HighlightIndices => _highlightIndices ??= ComputeHighlightIndices();
-    private HashSet<int>? _highlightIndices;
+    /// <summary>
+    /// Reading-order indices (runs then groups) of the tiles to highlight. Computed
+    /// server-side (see BoardPacing.EnteredIndices) so the freshly-played copy of a tile
+    /// lights up, never an identical twin already resting on the board.
+    /// </summary>
+    [Parameter] public HashSet<int>? HighlightIndices { get; set; }
 
     private List<(ValidSet Set, int StartIndex)> GetRunsWithIndices()
     {
@@ -48,41 +51,6 @@
 
         return result;
     }
-
-    private HashSet<int> ComputeHighlightIndices()
-    {
-        var highlightIndices = new HashSet<int>();
-
-        if (HighlightTiles == null || HighlightTiles.Count == 0)
-            return highlightIndices;
-
-        var allTiles = new List<Tile>();
-        foreach (var set in Solution.Runs)
-            allTiles.AddRange(set.Tiles);
-
-        foreach (var set in Solution.Groups)
-            allTiles.AddRange(set.Tiles);
-
-        foreach (var tileToHighlight in HighlightTiles)
-        {
-            for (var i = 0; i < allTiles.Count; i++)
-            {
-                if (!highlightIndices.Contains(i) && allTiles[i].Equals(tileToHighlight))
-                {
-                    highlightIndices.Add(i);
-                    break;
-                }
-            }
-        }
-
-        return highlightIndices;
-    }
-
-    protected override void OnParametersSet()
-    {
-        _highlightIndices = null;
-    }
-
 }
 
 <style>

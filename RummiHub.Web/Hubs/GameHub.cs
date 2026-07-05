@@ -252,7 +252,8 @@ public partial class GameHub(
                 if (playerIndex.Value == game.Engine.PlayerIndex
                     && pending is { Task.IsCompletedSuccessfully: true })
                 {
-                    await Clients.Caller.SendAsync(HubEvents.OptimalReady);
+                    await Clients.Caller.SendAsync(
+                        HubEvents.OptimalReady, OptimalTiles(pending.Task.Result));
                 }
             }
 
@@ -301,10 +302,6 @@ public partial class GameHub(
                     var rack = GetRackTiles(game.Engine, playerIndex.Value);
                     await Clients.Caller.SendAsync(HubEvents.RackUpdated, rack);
 
-                    // Send highlight privately: only the player who played sees the red borders
-                    var playedTiles = game.Engine.Players[playerIndex.Value].TilesToPlay;
-                    await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated, playedTiles);
-
                     // Send the optimal play that was being computed in background since the
                     // start of this turn (against the player's pre-action hand).
                     var turnAtAction = game.Engine.Turn;
@@ -313,7 +310,16 @@ public partial class GameHub(
                         game, turnAtAction, playerAtAction, Context.ConnectionAborted);
 
                     // Advance the turn, broadcast the new state, and arm the next solve.
+                    var boardBefore = game.LastBroadcastBoard;
                     await AdvanceTurnAndNotifyAsync(game);
+
+                    // Highlight, privately, the tiles that ENTERED the board — by reading-order
+                    // index on the aligned board just broadcast, so when the played tile has an
+                    // identical twin already resting on the board, the new copy lights up, not
+                    // the old one. Sent after the state so the client maps indices onto it.
+                    if (boardBefore is not null)
+                        await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated,
+                            BoardPacing.EnteredIndices(boardBefore, game.LastBroadcastBoard!));
                 }
                 else
                 {
@@ -580,7 +586,10 @@ public partial class GameHub(
 
         try
         {
-            await hubContext.Clients.Client(connectionId).SendAsync(HubEvents.OptimalReady);
+            // The optimal tiles ride along so an "auto-pick" client can pre-select them.
+            var result = task.IsCompletedSuccessfully ? task.Result : null;
+            await hubContext.Clients.Client(connectionId)
+                .SendAsync(HubEvents.OptimalReady, OptimalTiles(result));
         }
         catch (Exception ex)
         {
@@ -682,11 +691,7 @@ public partial class GameHub(
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
                 var result = await pending.Task.WaitAsync(linked.Token);
-
-                tiles = result.Found
-                    ? [..result.TilesToPlay,
-                       ..Enumerable.Range(0, result.JokersToPlay).Select(_ => new Tile(isJoker: true))]
-                    : [];
+                tiles = OptimalTiles(result);
             }
             catch (OperationCanceledException)
             {
@@ -701,6 +706,13 @@ public partial class GameHub(
 
         await Clients.Caller.SendAsync(HubEvents.OptimalPlay, tiles, ct);
     }
+
+    /// <summary>Flattens a solve result into the tile list it plays (jokers included).</summary>
+    private static List<Tile> OptimalTiles(SolveResponse? result) =>
+        result is { Found: true }
+            ? [..result.TilesToPlay,
+               ..Enumerable.Range(0, result.JokersToPlay).Select(_ => new Tile(isJoker: true))]
+            : [];
 
     // ========== LOGGING ==========
 

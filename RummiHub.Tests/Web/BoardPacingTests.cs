@@ -80,6 +80,51 @@ public class BoardPacingTests
     }
 
     [Fact]
+    public void EnteredIndices_UnchangedBoard_IsEmpty()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+
+        BoardPacing.EnteredIndices(previous, next).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void EnteredIndices_TileAppended_ReturnsItsReadingIndex()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun] };
+        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+
+        // Reading order: BlueRun tiles 0-2, RedRunExtended tiles 3-6 — the appended 8-Red is 6.
+        BoardPacing.EnteredIndices(previous, next).Should().Equal(6);
+    }
+
+    [Fact]
+    public void EnteredIndices_DuplicateAlreadyOnBoard_FlagsTheNewCopyOnly()
+    {
+        // A 5-Red already sits in FivesGroup; the player now plays the OTHER 5-Red into a new
+        // run. The new copy (index 3, first tile of the new run) must be flagged — never the
+        // twin resting in the group.
+        var previous = new Solution { Runs = [BlueRun], Groups = [FivesGroup] };
+        var newRedRun = Set(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
+        var next = new Solution { Runs = [BlueRun, newRedRun], Groups = [FivesGroup] };
+
+        BoardPacing.EnteredIndices(previous, next).Should().Equal(3, 4, 5);
+    }
+
+    [Fact]
+    public void EnteredIndices_TileInsertedIntoExistingSet_FlagsThatOccurrence()
+    {
+        // FivesGroup gains a 5-Mango: only that tile's reading index (after BlueRun's 0-2)
+        // is flagged, by per-occurrence diff against the paired previous set.
+        var extendedGroup = Set(
+            T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black), T(5, TileColor.Mango));
+        var previous = new Solution { Runs = [BlueRun], Groups = [FivesGroup] };
+        var next = new Solution { Runs = [BlueRun], Groups = [extendedGroup] };
+
+        BoardPacing.EnteredIndices(previous, next).Should().Equal(6);
+    }
+
+    [Fact]
     public void DurationForSteps_ZeroSteps_IsZero()
     {
         BoardPacing.DurationForSteps(0).Should().Be(0);

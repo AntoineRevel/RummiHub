@@ -26,11 +26,12 @@ public partial class GamePage : IAsyncDisposable
     private Tile? _drawnTile;
     private bool _showDrawnTileToast;
     private Timer? _toastTimer;
-    private List<Tile>? _highlightTiles;
-    private bool _highlightSeenFirstUpdate;
+    private HashSet<int>? _highlightIndices;
     private List<Tile>? _optimalPlayTiles;
     private bool _optimalSeenFirstUpdate;
     private bool _optimalReady;
+    private List<Tile>? _optimalSuggestion;
+    private HelperMode _helperMode = HelperMode.Hint;
     private bool _seedSaved;
 
     // Whole-page tile animation module (wwwroot/js/tile-animations.js). It runs a FLIP pass,
@@ -58,6 +59,21 @@ public partial class GamePage : IAsyncDisposable
             : null;
 
     private List<Tile> SelectedTilesForPlay { get; } = [];
+
+    /// <summary>Solver assistance level — a per-player, client-side choice.</summary>
+    private enum HelperMode
+    {
+        /// <summary>No solver help at all (no spinner, no hint).</summary>
+        None,
+
+        /// <summary>After acting, shows the optimal play you could have made (in the play zone).</summary>
+        Hint,
+
+        /// <summary>Pre-selects the solver's move as soon as it is ready — just press Play.</summary>
+        Auto
+    }
+
+    private bool ShowHint => _helperMode == HelperMode.Hint && _optimalPlayTiles is { Count: > 0 };
 
     protected override async Task OnInitializedAsync()
     {
@@ -139,16 +155,11 @@ public partial class GamePage : IAsyncDisposable
             // fly from when the new board arrives in this same update.
             ClearSelection();
 
-            if (_highlightTiles != null)
-            {
-                if (!_highlightSeenFirstUpdate)
-                    _highlightSeenFirstUpdate = true;
-                else
-                {
-                    _highlightTiles = null;
-                    _highlightSeenFirstUpdate = false;
-                }
-            }
+            // The highlight always arrives AFTER its own state update, so any state seen
+            // while one is showing means the next move landed: clear it. The suggestion
+            // is per-turn; a new one arrives with the next OptimalReady.
+            _highlightIndices = null;
+            _optimalSuggestion = null;
 
             if (_optimalPlayTiles != null)
             {
@@ -164,10 +175,11 @@ public partial class GamePage : IAsyncDisposable
             InvokeAsync(StateHasChanged);
         });
 
-        hub.On<List<Tile>>(HubEvents.HighlightTilesUpdated, tiles =>
+        hub.On<List<int>>(HubEvents.HighlightTilesUpdated, indices =>
         {
-            _highlightTiles = tiles;
-            _highlightSeenFirstUpdate = false;
+            // Reading-order indices of the tiles that entered the board (server-computed),
+            // so the freshly-played copy lights up — never an identical twin already there.
+            _highlightIndices = indices is { Count: > 0 } ? [..indices] : null;
             InvokeAsync(StateHasChanged);
         });
 
@@ -180,9 +192,11 @@ public partial class GamePage : IAsyncDisposable
             InvokeAsync(StateHasChanged);
         });
 
-        hub.On(HubEvents.OptimalReady, () =>
+        hub.On<List<Tile>>(HubEvents.OptimalReady, tiles =>
         {
             _optimalReady = true;
+            _optimalSuggestion = tiles is { Count: > 0 } ? tiles : null;
+            ApplyAutoPick();
             InvokeAsync(StateHasChanged);
         });
 
@@ -296,6 +310,24 @@ public partial class GamePage : IAsyncDisposable
     }
 
     // --- Tile selection logic ---
+
+    private void SetHelperMode(HelperMode mode)
+    {
+        _helperMode = mode;
+        // Switching to Auto mid-turn applies the already-received suggestion right away.
+        ApplyAutoPick();
+    }
+
+    /// <summary>
+    /// Auto-pick mode: pre-selects the solver's move so the player just presses Play.
+    /// Never overwrites tiles the player already picked by hand.
+    /// </summary>
+    private void ApplyAutoPick()
+    {
+        if (_helperMode != HelperMode.Auto || !IsMyTurn) return;
+        if (SelectedTilesForPlay.Count > 0 || _optimalSuggestion is not { Count: > 0 }) return;
+        SelectedTilesForPlay.AddRange(_optimalSuggestion);
+    }
 
     private void OnClearSelection()
     {
