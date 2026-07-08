@@ -13,6 +13,11 @@
 // ONE step (the run/group glides as a block); every other mover or pop is a step of its
 // own. Steps are released one per START_INTERVAL_MS — board rearrangements, then flights,
 // then pops, each in DOM order — with NO duration cap: big rearrangements take their time.
+// Steps from a NEW render join the END of the queue, so an in-flight sequence always
+// finishes before the next transition plays: animations are built paused on their first
+// keyframe (movers hold their old spot, newcomers stay hidden) and their deltas were
+// measured against the previous snapshot, so waiting in line is safe. Only a runaway
+// backlog (background-throttled tab, burst of updates) fast-forwards to the final layout.
 // The rack ([data-anim-enter-only]) only pops newcomers (the draw) and glides cross-scope
 // arrivals; internal reshuffles are instant. [data-anim-ignore] subtrees (the greyed-out
 // placeholder of an emptied stack) are never measured.
@@ -35,12 +40,23 @@ const MOVE_EASING = 'cubic-bezier(0.22, 0.9, 0.26, 1)';
 const POP_EASING = 'cubic-bezier(0.34, 1.4, 0.64, 1)';
 
 let last = null;      // previous snapshot — plain data, never old DOM nodes
-let generation = 0;   // bumped per sequence so a newer render abandons an in-flight one
-let running = [];     // animations of the current sequence (paused until released)
+let queue = [];       // steps waiting for release — one inner array of paused Animations per step
+let running = [];     // every animation not yet finished (queued or playing), for reset/fast-forward
+let pumping = false;  // single release loop draining the queue; new steps just join the tail
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+// A backlog this deep (~10s of steps) means the client fell behind (throttled background
+// tab, burst of updates): snap everything to the final layout instead of replaying history.
+const MAX_QUEUED_STEPS = 30;
 
 // A resize reflows the whole page; the next render must re-snapshot, not "animate" it.
 window.addEventListener('resize', () => reset());
+
+// A hidden tab throttles timers and freezes rendering: finish everything instantly so the
+// backlog never replays as a ghost show when the player comes back.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) fastForward();
+});
 
 // Timing pushed from the server (Rendering/BoardPacing.cs), which paces AI moves so they
 // never land on top of a still-running animation.
@@ -51,9 +67,12 @@ export function configure(moveMs, popMs, startIntervalMs) {
 }
 
 export function reset() {
-    cancelRunning();
+    queue = [];
+    for (const anim of running) {
+        try { anim.cancel(); } catch { /* element already gone */ }
+    }
+    running = [];
     last = null;
-    generation++;
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -64,9 +83,29 @@ const bucket = (map, key) => {
     return list;
 };
 
-function cancelRunning() {
+// Releases one queued step per START_INTERVAL_MS until the queue drains. A single loop
+// survives across renders — animate() only ever appends, so a sequence in progress always
+// finishes before the steps of the next transition start.
+async function pump() {
+    if (pumping) return;
+    pumping = true;
+    try {
+        while (queue.length > 0) {
+            for (const anim of queue.shift()) anim.play();
+            await sleep(START_INTERVAL_MS);
+        }
+    } finally {
+        pumping = false;
+        running = running.filter(a => a.playState === 'running' || a.playState === 'paused');
+    }
+}
+
+// Snaps every pending animation to its end state. The DOM already holds the final layout —
+// this just reveals it at once instead of replaying a long backlog.
+function fastForward() {
+    queue = [];
     for (const anim of running) {
-        try { anim.cancel(); } catch { /* element already gone */ }
+        try { anim.finish(); } catch { /* element already gone */ }
     }
     running = [];
 }
@@ -257,15 +296,17 @@ export async function animate() {
     // Nothing really moved (highlight, hint, banner…): leave any running sequence alone.
     if (steps.length === 0) return;
 
-    // A real change supersedes whatever sequence was still playing.
-    cancelRunning();
-    const gen = ++generation;
-    const releases = steps.map(step => step.items.map(makePaused));
-    running = releases.flat();
-
-    for (const anims of releases) {
-        if (gen !== generation) return; // a newer render took over (and cancelled these)
-        for (const anim of anims) anim.play();
-        await sleep(START_INTERVAL_MS);
+    // A real change QUEUES behind whatever sequence is still playing — never on top of it.
+    for (const step of steps) {
+        const anims = step.items.map(makePaused);
+        queue.push(anims);
+        running.push(...anims);
     }
+
+    if (queue.length > MAX_QUEUED_STEPS) {
+        fastForward();
+        return;
+    }
+
+    void pump();
 }

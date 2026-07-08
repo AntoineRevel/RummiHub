@@ -27,6 +27,7 @@ public partial class GamePage : IAsyncDisposable
     private bool _showDrawnTileToast;
     private Timer? _toastTimer;
     private HashSet<int>? _highlightIndices;
+    private Timer? _highlightTimer;
     private List<Tile>? _optimalPlayTiles;
     private bool _optimalSeenFirstUpdate;
     private bool _optimalReady;
@@ -159,6 +160,7 @@ public partial class GamePage : IAsyncDisposable
             // while one is showing means the next move landed: clear it. The suggestion
             // is per-turn; a new one arrives with the next OptimalReady.
             _highlightIndices = null;
+            StopHighlightTimer();
             _optimalSuggestion = null;
 
             if (_optimalPlayTiles != null)
@@ -175,11 +177,14 @@ public partial class GamePage : IAsyncDisposable
             InvokeAsync(StateHasChanged);
         });
 
-        hub.On<List<int>>(HubEvents.HighlightTilesUpdated, indices =>
+        hub.On<List<int>, int>(HubEvents.HighlightTilesUpdated, (indices, displayMs) =>
         {
             // Reading-order indices of the tiles that entered the board (server-computed),
             // so the freshly-played copy lights up — never an identical twin already there.
+            // The server sizes displayMs to the board animation plus a reading window; the
+            // highlight then fades on its own instead of lingering until the next move.
             _highlightIndices = indices is { Count: > 0 } ? [..indices] : null;
+            SetupHighlightTimer(displayMs);
             InvokeAsync(StateHasChanged);
         });
 
@@ -374,6 +379,33 @@ public partial class GamePage : IAsyncDisposable
             .ThenBy(g => g.Key.Color)
             .ThenBy(g => g.Key.Value);
 
+    // --- Played-tiles highlight ---
+
+    private void SetupHighlightTimer(int displayMs)
+    {
+        StopHighlightTimer();
+        if (_highlightIndices is null) return;
+
+        _highlightTimer = new Timer(Math.Max(displayMs, 1000)) { AutoReset = false };
+        _highlightTimer.Elapsed += (_, _) =>
+        {
+            InvokeAsync(() =>
+            {
+                _highlightIndices = null;
+                StopHighlightTimer();
+                StateHasChanged();
+            });
+        };
+        _highlightTimer.Start();
+    }
+
+    private void StopHighlightTimer()
+    {
+        _highlightTimer?.Stop();
+        _highlightTimer?.Dispose();
+        _highlightTimer = null;
+    }
+
     // --- Toast ---
 
     private void SetupToastTimer()
@@ -399,6 +431,7 @@ public partial class GamePage : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _toastTimer?.Dispose();
+        _highlightTimer?.Dispose();
 
         if (_hubConnection is not null)
             await _hubConnection.DisposeAsync();

@@ -15,9 +15,11 @@
 
     protected override void OnParametersSet()
     {
-        if (TileIndex.HasValue && HighlightIndices != null)
+        // Recompute even when the index set is null: a highlight must switch OFF when the
+        // server (or the display timer) clears it, not stick to its last computed value.
+        if (TileIndex.HasValue)
         {
-            ShouldHighlight = HighlightIndices.Contains(TileIndex.Value);
+            ShouldHighlight = HighlightIndices?.Contains(TileIndex.Value) ?? false;
         }
     }
 
@@ -45,6 +47,8 @@
         border: 2px solid #CCCCCC;
         border-radius: 10px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        /* Softens the played-tile highlight fading back out when its display window ends. */
+        transition: border-color 0.6s ease, box-shadow 0.6s ease;
     }
 
     .tile-number {

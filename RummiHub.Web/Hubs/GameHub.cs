@@ -20,6 +20,12 @@ public partial class GameHub(
     /// </summary>
     private static readonly TimeSpan AutoPlayDelay = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// Reading window the played-tiles highlight stays on AFTER the board animation ends;
+    /// the client then fades it out, so the previous move's yellow never lingers forever.
+    /// </summary>
+    private const int HighlightLingerMs = 4000;
+
     /// <summary>Maximum number of seats (human + AI) in a game.</summary>
     private const int MaxPlayers = 4;
 
@@ -317,9 +323,12 @@ public partial class GameHub(
                     // index on the aligned board just broadcast, so when the played tile has an
                     // identical twin already resting on the board, the new copy lights up, not
                     // the old one. Sent after the state so the client maps indices onto it.
+                    // Shown for the animation's duration (entered tiles pop last) plus a
+                    // reading window, then the client clears it on its own.
                     if (boardBefore is not null)
                         await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated,
-                            BoardPacing.EnteredIndices(boardBefore, game.LastBroadcastBoard!));
+                            BoardPacing.EnteredIndices(boardBefore, game.LastBroadcastBoard!),
+                            game.PendingAnimationMs + HighlightLingerMs);
                 }
                 else
                 {
