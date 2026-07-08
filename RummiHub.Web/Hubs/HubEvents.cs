@@ -31,5 +31,6 @@ public static class HubEvents
     public const string JoinGameSession = nameof(JoinGameSession);
     public const string PlayTiles = nameof(PlayTiles);
     public const string DrawTile = nameof(DrawTile);
+    public const string ConfirmEndTurn = nameof(ConfirmEndTurn);
     public const string SaveSeed = nameof(SaveSeed);
 }

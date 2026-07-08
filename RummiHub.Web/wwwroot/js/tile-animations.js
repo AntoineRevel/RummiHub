@@ -40,6 +40,7 @@ const MOVE_EASING = 'cubic-bezier(0.22, 0.9, 0.26, 1)';
 const POP_EASING = 'cubic-bezier(0.34, 1.4, 0.64, 1)';
 
 let last = null;      // previous snapshot — plain data, never old DOM nodes
+let replayFrom = null; // clean snapshot from BEFORE the last animated transition, for replays
 let queue = [];       // steps waiting for release — one inner array of paused Animations per step
 let running = [];     // every animation not yet finished (queued or playing), for reset/fast-forward
 let pumping = false;  // single release loop draining the queue; new steps just join the tail
@@ -73,6 +74,7 @@ export function reset() {
     }
     running = [];
     last = null;
+    replayFrom = null;
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -150,12 +152,18 @@ function collect(root) {
     return { tiles, sets };
 }
 
-function store(snap) {
+// Plain-data copy of a snapshot: fresh tile objects (no DOM refs, no matching flags),
+// sets rebuilt to point at the copies.
+function toPlainData(snap) {
     const tiles = snap.tiles.map(({ type, scope, setIndex, x, y, sx, sy }) =>
         ({ type, scope, setIndex, x, y, sx, sy }));
     const sets = snap.sets.map(() => ({ tiles: [] }));
     for (const tile of tiles) if (tile.setIndex >= 0) sets[tile.setIndex].tiles.push(tile);
-    last = { tiles, sets };
+    return { tiles, sets };
+}
+
+function store(snap) {
+    last = toPlainData(snap);
 }
 
 // Multiset overlap of two tile lists, by type, occurrence-aware.
@@ -288,6 +296,9 @@ export async function animate() {
     if (!last || last.tiles.length === 0 || reducedMotion.matches) { store(snap); return; }
 
     const prev = last;
+    // Kept clean (matching mutates prev with used/paired flags) so the transition can
+    // be replayed on demand.
+    const prevClean = toPlainData(prev);
     matchSets(snap, prev);
     matchTiles(snap, prev);
     const steps = buildSteps(snap);
@@ -295,6 +306,8 @@ export async function animate() {
 
     // Nothing really moved (highlight, hint, banner…): leave any running sequence alone.
     if (steps.length === 0) return;
+
+    replayFrom = prevClean;
 
     // A real change QUEUES behind whatever sequence is still playing — never on top of it.
     for (const step of steps) {
@@ -309,4 +322,33 @@ export async function animate() {
     }
 
     void pump();
+}
+
+// Replays the most recent animated transition: snap the pending sequence to its end,
+// re-measure the (unchanged) DOM, and diff it against the snapshot saved from before
+// that transition. Positions are transform-free, so re-measuring mid/post animation is
+// safe, and replayFrom is cloned per run — replay as many times as you like.
+// Returns false when there is nothing to replay (fresh page, resize, reduced motion).
+export function replayLast() {
+    const root = document.querySelector('.game-container');
+    if (!root || !replayFrom || reducedMotion.matches) return false;
+
+    fastForward();
+
+    const snap = collect(root);
+    const prev = toPlainData(replayFrom);
+    matchSets(snap, prev);
+    matchTiles(snap, prev);
+    const steps = buildSteps(snap);
+    store(snap);
+    if (steps.length === 0) return false;
+
+    for (const step of steps) {
+        const anims = step.items.map(makePaused);
+        queue.push(anims);
+        running.push(...anims);
+    }
+
+    void pump();
+    return true;
 }

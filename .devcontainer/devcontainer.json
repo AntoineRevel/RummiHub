@@ -11,7 +11,11 @@
       "version": "latest"
     }
   },
-  "onCreateCommand": "curl -sSL https://aspire.dev/install.sh | bash && curl -fsSL https://claude.ai/install.sh | bash",
+  "onCreateCommand": {
+    "aspire": "curl -sSL https://aspire.dev/install.sh | bash",
+    "claude": "curl -fsSL https://claude.ai/install.sh | bash",
+    "ui-testing": "bash .devcontainer/install-ui-testing.sh"
+  },
   "updateContentCommand": "dotnet restore",
   "postStartCommand": "dotnet dev-certs https --trust",
   "customizations": {

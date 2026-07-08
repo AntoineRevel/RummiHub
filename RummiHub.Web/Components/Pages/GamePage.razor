@@ -107,7 +107,16 @@ else
         {
             <!-- Turn status banner -->
             <div class="turn-banner @(IsMyTurn ? "my-turn" : "waiting")">
-                @if (IsMyTurn)
+                @if (AwaitingMyConfirmation)
+                {
+                    <span class="turn-banner-text">Move played — watch it land, replay it, then pass the turn.</span>
+                }
+                else if (_gameState.AwaitingConfirmation)
+                {
+                    <span class="dot-pulse" aria-hidden="true"></span>
+                    <span class="turn-banner-text">@CurrentPlayerName is reviewing their move…</span>
+                }
+                else if (IsMyTurn)
                 {
                     <span class="turn-banner-text">Your turn — pick tiles to play, or draw.</span>
                     @if (_helperMode != HelperMode.None)
@@ -160,7 +169,13 @@ else
             <div class="my-rack-section @(IsMyTurn ? "active-turn" : "")">
                 <h3 class="rack-title">
                     <span>Your tiles (@_rackTiles.Count)</span>
-                    @if (IsMyTurn)
+                    @if (AwaitingMyConfirmation)
+                    {
+                        <span class="keyboard-hint">
+                            <kbd>Enter</kbd> next player
+                        </span>
+                    }
+                    else if (IsMyTurn)
                     {
                         <span class="keyboard-hint">
                             <kbd>Enter</kbd> play · <kbd>Esc</kbd> clear
@@ -174,7 +189,7 @@ else
                      reshuffles display instantly. -->
                 <div class="available-tiles-section">
                     <h4>Available tiles</h4>
-                    <div class="tiles-container @(IsMyTurn ? "" : "readonly")"
+                    <div class="tiles-container @(CanAct ? "" : "readonly")"
                          data-anim-scope="rack" data-anim-enter-only>
                         @foreach (var tileGroup in GetGroupedTiles())
                         {
@@ -272,7 +287,33 @@ else
                 <!-- Action buttons: always rendered (Draw disabled out of turn) so the
                      section height never jumps between turns. -->
                 <div class="human-actions-buttons">
-                    @if (SelectedTilesForPlay.Any())
+                    @if (AwaitingMyConfirmation)
+                    {
+                        <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@_isLoading">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2">
+                                <polyline points="1 4 1 10 7 10"/>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                            </svg>
+                            Replay animation
+                        </button>
+                        <button @onclick="OnConfirmEndTurn" class="btn-play" disabled="@_isLoading">
+                            @if (_isLoading)
+                            {
+                                <span class="spinner"></span>
+                                <span>Passing…</span>
+                            }
+                            else
+                            {
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2">
+                                    <polyline points="9 6 15 12 9 18"/>
+                                </svg>
+                                <span>Next player</span>
+                            }
+                        </button>
+                    }
+                    else if (SelectedTilesForPlay.Any())
                     {
                         <button @onclick="OnClearSelection" class="btn-clear" disabled="@_isLoading">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -281,8 +322,28 @@ else
                             </svg>
                             Clear
                         </button>
-                        <button @onclick="OnPlaySelection" class="btn-play" disabled="@_isLoading">
-                            @if (_isLoading)
+                        <button @onclick="() => OnPlaySelection(autoContinue: false)" class="btn-play-review"
+                                disabled="@_isLoading"
+                                title="Play, watch the animation, then pass the turn yourself">
+                            @if (_isLoading && !_loadingAutoContinue)
+                            {
+                                <span class="spinner"></span>
+                                <span>Validating...</span>
+                            }
+                            else
+                            {
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                                <span>Play &amp; review</span>
+                            }
+                        </button>
+                        <button @onclick="() => OnPlaySelection(autoContinue: true)" class="btn-play"
+                                disabled="@_isLoading"
+                                title="Play and let the game continue automatically">
+                            @if (_isLoading && _loadingAutoContinue)
                             {
                                 <span class="spinner"></span>
                                 <span>Validating...</span>
@@ -294,7 +355,7 @@ else
                                     <circle cx="12" cy="12" r="10"/>
                                     <polygon points="10,8 16,12 10,16 10,8"/>
                                 </svg>
-                                <span>Play selection</span>
+                                <span>Play &amp; continue</span>
                             }
                         </button>
                     }
@@ -1017,7 +1078,7 @@ else
         margin-top: 12px;
     }
 
-    .btn-draw, .btn-play, .btn-clear {
+    .btn-draw, .btn-play, .btn-clear, .btn-play-review, .btn-replay {
         display: flex;
         align-items: center;
         gap: 10px;
@@ -1080,15 +1141,54 @@ else
         box-shadow: 0 6px 16px rgba(108, 117, 125, 0.4);
     }
 
-    .btn-draw:active, .btn-play:active, .btn-clear:active {
+    /* Play & review: plays the move but holds the turn for a manual "Next player". */
+    .btn-play-review {
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        color: white;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+    }
+
+    .btn-play-review:hover {
+        background: linear-gradient(135deg, #1976d2, #1565c0);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(33, 150, 243, 0.4);
+    }
+
+    .btn-play-review:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-replay {
+        background: linear-gradient(135deg, #7e57c2, #5e35b1);
+        color: white;
+        box-shadow: 0 4px 12px rgba(126, 87, 194, 0.3);
+    }
+
+    .btn-replay:hover {
+        background: linear-gradient(135deg, #5e35b1, #512da8);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(126, 87, 194, 0.4);
+    }
+
+    .btn-replay:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-draw:active, .btn-play:active, .btn-clear:active,
+    .btn-play-review:active, .btn-replay:active {
         transform: translateY(0);
     }
 
     /* Narrow screens: keep the buttons on ONE row (they fit side by side down to ~330px),
-       so swapping Draw ↔ Clear+Play never changes the row height and never shifts the rack. */
+       so swapping Draw ↔ Clear+Play+Review never changes the row height and never shifts
+       the rack. */
     @@media (max-width: 768px) {
-        .btn-draw, .btn-play, .btn-clear {
-            min-width: 140px;
+        .btn-draw, .btn-play, .btn-clear, .btn-play-review, .btn-replay {
+            min-width: 100px;
             flex: 1 1 0;
             max-width: 240px;
         }

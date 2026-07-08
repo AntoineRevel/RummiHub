@@ -273,9 +273,12 @@ public partial class GameHub(
     }
 
     /// <summary>
-    /// Human player submits selected tiles to play.
+    /// Human player submits selected tiles to play. With <paramref name="autoContinue"/>
+    /// the turn advances immediately; without it, the move is applied and broadcast but
+    /// the turn waits for <see cref="ConfirmEndTurn"/> so the player can watch (and
+    /// replay) the animation first.
     /// </summary>
-    public async Task PlayTiles(string gameId, List<Tile> selectedTiles)
+    public async Task PlayTiles(string gameId, List<Tile> selectedTiles, bool autoContinue = true)
     {
         var game = gameManager.GetGame(gameId);
         if (game?.Engine == null) return;
@@ -288,6 +291,14 @@ public partial class GameHub(
             if (playerIndex == null || playerIndex.Value != game.Engine.PlayerIndex)
             {
                 await Clients.Caller.SendAsync(HubEvents.Error, "It's not your turn.");
+                return;
+            }
+
+            // A review-mode move was already applied this turn — only confirming remains.
+            if (game.PendingTurnConfirmation is not null)
+            {
+                await Clients.Caller.SendAsync(HubEvents.InvalidPlay,
+                    "You already played this turn — confirm to pass to the next player.");
                 return;
             }
 
@@ -315,9 +326,13 @@ public partial class GameHub(
                     await SendOptimalPlayToCallerAsync(
                         game, turnAtAction, playerAtAction, Context.ConnectionAborted);
 
-                    // Advance the turn, broadcast the new state, and arm the next solve.
+                    // Advance the turn (or, in review mode, broadcast the new board and
+                    // pause until the player confirms), and arm the next solve.
                     var boardBefore = game.LastBroadcastBoard;
-                    await AdvanceTurnAndNotifyAsync(game);
+                    if (autoContinue || game.Engine.IsGameOver)
+                        await AdvanceTurnAndNotifyAsync(game);
+                    else
+                        await PauseForReviewAsync(game, playerIndex.Value);
 
                     // Highlight, privately, the tiles that ENTERED the board — by reading-order
                     // index on the aligned board just broadcast, so when the played tile has an
@@ -377,6 +392,13 @@ public partial class GameHub(
                 return;
             }
 
+            if (game.PendingTurnConfirmation is not null)
+            {
+                await Clients.Caller.SendAsync(HubEvents.InvalidPlay,
+                    "You already played this turn — confirm to pass to the next player.");
+                return;
+            }
+
             if (game.Engine.TilePoolCount == 0)
             {
                 await Clients.Caller.SendAsync(HubEvents.Error, "No tiles left in the pool.");
@@ -404,6 +426,36 @@ public partial class GameHub(
         {
             LogHubError(ex, nameof(DrawTile), Context.ConnectionId);
             await Clients.Caller.SendAsync(HubEvents.Error, "Error drawing a tile.");
+        }
+        finally
+        {
+            game.ActionLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Ends a "play &amp; review" turn: the move was already applied and broadcast by
+    /// <see cref="PlayTiles"/>; this just advances to the next player.
+    /// </summary>
+    public async Task ConfirmEndTurn(string gameId)
+    {
+        var game = gameManager.GetGame(gameId);
+        if (game?.Engine == null) return;
+
+        await game.ActionLock.WaitAsync();
+        try
+        {
+            var pending = game.PendingTurnConfirmation;
+            var playerIndex = game.FindPlayerIndexByConnection(Context.ConnectionId);
+            if (pending is null || playerIndex != pending.PlayerIndex) return;
+
+            game.PendingTurnConfirmation = null;
+            await AdvanceTurnAndNotifyAsync(game);
+        }
+        catch (Exception ex)
+        {
+            LogHubError(ex, nameof(ConfirmEndTurn), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.Error, "Error ending the turn.");
         }
         finally
         {
@@ -465,7 +517,8 @@ public partial class GameHub(
             Board = game.LastBroadcastBoard ?? engine.Board,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,
-            TilePoolCount = engine.TilePoolCount
+            TilePoolCount = engine.TilePoolCount,
+            AwaitingConfirmation = game.PendingTurnConfirmation is not null
         };
     }
 
@@ -502,6 +555,25 @@ public partial class GameHub(
     }
 
     /// <summary>
+    /// Review-mode tail of a human play: aligns and broadcasts the post-move board (so
+    /// everyone watches the animation) but keeps the turn on the same player until they
+    /// call <see cref="ConfirmEndTurn"/>. Callers must hold <see cref="Game.ActionLock"/>.
+    /// </summary>
+    private async Task PauseForReviewAsync(Game game, int playerIndex)
+    {
+        var engine = game.Engine!;
+
+        var previous = game.LastBroadcastBoard;
+        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
+        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
+        game.LastBroadcastBoard = aligned;
+        game.PendingTurnConfirmation = new PendingTurnConfirmation(engine.Turn, playerIndex);
+
+        var state = BuildGameState(game);
+        await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
+    }
+
+    /// <summary>
     /// Sends the current player their rack. No-op for AI seats, which have no connection.
     /// </summary>
     private async Task SendCurrentPlayerRack(Game game)
@@ -529,6 +601,8 @@ public partial class GameHub(
     {
         var engine = game.Engine!;
         if (engine.IsGameOver) return;
+        // Mid-review the player already acted: their next-turn solve is armed on confirm.
+        if (game.PendingTurnConfirmation is not null) return;
 
         var existing = game.PendingOptimalSolve;
         if (existing is not null

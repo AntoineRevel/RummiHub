@@ -34,6 +34,9 @@ public partial class GamePage : IAsyncDisposable
     private List<Tile>? _optimalSuggestion;
     private HelperMode _helperMode = HelperMode.Hint;
     private bool _seedSaved;
+    private bool _loadingAutoContinue;
+    private List<int>? _lastHighlightIndices;
+    private int _lastHighlightMs;
 
     // Whole-page tile animation module (wwwroot/js/tile-animations.js). It runs a FLIP pass,
     // one tile at a time, after every render, diffing DOM positions itself.
@@ -53,6 +56,13 @@ public partial class GamePage : IAsyncDisposable
         _gameState is { IsGameOver: false } &&
         _gameState.CurrentPlayerIndex < _gameState.Players.Count &&
         _gameState.Players[_gameState.CurrentPlayerIndex].Name == PlayerName;
+
+    /// <summary>I played in review mode — the turn waits for my confirmation.</summary>
+    private bool AwaitingMyConfirmation =>
+        _gameState is { AwaitingConfirmation: true } && IsMyTurn;
+
+    /// <summary>Can I act (select tiles, play, draw) right now?</summary>
+    private bool CanAct => IsMyTurn && !AwaitingMyConfirmation;
 
     private string? CurrentPlayerName =>
         _gameState != null && _gameState.CurrentPlayerIndex < _gameState.Players.Count
@@ -160,6 +170,7 @@ public partial class GamePage : IAsyncDisposable
             // while one is showing means the next move landed: clear it. The suggestion
             // is per-turn; a new one arrives with the next OptimalReady.
             _highlightIndices = null;
+            _lastHighlightIndices = null;
             StopHighlightTimer();
             _optimalSuggestion = null;
 
@@ -184,6 +195,9 @@ public partial class GamePage : IAsyncDisposable
             // The server sizes displayMs to the board animation plus a reading window; the
             // highlight then fades on its own instead of lingering until the next move.
             _highlightIndices = indices is { Count: > 0 } ? [..indices] : null;
+            // Remembered so a "replay animation" can bring the highlight back too.
+            _lastHighlightIndices = _highlightIndices?.ToList();
+            _lastHighlightMs = displayMs;
             SetupHighlightTimer(displayMs);
             InvokeAsync(StateHasChanged);
         });
@@ -242,22 +256,68 @@ public partial class GamePage : IAsyncDisposable
 
     // --- Player actions ---
 
-    private async Task OnPlaySelection()
+    /// <summary>
+    /// Plays the selection. With <paramref name="autoContinue"/> the turn passes right away;
+    /// without it, the server pauses after the move so the animation can be watched,
+    /// replayed, and the turn confirmed by hand.
+    /// </summary>
+    private async Task OnPlaySelection(bool autoContinue)
     {
         if (SelectedTilesForPlay.Count == 0 || _hubConnection is null) return;
 
         _isLoading = true;
+        _loadingAutoContinue = autoContinue;
         _errorPlay = null;
         StateHasChanged();
 
         try
         {
-            await _hubConnection.SendAsync(HubEvents.PlayTiles, GameId, SelectedTilesForPlay.ToList());
+            await _hubConnection.SendAsync(
+                HubEvents.PlayTiles, GameId, SelectedTilesForPlay.ToList(), autoContinue);
         }
         catch (Exception ex)
         {
             _errorPlay = $"Error: {ex.Message}";
             _isLoading = false;
+        }
+    }
+
+    private async Task OnConfirmEndTurn()
+    {
+        if (_hubConnection is null || !AwaitingMyConfirmation) return;
+
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            await _hubConnection.SendAsync(HubEvents.ConfirmEndTurn, GameId);
+        }
+        catch (Exception ex)
+        {
+            _errorPlay = $"Error: {ex.Message}";
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>Replays the last board transition (and its played-tiles highlight).</summary>
+    private async Task OnReplayAnimation()
+    {
+        if (_tileAnimations is null) return;
+
+        try
+        {
+            var replayed = await _tileAnimations.InvokeAsync<bool>("replayLast");
+            if (replayed && _lastHighlightIndices is { Count: > 0 })
+            {
+                _highlightIndices = [.._lastHighlightIndices];
+                SetupHighlightTimer(_lastHighlightMs);
+                StateHasChanged();
+            }
+        }
+        catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
+        {
+            // Best-effort, like the rest of the animation layer.
         }
     }
 
@@ -299,11 +359,18 @@ public partial class GamePage : IAsyncDisposable
     {
         if (!IsMyTurn || _isLoading) return;
 
+        if (AwaitingMyConfirmation)
+        {
+            if (e.Key == "Enter")
+                await OnConfirmEndTurn();
+            return;
+        }
+
         switch (e.Key)
         {
             case "Enter":
                 if (SelectedTilesForPlay.Count > 0)
-                    await OnPlaySelection();
+                    await OnPlaySelection(autoContinue: true);
                 else if (_gameState is { TilePoolCount: > 0 })
                     await OnDrawTile();
                 break;
@@ -329,7 +396,7 @@ public partial class GamePage : IAsyncDisposable
     /// </summary>
     private void ApplyAutoPick()
     {
-        if (_helperMode != HelperMode.Auto || !IsMyTurn) return;
+        if (_helperMode != HelperMode.Auto || !CanAct) return;
         if (SelectedTilesForPlay.Count > 0 || _optimalSuggestion is not { Count: > 0 }) return;
         SelectedTilesForPlay.AddRange(_optimalSuggestion);
     }
@@ -354,7 +421,7 @@ public partial class GamePage : IAsyncDisposable
 
     private void OnTileStackClick(Tile tileType)
     {
-        if (!IsMyTurn) return;
+        if (!CanAct) return;
 
         // Each click selects one more copy; a click past the last copy clears them all.
         var totalAvailable = _rackTiles.Count(t => t.Equals(tileType));
