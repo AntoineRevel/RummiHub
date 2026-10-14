@@ -67,6 +67,11 @@
     .tile.highlight {
         border-color: #ffb300;
         box-shadow: 0 0 0 3px rgba(255, 179, 0, 0.3), 0 4px 10px rgba(255, 179, 0, 0.25);
+    }
+
+    /* The glow pulses once the played tile has LANDED on the board (tile-animations.js sets
+       data-landed), not while it is still flying in. */
+    .tile.highlight[data-landed] {
         animation: tile-played-glow 1.8s ease-out;
     }
 
