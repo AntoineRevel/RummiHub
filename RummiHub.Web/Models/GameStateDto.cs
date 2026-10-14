@@ -16,6 +16,12 @@ public record GameStateDto
     public required bool IsGameOver { get; init; }
     public string? WinnerName { get; init; }
     public int TilePoolCount { get; init; }
+
+    /// <summary>
+    /// True while the current player has played in "review" mode and must confirm
+    /// (Next player) before the turn advances.
+    /// </summary>
+    public bool AwaitingConfirmation { get; init; }
 }
 
 /// <summary>

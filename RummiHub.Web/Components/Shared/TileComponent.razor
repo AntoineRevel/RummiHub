@@ -1,5 +1,6 @@
 @using RummiHub.Core.Models
-<div class="tile @(Tile.IsJoker ? "joker" : "") @(ShouldHighlight ? "highlight" : "")">
+<div class="tile @(Tile.IsJoker ? "joker" : "") @(ShouldHighlight ? "highlight" : "")"
+     data-tile-type="@(Tile.IsJoker ? "joker" : $"{Tile.Color}-{Tile.Value}")">
     <div class="tile-number" style="color:@(Tile.IsJoker ? "purple" : GetColor(Tile.Color))">
         <b>@(Tile.IsJoker ? "J" : Tile.Value.ToString())</b>
     </div>
@@ -14,9 +15,11 @@
 
     protected override void OnParametersSet()
     {
-        if (TileIndex.HasValue && HighlightIndices != null)
+        // Recompute even when the index set is null: a highlight must switch OFF when the
+        // server (or the display timer) clears it, not stick to its last computed value.
+        if (TileIndex.HasValue)
         {
-            ShouldHighlight = HighlightIndices.Contains(TileIndex.Value);
+            ShouldHighlight = HighlightIndices?.Contains(TileIndex.Value) ?? false;
         }
     }
 
@@ -44,6 +47,8 @@
         border: 2px solid #CCCCCC;
         border-radius: 10px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        /* Softens the played-tile highlight fading back out when its display window ends. */
+        transition: border-color 0.6s ease, box-shadow 0.6s ease;
     }
 
     .tile-number {
@@ -60,7 +65,14 @@
     }
 
     .tile.highlight {
-        border-color: red;
+        border-color: #ffb300;
+        box-shadow: 0 0 0 3px rgba(255, 179, 0, 0.3), 0 4px 10px rgba(255, 179, 0, 0.25);
+        animation: tile-played-glow 1.8s ease-out;
+    }
+
+    @@keyframes tile-played-glow {
+        0% { box-shadow: 0 0 0 7px rgba(255, 179, 0, 0.55), 0 4px 14px rgba(255, 179, 0, 0.45); }
+        100% { box-shadow: 0 0 0 3px rgba(255, 179, 0, 0.3), 0 4px 10px rgba(255, 179, 0, 0.25); }
     }
 
     .tile:hover {

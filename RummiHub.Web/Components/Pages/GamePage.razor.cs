@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.JSInterop;
 using RummiHub.Core.Models;
 using RummiHub.Web.Hubs;
 using RummiHub.Web.Models;
+using RummiHub.Web.Rendering;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Timer = System.Timers.Timer;
@@ -14,10 +16,6 @@ namespace RummiHub.Web.Components.Pages;
 
 public partial class GamePage : IAsyncDisposable
 {
-    private readonly HashSet<Guid> _newTiles = [];
-    private readonly HashSet<Guid> _removingTiles = [];
-    private readonly List<TileInstance> _selectedTileInstances = [];
-
     private HubConnection? _hubConnection;
     private bool _isConnected;
     private GameStateDto? _gameState;
@@ -28,15 +26,25 @@ public partial class GamePage : IAsyncDisposable
     private Tile? _drawnTile;
     private bool _showDrawnTileToast;
     private Timer? _toastTimer;
-    private List<Tile>? _highlightTiles;
-    private bool _highlightSeenFirstUpdate;
+    private HashSet<int>? _highlightIndices;
+    private Timer? _highlightTimer;
     private List<Tile>? _optimalPlayTiles;
     private bool _optimalSeenFirstUpdate;
     private bool _optimalReady;
+    private List<Tile>? _optimalSuggestion;
+    private HelperMode _helperMode = HelperMode.Hint;
     private bool _seedSaved;
+    private bool _loadingAutoContinue;
+    private List<int>? _lastHighlightIndices;
+    private int _lastHighlightMs;
+
+    // Whole-page tile animation module (wwwroot/js/tile-animations.js). It runs a FLIP pass,
+    // one tile at a time, after every render, diffing DOM positions itself.
+    private IJSObjectReference? _tileAnimations;
 
     [Inject] private IServer Server { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IJSRuntime JS { get; set; } = null!;
 
     [Parameter] public string? GameId { get; set; }
 
@@ -49,12 +57,34 @@ public partial class GamePage : IAsyncDisposable
         _gameState.CurrentPlayerIndex < _gameState.Players.Count &&
         _gameState.Players[_gameState.CurrentPlayerIndex].Name == PlayerName;
 
+    /// <summary>I played in review mode — the turn waits for my confirmation.</summary>
+    private bool AwaitingMyConfirmation =>
+        _gameState is { AwaitingConfirmation: true } && IsMyTurn;
+
+    /// <summary>Can I act (select tiles, play, draw) right now?</summary>
+    private bool CanAct => IsMyTurn && !AwaitingMyConfirmation;
+
     private string? CurrentPlayerName =>
         _gameState != null && _gameState.CurrentPlayerIndex < _gameState.Players.Count
             ? _gameState.Players[_gameState.CurrentPlayerIndex].Name
             : null;
 
     private List<Tile> SelectedTilesForPlay { get; } = [];
+
+    /// <summary>Solver assistance level — a per-player, client-side choice.</summary>
+    private enum HelperMode
+    {
+        /// <summary>No solver help at all (no spinner, no hint).</summary>
+        None,
+
+        /// <summary>After acting, shows the optimal play you could have made (in the play zone).</summary>
+        Hint,
+
+        /// <summary>Pre-selects the solver's move as soon as it is ready — just press Play.</summary>
+        Auto
+    }
+
+    private bool ShowHint => _helperMode == HelperMode.Hint && _optimalPlayTiles is { Count: > 0 };
 
     protected override async Task OnInitializedAsync()
     {
@@ -100,6 +130,28 @@ public partial class GamePage : IAsyncDisposable
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _tileAnimations = await JS.InvokeAsync<IJSObjectReference>("import", "./js/tile-animations.js");
+                await _tileAnimations.InvokeVoidAsync(
+                    "configure", BoardPacing.MoveMs, BoardPacing.PopMs, BoardPacing.StartIntervalMs);
+            }
+
+            // The module diffs tile positions against the previous render, so it needs to run
+            // after every render. It animates only tiles that actually moved.
+            if (_tileAnimations is not null)
+                await _tileAnimations.InvokeVoidAsync("animate");
+        }
+        catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
+        {
+            // Animations are best-effort: never let a JS hiccup break the page.
+        }
+    }
+
     private void RegisterHubEvents()
     {
         var hub = _hubConnection!;
@@ -109,17 +161,18 @@ public partial class GamePage : IAsyncDisposable
             _gameState = state;
             _errorPlay = null;
             _isLoading = false;
+            // Cleared here rather than on RackUpdated so the selected tiles are still
+            // on-screen one render earlier — their positions are what the played tiles
+            // fly from when the new board arrives in this same update.
+            ClearSelection();
 
-            if (_highlightTiles != null)
-            {
-                if (!_highlightSeenFirstUpdate)
-                    _highlightSeenFirstUpdate = true;
-                else
-                {
-                    _highlightTiles = null;
-                    _highlightSeenFirstUpdate = false;
-                }
-            }
+            // The highlight always arrives AFTER its own state update, so any state seen
+            // while one is showing means the next move landed: clear it. The suggestion
+            // is per-turn; a new one arrives with the next OptimalReady.
+            _highlightIndices = null;
+            _lastHighlightIndices = null;
+            StopHighlightTimer();
+            _optimalSuggestion = null;
 
             if (_optimalPlayTiles != null)
             {
@@ -135,10 +188,17 @@ public partial class GamePage : IAsyncDisposable
             InvokeAsync(StateHasChanged);
         });
 
-        hub.On<List<Tile>>(HubEvents.HighlightTilesUpdated, tiles =>
+        hub.On<List<int>, int>(HubEvents.HighlightTilesUpdated, (indices, displayMs) =>
         {
-            _highlightTiles = tiles;
-            _highlightSeenFirstUpdate = false;
+            // Reading-order indices of the tiles that entered the board (server-computed),
+            // so the freshly-played copy lights up — never an identical twin already there.
+            // The server sizes displayMs to the board animation plus a reading window; the
+            // highlight then fades on its own instead of lingering until the next move.
+            _highlightIndices = indices is { Count: > 0 } ? [..indices] : null;
+            // Remembered so a "replay animation" can bring the highlight back too.
+            _lastHighlightIndices = _highlightIndices?.ToList();
+            _lastHighlightMs = displayMs;
+            SetupHighlightTimer(displayMs);
             InvokeAsync(StateHasChanged);
         });
 
@@ -151,9 +211,11 @@ public partial class GamePage : IAsyncDisposable
             InvokeAsync(StateHasChanged);
         });
 
-        hub.On(HubEvents.OptimalReady, () =>
+        hub.On<List<Tile>>(HubEvents.OptimalReady, tiles =>
         {
             _optimalReady = true;
+            _optimalSuggestion = tiles is { Count: > 0 } ? tiles : null;
+            ApplyAutoPick();
             InvokeAsync(StateHasChanged);
         });
 
@@ -166,7 +228,6 @@ public partial class GamePage : IAsyncDisposable
         hub.On<List<Tile>>(HubEvents.RackUpdated, rack =>
         {
             _rackTiles = rack;
-            ClearSelection();
             InvokeAsync(StateHasChanged);
         });
 
@@ -195,22 +256,68 @@ public partial class GamePage : IAsyncDisposable
 
     // --- Player actions ---
 
-    private async Task OnPlaySelection()
+    /// <summary>
+    /// Plays the selection. With <paramref name="autoContinue"/> the turn passes right away;
+    /// without it, the server pauses after the move so the animation can be watched,
+    /// replayed, and the turn confirmed by hand.
+    /// </summary>
+    private async Task OnPlaySelection(bool autoContinue)
     {
         if (SelectedTilesForPlay.Count == 0 || _hubConnection is null) return;
 
         _isLoading = true;
+        _loadingAutoContinue = autoContinue;
         _errorPlay = null;
         StateHasChanged();
 
         try
         {
-            await _hubConnection.SendAsync(HubEvents.PlayTiles, GameId, SelectedTilesForPlay.ToList());
+            await _hubConnection.SendAsync(
+                HubEvents.PlayTiles, GameId, SelectedTilesForPlay.ToList(), autoContinue);
         }
         catch (Exception ex)
         {
             _errorPlay = $"Error: {ex.Message}";
             _isLoading = false;
+        }
+    }
+
+    private async Task OnConfirmEndTurn()
+    {
+        if (_hubConnection is null || !AwaitingMyConfirmation) return;
+
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            await _hubConnection.SendAsync(HubEvents.ConfirmEndTurn, GameId);
+        }
+        catch (Exception ex)
+        {
+            _errorPlay = $"Error: {ex.Message}";
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>Replays the last board transition (and its played-tiles highlight).</summary>
+    private async Task OnReplayAnimation()
+    {
+        if (_tileAnimations is null) return;
+
+        try
+        {
+            var replayed = await _tileAnimations.InvokeAsync<bool>("replayLast");
+            if (replayed && _lastHighlightIndices is { Count: > 0 })
+            {
+                _highlightIndices = [.._lastHighlightIndices];
+                SetupHighlightTimer(_lastHighlightMs);
+                StateHasChanged();
+            }
+        }
+        catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
+        {
+            // Best-effort, like the rest of the animation layer.
         }
     }
 
@@ -252,11 +359,18 @@ public partial class GamePage : IAsyncDisposable
     {
         if (!IsMyTurn || _isLoading) return;
 
+        if (AwaitingMyConfirmation)
+        {
+            if (e.Key == "Enter")
+                await OnConfirmEndTurn();
+            return;
+        }
+
         switch (e.Key)
         {
             case "Enter":
                 if (SelectedTilesForPlay.Count > 0)
-                    await OnPlaySelection();
+                    await OnPlaySelection(autoContinue: true);
                 else if (_gameState is { TilePoolCount: > 0 })
                     await OnDrawTile();
                 break;
@@ -269,6 +383,24 @@ public partial class GamePage : IAsyncDisposable
 
     // --- Tile selection logic ---
 
+    private void SetHelperMode(HelperMode mode)
+    {
+        _helperMode = mode;
+        // Switching to Auto mid-turn applies the already-received suggestion right away.
+        ApplyAutoPick();
+    }
+
+    /// <summary>
+    /// Auto-pick mode: pre-selects the solver's move so the player just presses Play.
+    /// Never overwrites tiles the player already picked by hand.
+    /// </summary>
+    private void ApplyAutoPick()
+    {
+        if (_helperMode != HelperMode.Auto || !CanAct) return;
+        if (SelectedTilesForPlay.Count > 0 || _optimalSuggestion is not { Count: > 0 }) return;
+        SelectedTilesForPlay.AddRange(_optimalSuggestion);
+    }
+
     private void OnClearSelection()
     {
         ClearSelection();
@@ -277,81 +409,32 @@ public partial class GamePage : IAsyncDisposable
 
     private void ClearSelection()
     {
-        _selectedTileInstances.Clear();
         SelectedTilesForPlay.Clear();
-        _removingTiles.Clear();
-        _newTiles.Clear();
     }
 
-    private async Task OnTileInstanceClick(TileInstance tileInstance)
+    private void OnSelectedTileClick(Tile tile)
     {
-        _removingTiles.Add(tileInstance.Id);
-        StateHasChanged();
-        await Task.Delay(300);
-        _selectedTileInstances.Remove(tileInstance);
-        _removingTiles.Remove(tileInstance.Id);
-        SyncSelectedTiles();
+        // The FLIP pass animates the tile flying back to its rack stack.
+        SelectedTilesForPlay.Remove(tile);
         StateHasChanged();
     }
 
-    private void SyncSelectedTiles()
+    private void OnTileStackClick(Tile tileType)
     {
-        SelectedTilesForPlay.Clear();
-        SelectedTilesForPlay.AddRange(_selectedTileInstances.Select(ti => ti.Tile));
-    }
+        if (!CanAct) return;
 
-    private async Task OnTileStackClick(Tile tileType)
-    {
+        // Each click selects one more copy; a click past the last copy clears them all.
         var totalAvailable = _rackTiles.Count(t => t.Equals(tileType));
-        var currentSelectedCount = GetSelectedCountForTile(tileType);
-        var newSelectedCount = (currentSelectedCount + 1) % (totalAvailable + 1);
-
-        if (newSelectedCount > currentSelectedCount)
-        {
-            var tilesToAdd = newSelectedCount - currentSelectedCount;
-            for (var i = 0; i < tilesToAdd; i++)
-            {
-                var newInstance = new TileInstance(tileType);
-                _selectedTileInstances.Add(newInstance);
-                _newTiles.Add(newInstance.Id);
-            }
-        }
-        else if (newSelectedCount < currentSelectedCount)
-        {
-            var tilesToRemove = currentSelectedCount - newSelectedCount;
-            for (var i = 0; i < tilesToRemove; i++)
-            for (var j = _selectedTileInstances.Count - 1; j >= 0; j--)
-            {
-                if (!_selectedTileInstances[j].Tile.Equals(tileType)) continue;
-                _selectedTileInstances.RemoveAt(j);
-                break;
-            }
-        }
+        if (GetSelectedCountForTile(tileType) < totalAvailable)
+            SelectedTilesForPlay.Add(tileType);
         else
-        {
-            var instancesToRemove = _selectedTileInstances.Where(ti => ti.Tile.Equals(tileType)).ToList();
-            foreach (var instance in instancesToRemove)
-            {
-                _selectedTileInstances.Remove(instance);
-                _newTiles.Remove(instance.Id);
-            }
-        }
+            SelectedTilesForPlay.RemoveAll(t => t.Equals(tileType));
 
-        SyncSelectedTiles();
         StateHasChanged();
-
-        if (newSelectedCount > currentSelectedCount)
-        {
-            await Task.Delay(300);
-            var instancesToClean = _selectedTileInstances
-                .Where(ti => ti.Tile.Equals(tileType) && _newTiles.Contains(ti.Id)).ToList();
-            foreach (var instance in instancesToClean) _newTiles.Remove(instance.Id);
-            StateHasChanged();
-        }
     }
 
     private int GetSelectedCountForTile(Tile tileType) =>
-        _selectedTileInstances.Count(ti => ti.Tile.Equals(tileType));
+        SelectedTilesForPlay.Count(t => t.Equals(tileType));
 
     private IEnumerable<IGrouping<Tile, Tile>> GetGroupedTiles() =>
         _rackTiles
@@ -362,6 +445,33 @@ public partial class GamePage : IAsyncDisposable
             .OrderBy(g => g.Key.IsJoker ? 1 : 0)
             .ThenBy(g => g.Key.Color)
             .ThenBy(g => g.Key.Value);
+
+    // --- Played-tiles highlight ---
+
+    private void SetupHighlightTimer(int displayMs)
+    {
+        StopHighlightTimer();
+        if (_highlightIndices is null) return;
+
+        _highlightTimer = new Timer(Math.Max(displayMs, 1000)) { AutoReset = false };
+        _highlightTimer.Elapsed += (_, _) =>
+        {
+            InvokeAsync(() =>
+            {
+                _highlightIndices = null;
+                StopHighlightTimer();
+                StateHasChanged();
+            });
+        };
+        _highlightTimer.Start();
+    }
+
+    private void StopHighlightTimer()
+    {
+        _highlightTimer?.Stop();
+        _highlightTimer?.Dispose();
+        _highlightTimer = null;
+    }
 
     // --- Toast ---
 
@@ -388,13 +498,21 @@ public partial class GamePage : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _toastTimer?.Dispose();
+        _highlightTimer?.Dispose();
+
         if (_hubConnection is not null)
             await _hubConnection.DisposeAsync();
-    }
 
-    private readonly record struct TileInstance(Tile Tile)
-    {
-        public Tile Tile { get; } = Tile;
-        public Guid Id { get; } = Guid.NewGuid();
+        if (_tileAnimations is not null)
+        {
+            try
+            {
+                await _tileAnimations.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already closed — nothing to clean up client-side.
+            }
+        }
     }
 }

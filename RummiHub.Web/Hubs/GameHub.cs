@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Web.Models;
+using RummiHub.Web.Rendering;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Web.Hubs;
@@ -18,6 +19,12 @@ public partial class GameHub(
     /// follow the action rather than seeing the board jump instantly.
     /// </summary>
     private static readonly TimeSpan AutoPlayDelay = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Reading window the played-tiles highlight stays on AFTER the board animation ends;
+    /// the client then fades it out, so the previous move's yellow never lingers forever.
+    /// </summary>
+    private const int HighlightLingerMs = 4000;
 
     /// <summary>Maximum number of seats (human + AI) in a game.</summary>
     private const int MaxPlayers = 4;
@@ -225,6 +232,9 @@ public partial class GameHub(
             try
             {
                 StartOptimalSolveForCurrentPlayerIfNeeded(game);
+                // Seed the alignment baseline with the initial board so the first move animates
+                // from it (and isn't treated as a from-nothing board with no animation).
+                game.LastBroadcastBoard ??= game.Engine!.Board;
             }
             finally
             {
@@ -248,7 +258,8 @@ public partial class GameHub(
                 if (playerIndex.Value == game.Engine.PlayerIndex
                     && pending is { Task.IsCompletedSuccessfully: true })
                 {
-                    await Clients.Caller.SendAsync(HubEvents.OptimalReady);
+                    await Clients.Caller.SendAsync(
+                        HubEvents.OptimalReady, OptimalTiles(pending.Task.Result));
                 }
             }
 
@@ -262,9 +273,12 @@ public partial class GameHub(
     }
 
     /// <summary>
-    /// Human player submits selected tiles to play.
+    /// Human player submits selected tiles to play. With <paramref name="autoContinue"/>
+    /// the turn advances immediately; without it, the move is applied and broadcast but
+    /// the turn waits for <see cref="ConfirmEndTurn"/> so the player can watch (and
+    /// replay) the animation first.
     /// </summary>
-    public async Task PlayTiles(string gameId, List<Tile> selectedTiles)
+    public async Task PlayTiles(string gameId, List<Tile> selectedTiles, bool autoContinue = true)
     {
         var game = gameManager.GetGame(gameId);
         if (game?.Engine == null) return;
@@ -277,6 +291,14 @@ public partial class GameHub(
             if (playerIndex == null || playerIndex.Value != game.Engine.PlayerIndex)
             {
                 await Clients.Caller.SendAsync(HubEvents.Error, "It's not your turn.");
+                return;
+            }
+
+            // A review-mode move was already applied this turn — only confirming remains.
+            if (game.PendingTurnConfirmation is not null)
+            {
+                await Clients.Caller.SendAsync(HubEvents.InvalidPlay,
+                    "You already played this turn — confirm to pass to the next player.");
                 return;
             }
 
@@ -297,10 +319,6 @@ public partial class GameHub(
                     var rack = GetRackTiles(game.Engine, playerIndex.Value);
                     await Clients.Caller.SendAsync(HubEvents.RackUpdated, rack);
 
-                    // Send highlight privately: only the player who played sees the red borders
-                    var playedTiles = game.Engine.Players[playerIndex.Value].TilesToPlay;
-                    await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated, playedTiles);
-
                     // Send the optimal play that was being computed in background since the
                     // start of this turn (against the player's pre-action hand).
                     var turnAtAction = game.Engine.Turn;
@@ -308,8 +326,24 @@ public partial class GameHub(
                     await SendOptimalPlayToCallerAsync(
                         game, turnAtAction, playerAtAction, Context.ConnectionAborted);
 
-                    // Advance the turn, broadcast the new state, and arm the next solve.
-                    await AdvanceTurnAndNotifyAsync(game);
+                    // Advance the turn (or, in review mode, broadcast the new board and
+                    // pause until the player confirms), and arm the next solve.
+                    var boardBefore = game.LastBroadcastBoard;
+                    if (autoContinue || game.Engine.IsGameOver)
+                        await AdvanceTurnAndNotifyAsync(game);
+                    else
+                        await PauseForReviewAsync(game, playerIndex.Value);
+
+                    // Highlight, privately, the tiles that ENTERED the board — by reading-order
+                    // index on the aligned board just broadcast, so when the played tile has an
+                    // identical twin already resting on the board, the new copy lights up, not
+                    // the old one. Sent after the state so the client maps indices onto it.
+                    // Shown for the animation's duration (entered tiles pop last) plus a
+                    // reading window, then the client clears it on its own.
+                    if (boardBefore is not null)
+                        await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated,
+                            BoardPacing.EnteredIndices(boardBefore, game.LastBroadcastBoard!),
+                            game.PendingAnimationMs + HighlightLingerMs);
                 }
                 else
                 {
@@ -358,6 +392,13 @@ public partial class GameHub(
                 return;
             }
 
+            if (game.PendingTurnConfirmation is not null)
+            {
+                await Clients.Caller.SendAsync(HubEvents.InvalidPlay,
+                    "You already played this turn — confirm to pass to the next player.");
+                return;
+            }
+
             if (game.Engine.TilePoolCount == 0)
             {
                 await Clients.Caller.SendAsync(HubEvents.Error, "No tiles left in the pool.");
@@ -385,6 +426,36 @@ public partial class GameHub(
         {
             LogHubError(ex, nameof(DrawTile), Context.ConnectionId);
             await Clients.Caller.SendAsync(HubEvents.Error, "Error drawing a tile.");
+        }
+        finally
+        {
+            game.ActionLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Ends a "play &amp; review" turn: the move was already applied and broadcast by
+    /// <see cref="PlayTiles"/>; this just advances to the next player.
+    /// </summary>
+    public async Task ConfirmEndTurn(string gameId)
+    {
+        var game = gameManager.GetGame(gameId);
+        if (game?.Engine == null) return;
+
+        await game.ActionLock.WaitAsync();
+        try
+        {
+            var pending = game.PendingTurnConfirmation;
+            var playerIndex = game.FindPlayerIndexByConnection(Context.ConnectionId);
+            if (pending is null || playerIndex != pending.PlayerIndex) return;
+
+            game.PendingTurnConfirmation = null;
+            await AdvanceTurnAndNotifyAsync(game);
+        }
+        catch (Exception ex)
+        {
+            LogHubError(ex, nameof(ConfirmEndTurn), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.Error, "Error ending the turn.");
         }
         finally
         {
@@ -441,10 +512,13 @@ public partial class GameHub(
             }).ToList(),
             CurrentPlayerIndex = engine.PlayerIndex,
             Turn = engine.Turn,
-            Board = engine.Board,
+            // The aligned board kept in LastBroadcastBoard is what clients render and animate;
+            // engine.Board (unaligned) is only the solver's input for the next turn.
+            Board = game.LastBroadcastBoard ?? engine.Board,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,
-            TilePoolCount = engine.TilePoolCount
+            TilePoolCount = engine.TilePoolCount,
+            AwaitingConfirmation = game.PendingTurnConfirmation is not null
         };
     }
 
@@ -461,7 +535,16 @@ public partial class GameHub(
     /// </summary>
     private async Task AdvanceTurnAndNotifyAsync(Game game)
     {
-        game.Engine!.AdvanceToNextPlayer();
+        var engine = game.Engine!;
+        engine.AdvanceToNextPlayer();
+
+        // Align the post-move board to the one currently shown so unchanged sets keep their
+        // place, then estimate how long the client's step-by-step animation runs so the
+        // next AI move can wait for it to finish before playing.
+        var previous = game.LastBroadcastBoard;
+        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
+        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
+        game.LastBroadcastBoard = aligned;
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
@@ -469,6 +552,25 @@ public partial class GameHub(
         await SendCurrentPlayerRack(game);
 
         StartOptimalSolveForCurrentPlayerIfNeeded(game);
+    }
+
+    /// <summary>
+    /// Review-mode tail of a human play: aligns and broadcasts the post-move board (so
+    /// everyone watches the animation) but keeps the turn on the same player until they
+    /// call <see cref="ConfirmEndTurn"/>. Callers must hold <see cref="Game.ActionLock"/>.
+    /// </summary>
+    private async Task PauseForReviewAsync(Game game, int playerIndex)
+    {
+        var engine = game.Engine!;
+
+        var previous = game.LastBroadcastBoard;
+        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
+        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
+        game.LastBroadcastBoard = aligned;
+        game.PendingTurnConfirmation = new PendingTurnConfirmation(engine.Turn, playerIndex);
+
+        var state = BuildGameState(game);
+        await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
     }
 
     /// <summary>
@@ -499,6 +601,8 @@ public partial class GameHub(
     {
         var engine = game.Engine!;
         if (engine.IsGameOver) return;
+        // Mid-review the player already acted: their next-turn solve is armed on confirm.
+        if (game.PendingTurnConfirmation is not null) return;
 
         var existing = game.PendingOptimalSolve;
         if (existing is not null
@@ -565,7 +669,10 @@ public partial class GameHub(
 
         try
         {
-            await hubContext.Clients.Client(connectionId).SendAsync(HubEvents.OptimalReady);
+            // The optimal tiles ride along so an "auto-pick" client can pre-select them.
+            var result = task.IsCompletedSuccessfully ? task.Result : null;
+            await hubContext.Clients.Client(connectionId)
+                .SendAsync(HubEvents.OptimalReady, OptimalTiles(result));
         }
         catch (Exception ex)
         {
@@ -584,7 +691,9 @@ public partial class GameHub(
     {
         try
         {
-            await Task.Delay(AutoPlayDelay, ct);
+            // Wait for the currently-shown transition's animation to finish, then the watchable
+            // pause, so an AI move never lands on top of the still-running board animation.
+            await Task.Delay(TimeSpan.FromMilliseconds(game.PendingAnimationMs) + AutoPlayDelay, ct);
             await game.ActionLock.WaitAsync(ct);
         }
         catch (OperationCanceledException)
@@ -665,11 +774,7 @@ public partial class GameHub(
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
                 var result = await pending.Task.WaitAsync(linked.Token);
-
-                tiles = result.Found
-                    ? [..result.TilesToPlay,
-                       ..Enumerable.Range(0, result.JokersToPlay).Select(_ => new Tile(isJoker: true))]
-                    : [];
+                tiles = OptimalTiles(result);
             }
             catch (OperationCanceledException)
             {
@@ -684,6 +789,13 @@ public partial class GameHub(
 
         await Clients.Caller.SendAsync(HubEvents.OptimalPlay, tiles, ct);
     }
+
+    /// <summary>Flattens a solve result into the tile list it plays (jokers included).</summary>
+    private static List<Tile> OptimalTiles(SolveResponse? result) =>
+        result is { Found: true }
+            ? [..result.TilesToPlay,
+               ..Enumerable.Range(0, result.JokersToPlay).Select(_ => new Tile(isJoker: true))]
+            : [];
 
     // ========== LOGGING ==========
 

@@ -1,4 +1,5 @@
 using RummiHub.Core.Contracts;
+using RummiHub.Core.Models;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Web.Models;
@@ -8,6 +9,12 @@ public sealed record PendingOptimalSolve(
     int PlayerIndex,
     Task<SolveResponse> Task,
     CancellationTokenSource Cts);
+
+/// <summary>
+/// A human move applied in "play &amp; review" mode: the board is already broadcast and
+/// animating, but the turn does not advance until this player confirms (Next player).
+/// </summary>
+public sealed record PendingTurnConfirmation(int Turn, int PlayerIndex);
 
 public class Game
 {
@@ -35,6 +42,27 @@ public class Game
     /// Read/written only inside ActionLock.
     /// </summary>
     public PendingOptimalSolve? PendingOptimalSolve { get; set; }
+
+    /// <summary>
+    /// Set while a "play &amp; review" move waits for its player to confirm the end of the
+    /// turn. All other game actions are refused until then.
+    /// Read/written only inside <see cref="ActionLock"/>.
+    /// </summary>
+    public PendingTurnConfirmation? PendingTurnConfirmation { get; set; }
+
+    /// <summary>
+    /// The board exactly as last shown to clients (after cosmetic alignment). The next board is
+    /// aligned against it, and the tile-animation duration is computed from the difference.
+    /// Read/written only inside <see cref="ActionLock"/>.
+    /// </summary>
+    public Solution? LastBroadcastBoard { get; set; }
+
+    /// <summary>
+    /// How long (ms) the client animation for the most recently broadcast transition runs. The
+    /// next AI move waits this long (plus the watchable pause) so its move never overlaps the
+    /// in-progress animation. Read/written only inside <see cref="ActionLock"/>.
+    /// </summary>
+    public int PendingAnimationMs { get; set; }
 
     public int PlayerCount
     {

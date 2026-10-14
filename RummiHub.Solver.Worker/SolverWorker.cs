@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Core.Solver;
+using RummiHub.Solver.Worker.Solver.Dynamic;
 using RummiHub.Solver.Worker.Strategies;
 using StackExchange.Redis;
 
@@ -199,6 +200,13 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 
             IStrategy strategy = new DynamicStrategy();
             var result = await strategy.GetSolverResult(boardSet, rackSet, request.HasPlayed, ct);
+
+            // During the game, re-arrange the optimal move so it disturbs the existing sets
+            // as little as possible — same tiles played, minimal visual reshuffle. First
+            // plays never touch the board (their solution is merged alongside it), so they
+            // need no stabilizing.
+            if (result.Found && request.HasPlayed)
+                result = BoardStabilizer.Stabilize(request.Board, result, ct);
 
             stopwatch.Stop();
 

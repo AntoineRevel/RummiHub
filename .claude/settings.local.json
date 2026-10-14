@@ -3,7 +3,8 @@
     "allow": [
       "Bash(dotnet --version)",
       "Bash(aspire --version)",
-      "Bash(dotnet restore *)"
+      "Bash(dotnet restore *)",
+      "Bash(git -C /Users/antoinerevel/Documents/Repo/RummiHub diff master --stat)"
     ]
   },
   "enableAllProjectMcpServers": true,
