@@ -9,29 +9,46 @@ namespace RummiHub.Solver.Worker.Strategies;
 ///
 /// <para>
 /// The dynamic-programming solver is exact and dramatically faster than the exponential
-/// tree search, but as the newest engine it is wrapped in a safety net: its result is
-/// validated (every set legal, all board tiles preserved, every played tile coming from
-/// the rack, first-play score ≥ 30). If validation ever fails, the strategy transparently
-/// falls back to the proven <see cref="GraphStrategy"/>, so production can never regress
-/// below the previous behavior.
+/// tree search, so its "no move" answer is final: a rack with no legal play, or a first play
+/// short of 30 points (which still carries its best score for the UI), is returned as-is.
+/// Re-running the exponential search would only reach the same verdict, and once the table
+/// gets crowded that takes tens of seconds, long enough to time out the caller.
+/// </para>
+///
+/// <para>
+/// As the newest engine, the moves it finds are still wrapped in a safety net: a found move
+/// is validated (every set legal, all board tiles preserved, every played tile coming from
+/// the rack, first-play score ≥ 30). If validation ever fails, or the engine throws
+/// unexpectedly, the strategy transparently falls back to the proven
+/// <see cref="GraphStrategy"/>. An <see cref="OperationCanceledException"/> is rethrown,
+/// never treated as an engine failure.
 /// </para>
 /// </summary>
 public sealed class DynamicStrategy : IStrategy
 {
-    private readonly GraphStrategy _fallback = new();
+    private readonly Func<Set, Set, bool, ISolver> _createSolver;
+    private readonly IStrategy _fallback;
+
+    public DynamicStrategy() : this(new GraphStrategy())
+    {
+    }
+
+    /// <summary>Test seam: observe the fallback and, optionally, stand in for the engine.</summary>
+    internal DynamicStrategy(IStrategy fallback, Func<Set, Set, bool, ISolver>? createSolver = null)
+    {
+        _fallback = fallback;
+        _createSolver = createSolver ?? CreateSolver;
+    }
 
     public async Task<SolverResult> GetSolverResult(Set board, Set rack, bool hasPlayed,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            ISolver solver = hasPlayed
-                ? DynamicSolver.Create(board, rack)
-                : DynamicSolver.CreateFirst(rack);
+            var result = _createSolver(board, rack, hasPlayed).SearchSolution(cancellationToken);
 
-            var result = solver.SearchSolution(cancellationToken);
-
-            if (result.Found && SolutionValidator.IsValid(result, board, rack, hasPlayed))
+            // An exact "no move" is final; only a move the engine found needs double-checking.
+            if (!result.Found || SolutionValidator.IsValid(result, board, rack, hasPlayed))
                 return result;
         }
         catch (OperationCanceledException)
@@ -45,4 +62,9 @@ public sealed class DynamicStrategy : IStrategy
 
         return await _fallback.GetSolverResult(board, rack, hasPlayed, cancellationToken);
     }
+
+    private static ISolver CreateSolver(Set board, Set rack, bool hasPlayed) =>
+        hasPlayed
+            ? DynamicSolver.Create(board, rack)
+            : DynamicSolver.CreateFirst(rack);
 }
