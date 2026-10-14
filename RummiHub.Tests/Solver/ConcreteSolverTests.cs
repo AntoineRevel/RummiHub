@@ -268,8 +268,8 @@ public class StrategyTests
     [Fact]
     public async Task DynamicStrategy_FirstPlayBelowMinScore_ReportsBestScore()
     {
-        // Full production path (DynamicStrategy, including its GraphStrategy fallback): a sub-30
-        // first play must be rejected but still surface its real score so the UI shows it, not 0.
+        // Full production path (DynamicStrategy as wired in SolverWorker): a sub-30 first play
+        // must be rejected but still surface its real score so the UI shows it, not 0.
         var result = await new DynamicStrategy()
             .GetSolverResult(Sets.Empty(), BelowMinScoreValidGroup(), hasPlayed: false);
 
