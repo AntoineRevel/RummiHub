@@ -43,6 +43,12 @@ public partial class GamePage : IAsyncDisposable
     // zone as they land on the board, and the copies left in the rack never blink out.
     private List<Tile>? _rackAwaitingBoard;
 
+    // Someone else's move, held back from the turn display until the board has played it
+    // out: the board shows it at once, whose turn it is (the players bar, the banner, my side
+    // of the table) only once it has landed. Revealed by _turnRevealTimer.
+    private GameStateDto? _turnAwaitingBoard;
+    private Timer? _turnRevealTimer;
+
     // Whole-page tile animation module (wwwroot/js/tile-animations.js). It runs a FLIP pass
     // after every render, diffing DOM positions itself, and tells board changes as
     // play → make room → place.
@@ -138,6 +144,10 @@ public partial class GamePage : IAsyncDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Captured before awaiting JS: a state arriving meanwhile is drawn by the next render,
+        // which schedules its own reveal from the board it actually shows.
+        var turnAwaitingBoard = _turnAwaitingBoard;
+        var boardBusyMs = 0;
         try
         {
             if (firstRender)
@@ -153,23 +163,35 @@ public partial class GamePage : IAsyncDisposable
             }
 
             // The module diffs tile positions against the previous render, so it needs to run
-            // after every render. It animates only tiles that actually moved.
+            // after every render. It animates only tiles that actually moved, and says how
+            // long the board keeps moving.
             if (_tileAnimations is not null)
-                await _tileAnimations.InvokeVoidAsync("animate");
+                boardBusyMs = await _tileAnimations.InvokeAsync<int?>("animate") ?? 0;
         }
         catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
         {
             // Animations are best-effort: never let a JS hiccup break the page.
         }
+
+        if (turnAwaitingBoard is not null && ReferenceEquals(turnAwaitingBoard, _turnAwaitingBoard))
+            ScheduleTurnReveal(boardBusyMs);
     }
 
     private void RegisterHubEvents()
     {
         var hub = _hubConnection!;
 
-        hub.On<GameStateDto>(HubEvents.GameStateUpdated, state =>
+        // Every event applies on the renderer's synchronization context, in arrival order, then
+        // re-renders: state never changes under a render, and a move's events (rack, state,
+        // highlight) apply in the order the server sent them.
+        void Handle<T>(string method, Action<T> apply) =>
+            hub.On<T>(method, value => InvokeAsync(() => { apply(value); StateHasChanged(); }));
+
+        void Handle2<T1, T2>(string method, Action<T1, T2> apply) =>
+            hub.On<T1, T2>(method, (a, b) => InvokeAsync(() => { apply(a, b); StateHasChanged(); }));
+
+        Handle<GameStateDto>(HubEvents.GameStateUpdated, state =>
         {
-            _gameState = state;
             _errorPlay = null;
             _isLoading = false;
             // Cleared here rather than on RackUpdated so the selected tiles are still
@@ -186,21 +208,29 @@ public partial class GamePage : IAsyncDisposable
             StopHighlightTimer();
             _optimalSuggestion = null;
 
-            if (_optimalPlayTiles != null)
-            {
-                if (!_optimalSeenFirstUpdate)
-                    _optimalSeenFirstUpdate = true;
-                else
-                {
-                    _optimalPlayTiles = null;
-                    _optimalSeenFirstUpdate = false;
-                }
-            }
+            // A newer state supersedes a turn still waiting for the board.
+            RevealTurn();
 
-            InvokeAsync(StateHasChanged);
+            if (_gameState is not null && !IsMyTurn)
+            {
+                // Someone else's move: the board plays it out first (tile counts and the pool
+                // follow it), and the turn passes on screen once it has landed — see
+                // OnAfterRenderAsync. My own moves apply at once: the turn must leave me.
+                _gameState = _gameState with
+                {
+                    Board = state.Board,
+                    Players = state.Players,
+                    TilePoolCount = state.TilePoolCount
+                };
+                _turnAwaitingBoard = state;
+            }
+            else
+            {
+                ApplyTurn(state);
+            }
         });
 
-        hub.On<List<int>, int>(HubEvents.HighlightTilesUpdated, (indices, displayMs) =>
+        Handle2<List<int>, int>(HubEvents.HighlightTilesUpdated, (indices, displayMs) =>
         {
             // Reading-order indices of the tiles that entered the board (server-computed),
             // so the freshly-played copy lights up — never an identical twin already there.
@@ -211,33 +241,27 @@ public partial class GamePage : IAsyncDisposable
             _lastHighlightIndices = _highlightIndices?.ToList();
             _lastHighlightMs = displayMs;
             SetupHighlightTimer(displayMs);
-            InvokeAsync(StateHasChanged);
         });
 
-        hub.On<List<Tile>>(HubEvents.OptimalPlay, tiles =>
+        Handle<List<Tile>>(HubEvents.OptimalPlay, tiles =>
         {
             _optimalPlayTiles = tiles is { Count: > 0 } ? tiles : null;
             _optimalSeenFirstUpdate = false;
             // Player has just acted — the indicator is for next turn (someone else's).
             _optimalReady = false;
-            InvokeAsync(StateHasChanged);
         });
 
-        hub.On<List<Tile>>(HubEvents.OptimalReady, tiles =>
+        Handle<List<Tile>>(HubEvents.OptimalReady, tiles =>
         {
             _optimalReady = true;
             _optimalSuggestion = tiles is { Count: > 0 } ? tiles : null;
+            // No-op until my turn is on screen; ApplyTurn picks it up then.
             ApplyAutoPick();
-            InvokeAsync(StateHasChanged);
         });
 
-        hub.On<string>(HubEvents.SeedSaved, _ =>
-        {
-            _seedSaved = true;
-            InvokeAsync(StateHasChanged);
-        });
+        Handle<string>(HubEvents.SeedSaved, _ => _seedSaved = true);
 
-        hub.On<List<Tile>>(HubEvents.RackUpdated, rack =>
+        Handle<List<Tile>>(HubEvents.RackUpdated, rack =>
         {
             // While my play is being validated, the selection is still shown as part of
             // the rack: the new rack (without the played tiles) waits for the board.
@@ -245,31 +269,27 @@ public partial class GamePage : IAsyncDisposable
                 _rackAwaitingBoard = rack;
             else
                 _rackTiles = rack;
-            InvokeAsync(StateHasChanged);
         });
 
-        hub.On<Tile>(HubEvents.TileDrawn, tile =>
+        Handle<Tile>(HubEvents.TileDrawn, tile =>
         {
             _drawnTile = tile;
             _showDrawnTileToast = true;
             SetupToastTimer();
-            InvokeAsync(StateHasChanged);
         });
 
-        hub.On<string>(HubEvents.InvalidPlay, message =>
+        Handle<string>(HubEvents.InvalidPlay, message =>
         {
             _errorPlay = message;
             _isLoading = false;
             ApplyRackAwaitingBoard();
-            InvokeAsync(StateHasChanged);
         });
 
-        hub.On<string>(HubEvents.Error, message =>
+        Handle<string>(HubEvents.Error, message =>
         {
             _error = message;
             _isLoading = false;
             ApplyRackAwaitingBoard();
-            InvokeAsync(StateHasChanged);
         });
     }
 
@@ -278,6 +298,68 @@ public partial class GamePage : IAsyncDisposable
         if (_rackAwaitingBoard is null) return;
         _rackTiles = _rackAwaitingBoard;
         _rackAwaitingBoard = null;
+    }
+
+    // --- Turn display ---
+
+    /// <summary>Shows a state in full: whose turn it is, the banner, my side of the table.</summary>
+    private void ApplyTurn(GameStateDto state)
+    {
+        _gameState = state;
+
+        // The hint shows after my own action: it stays through that action's state update
+        // and goes when the next one lands.
+        if (_optimalPlayTiles != null)
+        {
+            if (!_optimalSeenFirstUpdate)
+                _optimalSeenFirstUpdate = true;
+            else
+            {
+                _optimalPlayTiles = null;
+                _optimalSeenFirstUpdate = false;
+            }
+        }
+
+        // My turn may start here: auto-pick the suggestion that arrived meanwhile.
+        ApplyAutoPick();
+    }
+
+    private void RevealTurn()
+    {
+        StopTurnRevealTimer();
+        if (_turnAwaitingBoard is not { } state) return;
+        _turnAwaitingBoard = null;
+        ApplyTurn(state);
+    }
+
+    /// <summary>Reveals the held-back turn once the board stops moving.</summary>
+    private void ScheduleTurnReveal(int boardBusyMs)
+    {
+        StopTurnRevealTimer();
+        if (boardBusyMs <= 0)
+        {
+            RevealTurn();
+            StateHasChanged();
+            return;
+        }
+
+        var armedFor = _turnAwaitingBoard;
+        _turnRevealTimer = new Timer(boardBusyMs) { AutoReset = false };
+        _turnRevealTimer.Elapsed += (_, _) => InvokeAsync(() =>
+        {
+            // A late tick must not reveal a newer move whose board is still playing.
+            if (!ReferenceEquals(armedFor, _turnAwaitingBoard)) return;
+            RevealTurn();
+            StateHasChanged();
+        });
+        _turnRevealTimer.Start();
+    }
+
+    private void StopTurnRevealTimer()
+    {
+        _turnRevealTimer?.Stop();
+        _turnRevealTimer?.Dispose();
+        _turnRevealTimer = null;
     }
 
     // --- Player actions ---
@@ -525,6 +607,7 @@ public partial class GamePage : IAsyncDisposable
     {
         _toastTimer?.Dispose();
         _highlightTimer?.Dispose();
+        _turnRevealTimer?.Dispose();
 
         if (_hubConnection is not null)
             await _hubConnection.DisposeAsync();

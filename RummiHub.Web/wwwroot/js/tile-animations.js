@@ -437,9 +437,13 @@ function tell(story) {
     return true;
 }
 
+// Milliseconds until the board stops moving (0 when idle): the page waits for it before
+// showing whose turn it is, so an opponent's move plays out before my side changes.
+const boardIdleIn = () => Math.max(0, Math.ceil(boardBusyUntil - performance.now()));
+
 export function animate() {
     const root = document.querySelector('.game-container');
-    if (!root) { last = null; return; }
+    if (!root) { last = null; return 0; }
 
     const snap = collect(root);
 
@@ -447,7 +451,7 @@ export function animate() {
     // nobody watching: show everything as-is; animations start from the NEXT change.
     if (!last || last.tiles.length === 0 || reducedMotion.matches || document.hidden) {
         store(snap);
-        return;
+        return boardIdleIn();
     }
 
     // Kept clean (matching flags prev) so the board story can be replayed on demand.
@@ -459,6 +463,7 @@ export function animate() {
     // hand's fresh moves.
     if (tell(story)) replayFrom = prevClean;
     playHand(hand);
+    return boardIdleIn();
 }
 
 // Replays the most recent board story: snap whatever is pending to its end, re-measure the
