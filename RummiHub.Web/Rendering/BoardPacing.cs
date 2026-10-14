@@ -3,27 +3,41 @@ using RummiHub.Core.Models;
 namespace RummiHub.Web.Rendering;
 
 /// <summary>
-/// Single source of truth for the sequential tile animation's tempo. The constants are pushed
-/// to the JS module (<c>wwwroot/js/tile-animations.js</c>) via its <c>configure()</c> export,
-/// and <see cref="EstimateMs"/> mirrors the client's step grouping so AI pacing
+/// Single source of truth for the tile animation's tempo. The constants are pushed to the JS
+/// module (<c>wwwroot/js/tile-animations.js</c>) via its <c>configure()</c> export, and
+/// <see cref="EstimateMs"/> mirrors the client's board story so AI pacing
 /// (<see cref="Models.Game.PendingAnimationMs"/>) never plays a move mid-animation.
 /// </summary>
+/// <remarks>
+/// The client never moves the board before the play that causes it. Every board change is told
+/// in three acts: (1) the placed tiles — played from the hand, or board tiles changing set —
+/// take off one after the other and hover just above their slots; (2) the board makes room under
+/// them in ONE glide; (3) they drop into place. With no room to make they fly straight in.
+/// </remarks>
 public static class BoardPacing
 {
-    /// <summary>One step's glide — a tile, or a whole relocated set gliding as a block.</summary>
+    /// <summary>A hand tile gliding between the rack and the play zone.</summary>
     public const int MoveMs = 350;
 
-    /// <summary>One entering tile's pop-in.</summary>
+    /// <summary>A newcomer with no origin on screen popping in.</summary>
     public const int PopMs = 300;
 
-    /// <summary>
-    /// THE tempo dial: interval between successive step starts. Equal to <see cref="MoveMs"/>
-    /// each step ends exactly when the next begins — strict one-at-a-time, no duration cap.
-    /// (~100 would overlap the steps into a cascade.)
-    /// </summary>
-    public const int StartIntervalMs = MoveMs;
+    /// <summary>Act 1 — one placed tile's flight to its slot (or just above it).</summary>
+    public const int FlightMs = 480;
 
-    /// <summary>Slack absorbing client jitter and the ±1 step the estimate can be off by.</summary>
+    /// <summary>Act 1 — interval between two placed tiles taking off.</summary>
+    public const int StaggerMs = 120;
+
+    /// <summary>Act 2 — the board making room under the placed tiles, in one glide.</summary>
+    public const int RoomMs = 420;
+
+    /// <summary>Act 3 — one hovering tile dropping into its slot.</summary>
+    public const int DropMs = 280;
+
+    /// <summary>Act 3 — interval between two drops.</summary>
+    public const int DropStaggerMs = 60;
+
+    /// <summary>Slack absorbing client jitter.</summary>
     private const int BufferMs = 200;
 
     /// <summary>
@@ -32,15 +46,25 @@ public static class BoardPacing
     /// so unchanged sets keep their reading-order index.
     /// </summary>
     public static int EstimateMs(Solution previous, Solution next)
-        => DurationForSteps(CountSteps(previous, next));
+        => DurationForPlacedTiles(CountPlacedTiles(previous, next));
 
-    public static int DurationForSteps(int steps)
-        => steps == 0 ? 0 : steps * StartIntervalMs + BufferMs;
+    /// <summary>
+    /// Duration of the board story placing <paramref name="placed"/> tiles. Conservative: it always
+    /// counts acts 2 and 3, since whether the board really has to make room depends on the
+    /// client's layout (line wrapping), unknown here.
+    /// </summary>
+    public static int DurationForPlacedTiles(int placed)
+        => placed == 0
+            ? 0
+            : FlightMs + (placed - 1) * StaggerMs        // act 1 — the play
+              + RoomMs                                   // act 2 — the board makes room
+              + DropMs + (placed - 1) * DropStaggerMs    // act 3 — the tiles drop in
+              + BufferMs;
 
     /// <summary>
     /// Reading-order indices (on <paramref name="next"/>, runs then groups) of the tiles that
-    /// entered the board between the two renders — i.e. the tiles the client pops or flies in.
-    /// Uses the same set pairing and per-occurrence multiset diff as the client, so when a
+    /// entered the board between the two renders — i.e. the tiles the client flies in from the
+    /// hand. Uses the same set pairing and per-occurrence multiset diff as the client, so when a
     /// played tile has an identical twin already sitting on the board, the NEW copy is flagged,
     /// not the old one. Drives the played-tiles highlight.
     /// </summary>
@@ -59,14 +83,14 @@ public static class BoardPacing
             var counts = new Dictionary<int, int>();
             if (pairs[j].PrevIndex >= 0)
             {
-                foreach (var tile in prevSets[pairs[j].PrevIndex].Set.Tiles)
+                foreach (var tile in prevSets[pairs[j].PrevIndex].Tiles)
                 {
                     var key = TileKey(tile);
                     counts[key] = counts.GetValueOrDefault(key) + 1;
                 }
             }
 
-            foreach (var tile in nextSets[j].Set.Tiles)
+            foreach (var tile in nextSets[j].Tiles)
             {
                 var key = TileKey(tile);
                 if (counts.TryGetValue(key, out var count) && count > 0) counts[key] = count - 1;
@@ -78,41 +102,25 @@ public static class BoardPacing
         return entered;
     }
 
-    // Counts animation steps the way the client groups them: a paired set that changed
-    // reading-order index glides as ONE block step, plus one step per tile that entered it;
-    // tiles of unpaired new sets are one step each. An estimate, not an exact replay —
-    // BufferMs and the AI's watchable pause absorb the difference.
-    private static int CountSteps(Solution previous, Solution next)
+    // Tiles the client PLACES (acts 1 and 3): every tile of the next board its paired previous
+    // set doesn't keep — tiles entering from the hand, plus board tiles changing set. Counted one
+    // by one; the client flies tiles changing set together as one block, so this can only
+    // over-estimate.
+    private static int CountPlacedTiles(Solution previous, Solution next)
     {
-        var prevSets = ReadingOrder(previous);
         var nextSets = ReadingOrder(next);
-        var pairs = PairSets(prevSets, nextSets);
+        var pairs = PairSets(ReadingOrder(previous), nextSets);
 
-        var steps = 0;
+        var placed = 0;
         for (var j = 0; j < nextSets.Count; j++)
-        {
-            var (prevIndex, shared) = pairs[j];
-            var target = nextSets[j];
-            if (prevIndex < 0)
-            {
-                steps += target.Set.Tiles.Length;              // brand-new set: tile by tile
-                continue;
-            }
+            placed += nextSets[j].Tiles.Length - pairs[j].Shared;
 
-            var prev = prevSets[prevIndex];
-            if (target.IsRun != prev.IsRun || target.Index != prev.Index)
-                steps++;                                       // the kept tiles glide as one block
-            steps += target.Set.Tiles.Length - shared;         // each entering tile flies/pops solo
-        }
-
-        return steps;
+        return placed;
     }
 
     // Pairs each next set with a previous set by maximal multiset overlap, greedy in reading
     // order (like BoardAlignment). Unpaired next sets get (-1, 0).
-    private static (int PrevIndex, int Shared)[] PairSets(
-        List<(ValidSet Set, bool IsRun, int Index)> prevSets,
-        List<(ValidSet Set, bool IsRun, int Index)> nextSets)
+    private static (int PrevIndex, int Shared)[] PairSets(List<ValidSet> prevSets, List<ValidSet> nextSets)
     {
         var pairs = new (int PrevIndex, int Shared)[nextSets.Count];
         Array.Fill(pairs, (-1, 0));
@@ -124,7 +132,7 @@ public static class BoardPacing
             for (var j = 0; j < nextSets.Count; j++)
             {
                 if (pairs[j].PrevIndex >= 0) continue;
-                var shared = SharedTileCount(prevSets[i].Set, nextSets[j].Set);
+                var shared = SharedTileCount(prevSets[i], nextSets[j]);
                 if (shared > bestShared) (best, bestShared) = (j, shared);
             }
 
@@ -134,11 +142,7 @@ public static class BoardPacing
         return pairs;
     }
 
-    private static List<(ValidSet Set, bool IsRun, int Index)> ReadingOrder(Solution board) =>
-    [
-        ..board.Runs.Select((s, i) => (s, true, i)),
-        ..board.Groups.Select((s, i) => (s, false, i))
-    ];
+    private static List<ValidSet> ReadingOrder(Solution board) => [..board.Runs, ..board.Groups];
 
     // Multiset intersection by tile identity, occurrence-aware; all jokers fold into one bucket.
     private static int SharedTileCount(ValidSet a, ValidSet b)

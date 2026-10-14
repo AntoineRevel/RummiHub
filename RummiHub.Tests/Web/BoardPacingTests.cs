@@ -30,53 +30,59 @@ public class BoardPacingTests
     }
 
     [Fact]
-    public void EstimateMs_TileAppendedToLastSet_IsOneStep()
+    public void EstimateMs_TileAppendedToLastSet_PlacesOneTile()
     {
         var previous = new Solution { Runs = [BlueRun, RedRun] };
         var next = new Solution { Runs = [BlueRun, RedRunExtended] };
 
-        // The set kept its index, so only the entering tile is a step — no block step.
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForSteps(1));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(1));
     }
 
     [Fact]
-    public void EstimateMs_WholeSetRelocated_IsOneBlockStep()
+    public void EstimateMs_TileInsertedMidBoard_ReflowIsNotAMove()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [RedRun] };
+        // The Red run shifts to make room for the 4-Blue: that's act 2's single glide, not a
+        // move of its own — only the placed tile counts.
+        var blueRunExtended = Set(
+            T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
+        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var next = new Solution { Runs = [blueRunExtended, RedRun], Groups = [FivesGroup] };
 
-        // Same composition at a new reading-order index: ONE block step, not one per tile.
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForSteps(1));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(1));
     }
 
     [Fact]
-    public void EstimateMs_SetExtendedAndRelocated_IsBlockPlusEnter()
+    public void EstimateMs_NewSet_PlacesEachOfItsTiles()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [RedRunExtended] };
+        var previous = new Solution { Runs = [BlueRun] };
+        var next = new Solution { Runs = [BlueRun, RedRun] };
 
-        // Kept tiles glide as one block, then the new tile arrives on top: 2 steps.
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForSteps(2));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
     }
 
     [Fact]
-    public void EstimateMs_SetUnchangedSameIndex_IsZero()
+    public void EstimateMs_BoardTileChangingSet_IsPlacedToo()
     {
-        var previous = new Solution { Runs = [RedRun] };
-        var next = new Solution { Runs = [RedRun] };
+        // The 4-Blue leaves its run for a new group with the played 4-Red and 4-Black: it is
+        // picked up and dropped like the played tiles — 3 placed tiles.
+        var longBlueRun = Set(
+            T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
+        var foursGroup = Set(T(4, TileColor.Blue), T(4, TileColor.Red), T(4, TileColor.Black));
+        var previous = new Solution { Runs = [longBlueRun] };
+        var next = new Solution { Runs = [BlueRun], Groups = [foursGroup] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(0);
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
     }
 
     [Fact]
     public void EstimateMs_DuplicateTiles_MatchedByOccurrence()
     {
-        // Two 5-Red on the board (run + group); only the run relocates. The group's
-        // duplicate must not be dragged into the count: one step, not two.
-        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [RedRun], Groups = [FivesGroup] };
+        // A 5-Red already rests in FivesGroup; the other 5-Red is played into a new run. The
+        // group keeps its own copy: the new run's 3 tiles are placed, nothing more.
+        var previous = new Solution { Runs = [BlueRun], Groups = [FivesGroup] };
+        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForSteps(1));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
     }
 
     [Fact]
@@ -125,19 +131,26 @@ public class BoardPacingTests
     }
 
     [Fact]
-    public void DurationForSteps_ZeroSteps_IsZero()
+    public void DurationForPlacedTiles_NothingPlaced_IsZero()
     {
-        BoardPacing.DurationForSteps(0).Should().Be(0);
+        BoardPacing.DurationForPlacedTiles(0).Should().Be(0);
     }
 
     [Fact]
-    public void DurationForSteps_GrowsLinearly()
+    public void DurationForPlacedTiles_OneTile_CoversTheThreeActs()
     {
-        // Strictly sequential and uncapped: every extra step adds exactly one interval.
-        for (var steps = 1; steps < 40; steps++)
+        // Take-off, the board making room, the drop.
+        BoardPacing.DurationForPlacedTiles(1).Should().BeGreaterThanOrEqualTo(
+            BoardPacing.FlightMs + BoardPacing.RoomMs + BoardPacing.DropMs);
+    }
+
+    [Fact]
+    public void DurationForPlacedTiles_EachExtraTileAddsATakeOffAndADrop()
+    {
+        for (var placed = 1; placed < 40; placed++)
         {
-            (BoardPacing.DurationForSteps(steps + 1) - BoardPacing.DurationForSteps(steps))
-                .Should().Be(BoardPacing.StartIntervalMs);
+            (BoardPacing.DurationForPlacedTiles(placed + 1) - BoardPacing.DurationForPlacedTiles(placed))
+                .Should().Be(BoardPacing.StaggerMs + BoardPacing.DropStaggerMs);
         }
     }
 }

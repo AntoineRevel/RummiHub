@@ -338,8 +338,8 @@ public partial class GameHub(
                     // index on the aligned board just broadcast, so when the played tile has an
                     // identical twin already resting on the board, the new copy lights up, not
                     // the old one. Sent after the state so the client maps indices onto it.
-                    // Shown for the animation's duration (entered tiles pop last) plus a
-                    // reading window, then the client clears it on its own.
+                    // Shown for the animation's duration (played tiles land in its last act)
+                    // plus a reading window, then the client clears it on its own.
                     if (boardBefore is not null)
                         await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated,
                             BoardPacing.EnteredIndices(boardBefore, game.LastBroadcastBoard!),
@@ -539,8 +539,8 @@ public partial class GameHub(
         engine.AdvanceToNextPlayer();
 
         // Align the post-move board to the one currently shown so unchanged sets keep their
-        // place, then estimate how long the client's step-by-step animation runs so the
-        // next AI move can wait for it to finish before playing.
+        // place, then estimate how long the client's board animation (play → make room →
+        // place) runs so the next AI move can wait for it to finish before playing.
         var previous = game.LastBroadcastBoard;
         var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
         game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);

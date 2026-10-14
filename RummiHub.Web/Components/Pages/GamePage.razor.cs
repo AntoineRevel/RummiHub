@@ -38,8 +38,14 @@ public partial class GamePage : IAsyncDisposable
     private List<int>? _lastHighlightIndices;
     private int _lastHighlightMs;
 
-    // Whole-page tile animation module (wwwroot/js/tile-animations.js). It runs a FLIP pass,
-    // one tile at a time, after every render, diffing DOM positions itself.
+    // My play's new rack, which the server sends BEFORE the board: held back until the board
+    // arrives so the whole move renders as ONE transition — the played tiles leave the play
+    // zone as they land on the board, and the copies left in the rack never blink out.
+    private List<Tile>? _rackAwaitingBoard;
+
+    // Whole-page tile animation module (wwwroot/js/tile-animations.js). It runs a FLIP pass
+    // after every render, diffing DOM positions itself, and tells board changes as
+    // play → make room → place.
     private IJSObjectReference? _tileAnimations;
 
     [Inject] private IServer Server { get; set; } = null!;
@@ -137,8 +143,13 @@ public partial class GamePage : IAsyncDisposable
             if (firstRender)
             {
                 _tileAnimations = await JS.InvokeAsync<IJSObjectReference>("import", "./js/tile-animations.js");
-                await _tileAnimations.InvokeVoidAsync(
-                    "configure", BoardPacing.MoveMs, BoardPacing.PopMs, BoardPacing.StartIntervalMs);
+                await _tileAnimations.InvokeVoidAsync("configure", new
+                {
+                    BoardPacing.MoveMs, BoardPacing.PopMs,
+                    BoardPacing.FlightMs, BoardPacing.StaggerMs,
+                    BoardPacing.RoomMs,
+                    BoardPacing.DropMs, BoardPacing.DropStaggerMs
+                });
             }
 
             // The module diffs tile positions against the previous render, so it needs to run
@@ -165,6 +176,7 @@ public partial class GamePage : IAsyncDisposable
             // on-screen one render earlier — their positions are what the played tiles
             // fly from when the new board arrives in this same update.
             ClearSelection();
+            ApplyRackAwaitingBoard();
 
             // The highlight always arrives AFTER its own state update, so any state seen
             // while one is showing means the next move landed: clear it. The suggestion
@@ -227,7 +239,12 @@ public partial class GamePage : IAsyncDisposable
 
         hub.On<List<Tile>>(HubEvents.RackUpdated, rack =>
         {
-            _rackTiles = rack;
+            // While my play is being validated, the selection is still shown as part of
+            // the rack: the new rack (without the played tiles) waits for the board.
+            if (_isLoading && SelectedTilesForPlay.Count > 0)
+                _rackAwaitingBoard = rack;
+            else
+                _rackTiles = rack;
             InvokeAsync(StateHasChanged);
         });
 
@@ -243,6 +260,7 @@ public partial class GamePage : IAsyncDisposable
         {
             _errorPlay = message;
             _isLoading = false;
+            ApplyRackAwaitingBoard();
             InvokeAsync(StateHasChanged);
         });
 
@@ -250,8 +268,16 @@ public partial class GamePage : IAsyncDisposable
         {
             _error = message;
             _isLoading = false;
+            ApplyRackAwaitingBoard();
             InvokeAsync(StateHasChanged);
         });
+    }
+
+    private void ApplyRackAwaitingBoard()
+    {
+        if (_rackAwaitingBoard is null) return;
+        _rackTiles = _rackAwaitingBoard;
+        _rackAwaitingBoard = null;
     }
 
     // --- Player actions ---

@@ -36,7 +36,8 @@ else
                     </svg>
                     Turn @_gameState.Turn
                 </span>
-                <span class="meta-chip pool-chip" title="Tiles left in pool">
+                <!-- A drawn tile flies into the rack out of this chip. -->
+                <span class="meta-chip pool-chip" title="Tiles left in pool" data-anim-origin="pool">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                     </svg>
@@ -76,7 +77,10 @@ else
             {
                 var isCurrent = index == _gameState.CurrentPlayerIndex && !_gameState.IsGameOver;
                 var isMe = player.Name == PlayerName;
-                <div class="player-chip @(isCurrent ? "current" : "") @(isMe ? "me" : "")">
+                <!-- The tiles a player lays fly onto the board out of their chip — unless they
+                     come from my own play zone. -->
+                <div class="player-chip @(isCurrent ? "current" : "") @(isMe ? "me" : "")"
+                     data-anim-origin="@(isCurrent ? "mover" : null)">
                     @if (isCurrent)
                     {
                         <span class="active-pulse" aria-hidden="true"></span>
@@ -145,8 +149,9 @@ else
             </div>
         }
 
-        <!-- Board -->
-        <div class="solution-section" data-anim-scope="board">
+        <!-- Board. Staged: each change plays as play → make room → place, so the board
+             never moves before the tiles that cause it. -->
+        <div class="solution-section" data-anim-scope="board" data-anim-staged data-anim-enter-from="mover">
             <SolutionComponent Solution="_gameState.Board" HighlightIndices="_highlightIndices"/>
         </div>
 
@@ -184,13 +189,13 @@ else
                 </h3>
 
                 <!-- One rack for both states (readonly out of turn): keeping the same DOM
-                     subtree across turn flips lets a draw's pop-in survive the re-render.
-                     Enter-only scope: newcomers pop and deselections fly home, but internal
-                     reshuffles display instantly. -->
+                     subtree across turn flips lets a draw's flight survive the re-render.
+                     Enter-only scope: a drawn tile flies in from the pool and deselections
+                     fly home, but internal reshuffles display instantly. -->
                 <div class="available-tiles-section">
                     <h4>Available tiles</h4>
                     <div class="tiles-container @(CanAct ? "" : "readonly")"
-                         data-anim-scope="rack" data-anim-enter-only>
+                         data-anim-scope="rack" data-anim-enter-only data-anim-enter-from="pool">
                         @foreach (var tileGroup in GetGroupedTiles())
                         {
                             var tileType = tileGroup.Key;
