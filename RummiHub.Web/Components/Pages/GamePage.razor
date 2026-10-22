@@ -156,8 +156,8 @@ else
             </div>
         }
 
-        <!-- Board. Staged: each change plays as play → make room → place, so the board
-             never moves before the tiles that cause it. -->
+        <!-- Board. Staged: each change plays as lift → make room → place, so a placed tile
+             only ever lands in an open gap, never over a tile still in place. -->
         <div class="solution-section" data-anim-scope="board" data-anim-staged data-anim-enter-from="mover">
             <SolutionComponent Solution="_gameState.Board" HighlightIndices="_highlightIndices"
                               ModifiedSetIndices="_modifiedSetIndices"/>
@@ -774,8 +774,10 @@ else
     }
 
     /* Board */
+    /* Taller on top: the first row's lift lane (see SolutionComponent). The last row's
+       margin already spaces the bottom. */
     .solution-section {
-        padding: 20px;
+        padding: 36px 20px 5px;
         border: 2px solid #e0e0e0;
         border-radius: 10px;
         background-color: #f7f7f7;

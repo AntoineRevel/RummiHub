@@ -74,9 +74,12 @@
         align-items: flex-start;
     }
 
+    /* The bottom margin is the lane a lifted tile waits in while the board makes room
+       (LIFT in tile-animations.js, plus its slight scale-up): it must clear the row above,
+       so a lifted tile never covers another. */
     .solution-container > * {
         flex: 0 0 auto;
-        margin-right: 10px;
-        margin-bottom: 10px;
+        margin-right: 16px;
+        margin-bottom: 36px;
     }
 </style>

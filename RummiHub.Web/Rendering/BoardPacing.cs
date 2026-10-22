@@ -9,10 +9,11 @@ namespace RummiHub.Web.Rendering;
 /// (<see cref="Models.Game.PendingAnimationMs"/>) never plays a move mid-animation.
 /// </summary>
 /// <remarks>
-/// The client never moves the board before the play that causes it. Every board change is told
-/// in three acts: (1) the placed tiles — played from the hand, or board tiles changing set —
-/// take off one after the other and hover just above their slots; (2) the board makes room under
-/// them in ONE glide; (3) they drop into place. With no room to make they fly straight in.
+/// A placed tile only ever lands in an open gap. Every board change is told in three acts:
+/// (1) the placed tiles already on screen — in the play zone, or board tiles changing set — rise
+/// in place; (2) the board makes room in ONE glide, opening the gaps; (3) the placed tiles fly
+/// into their gaps one after the other. A beat follows acts 1 and 2. With no room to make they
+/// fly straight in.
 /// </remarks>
 public static class BoardPacing
 {
@@ -22,20 +23,23 @@ public static class BoardPacing
     /// <summary>A newcomer with no origin on screen popping in.</summary>
     public const int PopMs = 300;
 
-    /// <summary>Act 1 — one placed tile's flight to its slot (or just above it).</summary>
-    public const int FlightMs = 620;
+    /// <summary>Act 1 — the placed tiles already on screen rising in place.</summary>
+    public const int LiftMs = 450;
 
-    /// <summary>Act 1 — interval between two placed tiles taking off.</summary>
-    public const int StaggerMs = 140;
+    /// <summary>Beat after acts 1 and 2, so each reads on its own.</summary>
+    public const int PauseMs = 350;
 
-    /// <summary>Act 2 — the board making room under the placed tiles, in one glide.</summary>
-    public const int RoomMs = 560;
+    /// <summary>Act 2 — the board making room for the placed tiles, in one glide.</summary>
+    public const int RoomMs = 900;
 
-    /// <summary>Act 3 — one hovering tile dropping into its slot.</summary>
-    public const int DropMs = 360;
+    /// <summary>Act 3 — one placed tile's flight into its gap.</summary>
+    public const int FlightMs = 1000;
 
-    /// <summary>Act 3 — interval between two drops.</summary>
-    public const int DropStaggerMs = 70;
+    /// <summary>Act 3 — interval between two placed tiles taking off.</summary>
+    public const int StaggerMs = 320;
+
+    /// <summary>Act 3 — longest spread of the take-offs: many tiles take off closer together.</summary>
+    public const int MaxStaggerSpreadMs = 2400;
 
     /// <summary>Slack absorbing client jitter.</summary>
     private const int BufferMs = 200;
@@ -62,16 +66,20 @@ public static class BoardPacing
 
     /// <summary>
     /// Duration of the board story placing <paramref name="placed"/> tiles. Conservative: it always
-    /// counts acts 2 and 3, since whether the board really has to make room depends on the
+    /// counts acts 1 and 2, since whether the board really has to make room depends on the
     /// client's layout (line wrapping), unknown here.
     /// </summary>
     public static int DurationForPlacedTiles(int placed)
         => placed == 0
             ? 0
-            : FlightMs + (placed - 1) * StaggerMs        // act 1 — the play
-              + RoomMs                                   // act 2 — the board makes room
-              + DropMs + (placed - 1) * DropStaggerMs    // act 3 — the tiles drop in
+            : LiftMs + PauseMs                                            // act 1 — the play
+              + RoomMs + PauseMs                                          // act 2 — the board makes room
+              + FlightMs + Spread(placed, StaggerMs, MaxStaggerSpreadMs)  // act 3 — the tiles fly in
               + BufferMs;
+
+    // Time from the first to the last of `count` staggered starts: `step` apart, squeezed so
+    // the whole spread never exceeds `max` (the client spaces them the same way).
+    private static int Spread(int count, int step, int max) => Math.Min((count - 1) * step, max);
 
     /// <summary>
     /// Reading window (ms) after the <paramref name="previous"/> → <paramref name="next"/>
@@ -189,7 +197,7 @@ public static class BoardPacing
         return modified;
     }
 
-    // Tiles the client PLACES (acts 1 and 3): every tile of the next board its paired previous
+    // Tiles the client PLACES (act 3): every tile of the next board its paired previous
     // set doesn't keep — tiles entering from the hand, plus board tiles changing set. Counted one
     // by one; the client flies tiles changing set together as one block, so this can only
     // over-estimate.
