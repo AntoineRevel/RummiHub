@@ -26,9 +26,6 @@ public partial class GameHub(
     /// </summary>
     private const int HighlightLingerMs = 4000;
 
-    /// <summary>Maximum number of seats (human + AI) in a game.</summary>
-    private const int MaxPlayers = 4;
-
     // ========== LOBBY PHASE ==========
 
     public async Task GetAvailableGameIds()
@@ -46,7 +43,13 @@ public partial class GameHub(
         try
         {
             gameId = gameId?.Trim() ?? string.Empty;
-            var seed = gameManager.GetGame(gameId)?.DistributionSeed;
+            var game = gameManager.GetGame(gameId);
+            // Only a seated connection may publish the seed, and the value is the one the
+            // server dealt — never a string supplied by the caller.
+            if (game == null || !game.HasConnection(Context.ConnectionId))
+                return;
+
+            var seed = game.DistributionSeed;
             if (string.IsNullOrWhiteSpace(seed))
                 return;
 
@@ -70,8 +73,21 @@ public partial class GameHub(
                 return;
             }
 
-            var game = gameManager.CreateGame(playerName, Context.ConnectionId, gameId?.Trim()); // gameId = distribution seed
+            // The second argument is a distribution seed, not a game id. Only seeds the
+            // server already knows (configured replays, or seeds saved from a dealt game)
+            // are accepted. Anything else is refused — the client does not choose the shuffle.
+            var requestedSeed = gameId?.Trim();
+            if (!string.IsNullOrEmpty(requestedSeed) && !gameManager.IsKnownDistributionSeed(requestedSeed))
+            {
+                await Clients.Caller.SendAsync(HubEvents.Error, "That distribution seed is not available.");
+                return;
+            }
+
+            var game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed);
+            var seatToken = game.GetPlayers().Single().SeatToken;
             await Groups.AddToGroupAsync(Context.ConnectionId, game.Id);
+            // Seat secret goes to the creator only — never on the shared player list.
+            await Clients.Caller.SendAsync(HubEvents.SeatIssued, game.Id, seatToken);
             await Clients.Caller.SendAsync(HubEvents.GameCreated, game.Id, game.GetPlayerNames());
         }
         catch (Exception ex)
@@ -109,14 +125,24 @@ public partial class GameHub(
                 return;
             }
 
+            if (game.PlayerCount >= GameLimits.MaxPlayers)
+            {
+                await Clients.Caller.SendAsync(HubEvents.Error, GameLimits.TooManyPlayersMessage);
+                return;
+            }
+
             var player = gameManager.AddPlayer(gameId, playerName, Context.ConnectionId);
             if (player == null)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Could not join the game.");
+                var message = game.PlayerCount >= GameLimits.MaxPlayers
+                    ? GameLimits.TooManyPlayersMessage
+                    : "Could not join the game.";
+                await Clients.Caller.SendAsync(HubEvents.Error, message);
                 return;
             }
 
             await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
+            await Clients.Caller.SendAsync(HubEvents.SeatIssued, gameId, player.SeatToken);
             await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetPlayerNames());
         }
         catch (Exception ex)
@@ -139,9 +165,9 @@ public partial class GameHub(
             if (game == null || game.HostConnectionId != Context.ConnectionId || game.IsStarted)
                 return;
 
-            if (game.PlayerCount >= MaxPlayers)
+            if (game.PlayerCount >= GameLimits.MaxPlayers)
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, $"A game can have at most {MaxPlayers} players.");
+                await Clients.Caller.SendAsync(HubEvents.Error, GameLimits.TooManyPlayersMessage);
                 return;
             }
 
@@ -173,9 +199,15 @@ public partial class GameHub(
 
             if (game.IsStarted) return;
 
-            if (game.PlayerCount < 2)
+            if (game.PlayerCount < GameLimits.MinPlayers)
             {
                 await Clients.Caller.SendAsync(HubEvents.Error, "At least 2 players are required to start.");
+                return;
+            }
+
+            if (game.PlayerCount > GameLimits.MaxPlayers)
+            {
+                await Clients.Caller.SendAsync(HubEvents.Error, GameLimits.TooManyPlayersMessage);
                 return;
             }
 
@@ -206,10 +238,14 @@ public partial class GameHub(
     /// Called by GamePage when it connects. Maps the new connection to the player,
     /// adds to the SignalR group, sends initial game state + rack.
     /// </summary>
-    public async Task JoinGameSession(string gameId, string playerName)
+    public async Task JoinGameSession(string gameId, string playerName, string? seatToken)
     {
         try
         {
+            gameId = gameId?.Trim() ?? string.Empty;
+            playerName = playerName?.Trim() ?? string.Empty;
+            seatToken = seatToken?.Trim() ?? string.Empty;
+
             var game = gameManager.GetGame(gameId);
             if (game?.Engine == null)
             {
@@ -217,10 +253,11 @@ public partial class GameHub(
                 return;
             }
 
-            // Update connection mapping (player navigated from lobby → game page)
-            if (!gameManager.UpdatePlayerConnection(gameId, playerName, Context.ConnectionId))
+            // The seat secret was issued to this player at create/join and stored in the
+            // browser tab. Knowing the game id and the display name is not enough.
+            if (!gameManager.UpdatePlayerConnection(gameId, playerName, seatToken, Context.ConnectionId))
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "Player not found in this game.");
+                await Clients.Caller.SendAsync(HubEvents.Error, "Could not rejoin this seat.");
                 return;
             }
 
@@ -504,6 +541,7 @@ public partial class GameHub(
         {
             GameId = game.Id,
             DistributionSeed = game.DistributionSeed,
+            // Seat secrets stay off this DTO: every player in the group receives it.
             Players = engine.Players.Select(p => new PlayerInfoDto
             {
                 Name = p.Name,

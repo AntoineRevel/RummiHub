@@ -99,11 +99,19 @@ public class Game
         }
     }
 
-    public void AddPlayer(Player player)
+    /// <summary>
+    /// Adds a seat while the table is under <see cref="GameLimits.MaxPlayers"/>.
+    /// The check and the insert share the player lock.
+    /// </summary>
+    public bool AddPlayer(Player player)
     {
         lock (_playersLock)
         {
+            if (Players.Count >= GameLimits.MaxPlayers)
+                return false;
+
             Players.Add(player);
+            return true;
         }
     }
 
@@ -140,16 +148,21 @@ public class Game
     }
 
     /// <summary>
-    /// Updates a player's connection ID (used when navigating from lobby to game page).
-    /// Returns true if the player was found and updated.
+    /// Attaches <paramref name="newConnectionId"/> to the human seat named
+    /// <paramref name="playerName"/> when <paramref name="seatToken"/> matches the secret
+    /// issued to that seat. A wrong secret leaves the current connection in place.
     /// </summary>
-    public bool UpdatePlayerConnection(string playerName, string newConnectionId)
+    public bool UpdatePlayerConnection(string playerName, string? seatToken, string newConnectionId)
     {
         lock (_playersLock)
         {
             var player = Players.FirstOrDefault(p =>
                 p.Name.Equals(playerName, StringComparison.OrdinalIgnoreCase));
-            if (player == null) return false;
+            if (player == null || player.IsAuto)
+                return false;
+            if (!SeatSecrets.Matches(player.SeatToken, seatToken))
+                return false;
+
             player.ConnectionId = newConnectionId;
             return true;
         }

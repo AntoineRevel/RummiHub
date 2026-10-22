@@ -43,6 +43,29 @@ public class GameEngineTests
     }
 
     [Fact]
+    public void Initialize_WithoutSeed_DealsDifferentlyAcrossGames()
+    {
+        var signatures = Enumerable.Range(0, 4)
+            .Select(_ => string.Join(',', CreateEngine(seed: null).Players[0].Rack.GetAllTilesIncludingJokers()))
+            .ToList();
+
+        signatures.Distinct().Count().Should().BeGreaterThan(1);
+    }
+
+    [Fact]
+    public void Initialize_RejectsMoreThanFourPlayers_BeforeDealing()
+    {
+        var engine = new GameEngine();
+        var names = Enumerable.Range(1, 8).Select(i => $"P{i}").ToList();
+
+        var act = () => engine.Initialize(names, "audit-seed");
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+        engine.Players.Should().BeEmpty();
+        engine.TilePoolCount.Should().Be(0);
+    }
+
+    [Fact]
     public void Initialize_WithSameSeed_IsDeterministic()
     {
         var engine1 = CreateEngine(seed: "test-seed");

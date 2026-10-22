@@ -18,21 +18,33 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
     {
         return options.Value.PredefinedIds
             .Concat(_savedSeeds.Keys)
+            .Select(id => id?.Trim() ?? string.Empty)
+            .Where(DistributionSeeds.IsSafe)
             .Distinct()
             .Where(id => !_games.ContainsKey(id))
             .ToList();
     }
 
+    public bool IsKnownDistributionSeed(string? seed)
+    {
+        seed = seed?.Trim() ?? string.Empty;
+        if (!DistributionSeeds.IsSafe(seed))
+            return false;
+
+        return options.Value.PredefinedIds.Any(id => string.Equals(id?.Trim(), seed, StringComparison.Ordinal))
+               || _savedSeeds.ContainsKey(seed);
+    }
+
     public bool AddSeed(string seed)
     {
         seed = seed?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(seed))
+        if (!DistributionSeeds.IsSafe(seed))
             return false;
 
         if (!_savedSeeds.TryAdd(seed, 0))
             return false;
 
-        // Persist the seed "in hard" to appsettings.json so it survives a restart.
+        // File persistence is Development-only; production keeps the seed in memory.
         seedStore.Persist(seed);
 
         LogSeedSaved(seed);
@@ -41,25 +53,44 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 
     public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null)
     {
+        var seed = ResolveDistributionSeed(distributionSeed);
+
         var game = new Game
         {
             HostConnectionId = connectionId,
-            DistributionSeed = string.IsNullOrWhiteSpace(distributionSeed)
-                ? NewShortId()
-                : distributionSeed
+            DistributionSeed = seed
         };
 
         var player = new Player
         {
             Id = NewShortId(),
             Name = playerName,
-            ConnectionId = connectionId
+            ConnectionId = connectionId,
+            SeatToken = SeatSecrets.Create()
         };
 
-        game.AddPlayer(player);
+        if (!game.AddPlayer(player))
+            throw new InvalidOperationException("Could not seat the host.");
+
         _games[game.Id] = game;
         LogGameCreated(game.Id, playerName);
         return game;
+    }
+
+    /// <summary>
+    /// Empty means "deal from a fresh CSPRNG seed". Anything else must already be on the
+    /// server list; a client-invented seed is refused before a game is stored.
+    /// </summary>
+    private string ResolveDistributionSeed(string? requested)
+    {
+        requested = requested?.Trim() ?? string.Empty;
+        if (requested.Length == 0)
+            return DistributionSeeds.Create();
+
+        if (!IsKnownDistributionSeed(requested))
+            throw new ArgumentException("Distribution seed is not in the server list.");
+
+        return requested;
     }
 
     /// <summary>
@@ -80,10 +111,13 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         {
             Id = NewShortId(),
             Name = name,
-            IsAuto = true
+            IsAuto = true,
+            SeatToken = SeatSecrets.Create()
         };
 
-        game.AddPlayer(player);
+        if (!game.AddPlayer(player))
+            return null;
+
         LogPlayerJoined(name, gameId);
         return player;
     }
@@ -106,10 +140,13 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         {
             Id = NewShortId(),
             Name = playerName,
-            ConnectionId = connectionId
+            ConnectionId = connectionId,
+            SeatToken = SeatSecrets.Create()
         };
 
-        game.AddPlayer(player);
+        if (!game.AddPlayer(player))
+            return null;
+
         LogPlayerJoined(playerName, gameId);
         return player;
     }
@@ -144,6 +181,9 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
             return false;
 
         var players = game.GetPlayers();
+        if (players.Count is < GameLimits.MinPlayers or > GameLimits.MaxPlayers)
+            return false;
+
         var playerNames = players.Select(p => p.Name).ToList();
         var autoPlayers = players.Select(p => p.IsAuto).ToList();
         var engine = new GameEngine();
@@ -154,12 +194,12 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         return true;
     }
 
-    public bool UpdatePlayerConnection(string gameId, string playerName, string newConnectionId)
+    public bool UpdatePlayerConnection(string gameId, string playerName, string? seatToken, string newConnectionId)
     {
         if (!_games.TryGetValue(gameId, out var game))
             return false;
 
-        return game.UpdatePlayerConnection(playerName, newConnectionId);
+        return game.UpdatePlayerConnection(playerName, seatToken, newConnectionId);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} created by {PlayerName}")]

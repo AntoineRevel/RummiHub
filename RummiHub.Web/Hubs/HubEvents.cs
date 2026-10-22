@@ -8,6 +8,7 @@ public static class HubEvents
     public const string PlayerLeft = nameof(PlayerLeft);
     public const string GameStarted = nameof(GameStarted);
     public const string AvailableGameIds = nameof(AvailableGameIds);
+    public const string SeatIssued = nameof(SeatIssued);
     public const string Error = nameof(Error);
 
     // === Lobby phase: Client -> Server ===

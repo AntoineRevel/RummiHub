@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
+using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
@@ -28,6 +30,11 @@ public sealed class GameEngine
         string? distributionSeed = null,
         IReadOnlyList<bool>? autoPlayers = null)
     {
+        ArgumentNullException.ThrowIfNull(playerNames);
+        if (playerNames.Count is < 1 or > GameLimits.MaxPlayers)
+            throw new ArgumentOutOfRangeException(nameof(playerNames),
+                $"Expected between 1 and {GameLimits.MaxPlayers} players.");
+
         Id = Guid.NewGuid();
         Turn = 0;
         PlayerIndex = 0;
@@ -37,10 +44,13 @@ public sealed class GameEngine
         _tilePool.Clear();
 
         var tiles = GenerateTiles();
-        var rng = distributionSeed is not null
-            ? new Random(GetStableHash(distributionSeed))
-            : new Random();
-        Shuffle(tiles, rng);
+        // A caller-supplied seed stays deterministic so configured replays keep their deal.
+        // The seed itself is chosen by the server (or taken from the server list). With no
+        // seed, the shuffle draws from a CSPRNG rather than System.Random.
+        if (distributionSeed is not null)
+            Shuffle(tiles, new Random(GetStableHash(distributionSeed)));
+        else
+            ShuffleSecure(tiles);
         DistributeTiles(tiles, playerNames, autoPlayers);
     }
 
@@ -212,9 +222,23 @@ public sealed class GameEngine
         }
     }
 
+    private static void ShuffleSecure(Tile[] tiles)
+    {
+        for (var i = tiles.Length - 1; i > 0; i--)
+        {
+            var j = RandomNumberGenerator.GetInt32(i + 1);
+            (tiles[i], tiles[j]) = (tiles[j], tiles[i]);
+        }
+    }
+
     private void DistributeTiles(Tile[] tiles, List<string> playerNames, IReadOnlyList<bool>? autoPlayers)
     {
         const int tilesPerPlayer = 14;
+
+        var totalDistributed = playerNames.Count * tilesPerPlayer;
+        if (totalDistributed > tiles.Length)
+            throw new InvalidOperationException(
+                $"Not enough tiles to deal {playerNames.Count} players.");
 
         for (var i = 0; i < playerNames.Count; i++)
         {
@@ -230,7 +254,6 @@ public sealed class GameEngine
             });
         }
 
-        var totalDistributed = playerNames.Count * tilesPerPlayer;
         for (var i = totalDistributed; i < tiles.Length; i++)
             _tilePool.Enqueue(tiles[i]);
     }

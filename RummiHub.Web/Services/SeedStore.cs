@@ -4,8 +4,9 @@ using System.Text.Json.Nodes;
 namespace RummiHub.Web.Services;
 
 /// <summary>
-/// Persists saved distribution seeds so they survive a restart. Seeds are written "in hard"
-/// into the <c>GameOptions:PredefinedIds</c> array of appsettings.json.
+/// Persists saved distribution seeds so they survive a restart. Seeds are written
+/// into the <c>GameOptions:PredefinedIds</c> array of appsettings.json, and only in
+/// Development. Production never lets a client action rewrite a config file.
 /// </summary>
 public interface ISeedStore
 {
@@ -27,8 +28,17 @@ public sealed partial class AppSettingsSeedStore(IHostEnvironment environment, I
     public void Persist(string seed)
     {
         seed = seed?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(seed))
+        if (!DistributionSeeds.IsSafe(seed))
+        {
+            LogSeedPersistSkipped("unsafe-token");
             return;
+        }
+
+        if (!environment.IsDevelopment())
+        {
+            LogSeedPersistSkipped("not-development");
+            return;
+        }
 
         lock (_gate)
         {
@@ -64,6 +74,9 @@ public sealed partial class AppSettingsSeedStore(IHostEnvironment environment, I
             }
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Seed file persistence skipped ({Reason})")]
+    private partial void LogSeedPersistSkipped(string reason);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} persisted to {Path}")]
     private partial void LogSeedPersisted(string seed, string path);
