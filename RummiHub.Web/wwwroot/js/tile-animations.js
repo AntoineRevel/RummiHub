@@ -503,18 +503,25 @@ export function animate() {
     return boardIdleIn();
 }
 
+// True once a board story has been played and can be run again — a review, an AI move, a win.
+export function canReplay() {
+    return replayFrom !== null && !reducedMotion.matches;
+}
+
 // Replays the most recent board story: snap whatever is pending to its end, re-measure the
 // (unchanged) DOM, and diff it against the snapshot saved from before that story.
 // Positions are transform-free, so re-measuring mid/post animation is safe, and
 // replayFrom is cloned per run — replay as many times as you like.
-// Returns false when there is nothing to replay (fresh page, resize, reduced motion).
+// Returns how many milliseconds the board keeps moving, or 0 when there is nothing to
+// replay (fresh page, resize, reduced motion).
 export function replayLast() {
     const root = document.querySelector('.game-container');
-    if (!root || !replayFrom || reducedMotion.matches) return false;
+    if (!root || !replayFrom || reducedMotion.matches) return 0;
 
     fastForward();
     const snap = collect(root);
     const { story } = diff(snap, toPlainData(replayFrom));
     store(snap);
-    return tell(story);
+    // The page holds the next move for this long, so a replay is not cancelled mid-flight.
+    return tell(story) ? Math.max(1, boardIdleIn()) : 0;
 }
