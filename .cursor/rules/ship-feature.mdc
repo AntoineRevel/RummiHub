@@ -6,7 +6,7 @@ alwaysApply: true
 Quand une fonctionnalité est prête, faire les deux sans attendre qu'on le redemande :
 
 1. Branche `cursor/<sujet>` depuis `origin/master`, commit, pousser, et ouvrir une pull request vers `master`. Ne pas pousser sur `master`.
-2. Déployer cette branche sur le site de test : `git push --force origin HEAD:test`.
-   Ça lance `.github/workflows/deploy-test.yml` (tests, puis https://test.rummisolve.com).
+2. Déployer cette branche sur le site de test : `gh workflow run deploy-test.yml --ref <branche>`.
+   Ça lance les tests, puis met à jour https://test.rummisolve.com avec ce commit.
+   Il n'y a pas de branche `test`.
    Le commit ne doit pas modifier `deploy/` : le serveur refuse le déploiement sinon.
-   Le `--force` ne vise que la ref `test`, jamais `master`.

@@ -1,18 +1,16 @@
 # Déploiement du site de test (https://test.rummisolve.com).
-# Deux façons de le lancer, même résultat :
+# On le lance à la main, sur une vraie branche :
 #   - Actions → Run workflow, branche choisie dans « Use workflow from » ;
-#   - git push --force origin <branche>:test
+#   - gh workflow run deploy-test.yml --ref <branche>
 # La branche doit contenir ce fichier. Les tests tournent ici : ce workflow n'est
 # pas exigé par la protection de master. SSH réutilise la clé de production. La
 # commande forcée n'accepte que « deploy-test <SHA> » : le VPS déploie ce commit,
 # celui qui vient de passer les tests, et refuse s'il modifie deploy/
-# (deploy/autodeploy/rummihub-deploy-test-run). La branche test n'est pas déplacée
-# par le bouton : le site montre le dernier commit déployé.
+# (deploy/autodeploy/rummihub-deploy-test-run). Il n'y a pas de branche test :
+# le site montre le commit déployé.
 name: Déploiement du site de test
 
 on:
-  push:
-    branches: [test]
   workflow_dispatch:
 
 permissions:

@@ -33,10 +33,10 @@ When a feature is ready, finish with both of these. Do this for every new featur
 2. Deploy that same branch to the test site:
 
 ```bash
-git push --force origin HEAD:test
+gh workflow run deploy-test.yml --ref <branch>
 ```
 
-A push to `test` runs `.github/workflows/deploy-test.yml`: the tests, then https://test.rummisolve.com. The commit must not change `deploy/` — the server rejects the deploy otherwise. Force-push only the `test` ref, never `master`.
+That runs `.github/workflows/deploy-test.yml` on the real branch: the tests, then https://test.rummisolve.com at that commit. There is no `test` branch. The commit must not change `deploy/` — the server rejects the deploy otherwise. Do not push to `master`.
 
 ## Architecture
 
