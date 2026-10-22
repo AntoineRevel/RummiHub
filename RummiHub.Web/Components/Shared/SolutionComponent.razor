@@ -74,9 +74,9 @@
         align-items: flex-start;
     }
 
-    /* The bottom margin is the lane a lifted tile waits in while the board makes room
+    /* The bottom margin is the lane a lifted or hovering tile rests in during a move
        (LIFT in tile-animations.js, plus its slight scale-up): it must clear the row above,
-       so a lifted tile never covers another. */
+       so a tile at rest never covers another. */
     .solution-container > * {
         flex: 0 0 auto;
         margin-right: 16px;

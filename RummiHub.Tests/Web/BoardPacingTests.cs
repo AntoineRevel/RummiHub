@@ -168,9 +168,9 @@ public class BoardPacingTests
     [Fact]
     public void DurationForPlacedTiles_OneTile_CoversTheThreeActs()
     {
-        // The lift, the board making room, the flight in — each act followed by its beat.
+        // The lift, the board making room, the drop — acts 1 and 2 followed by their beat.
         BoardPacing.DurationForPlacedTiles(1).Should().BeGreaterThanOrEqualTo(
-            BoardPacing.LiftMs + BoardPacing.RoomMs + 2 * BoardPacing.PauseMs + BoardPacing.FlightMs);
+            BoardPacing.LiftMs + BoardPacing.RoomMs + 2 * BoardPacing.PauseMs + BoardPacing.DropMs);
     }
 
     [Fact]
@@ -284,7 +284,7 @@ public class BoardPacingTests
     }
 
     [Fact]
-    public void DurationForPlacedTiles_EachExtraTileAddsATakeOff_UpToTheSpreadCap()
+    public void DurationForPlacedTiles_EachExtraTileAddsADrop_UpToTheSpreadCap()
     {
         (BoardPacing.DurationForPlacedTiles(2) - BoardPacing.DurationForPlacedTiles(1))
             .Should().Be(BoardPacing.StaggerMs);
@@ -294,7 +294,7 @@ public class BoardPacingTests
                 .Should().BeInRange(0, BoardPacing.StaggerMs);
         }
 
-        // However many tiles are placed, the take-offs never spread wider than the cap.
+        // However many tiles are placed, the drops never spread wider than the cap.
         (BoardPacing.DurationForPlacedTiles(100) - BoardPacing.DurationForPlacedTiles(1))
             .Should().Be(BoardPacing.MaxStaggerSpreadMs);
     }

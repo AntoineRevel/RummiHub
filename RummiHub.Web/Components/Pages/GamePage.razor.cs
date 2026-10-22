@@ -215,7 +215,7 @@ public partial class GamePage : IAsyncDisposable
                 await _tileAnimations.InvokeVoidAsync("configure", new
                 {
                     BoardPacing.MoveMs, BoardPacing.PopMs,
-                    BoardPacing.LiftMs, BoardPacing.PauseMs, BoardPacing.RoomMs,
+                    BoardPacing.LiftMs, BoardPacing.PauseMs, BoardPacing.RoomMs, BoardPacing.DropMs,
                     BoardPacing.FlightMs, BoardPacing.StaggerMs, BoardPacing.MaxStaggerSpreadMs
                 });
             }

@@ -9,11 +9,11 @@ namespace RummiHub.Web.Rendering;
 /// (<see cref="Models.Game.PendingAnimationMs"/>) never plays a move mid-animation.
 /// </summary>
 /// <remarks>
-/// A placed tile only ever lands in an open gap. Every board change is told in three acts:
-/// (1) the placed tiles already on screen — in the play zone, or board tiles changing set — rise
-/// in place; (2) the board makes room in ONE glide, opening the gaps; (3) the placed tiles fly
-/// into their gaps one after the other. A beat follows acts 1 and 2. With no room to make they
-/// fly straight in.
+/// A tile at rest never covers another. Every board change is told in three acts: (1) the
+/// placed tiles already on screen — in the play zone, or board tiles changing set — rise in
+/// place; (2) in ONE glide the board makes room while every placed tile travels to hover just
+/// above its own gap; (3) they drop in, one after the other. A beat follows acts 1 and 2. With
+/// no room to make they fly straight in, one after the other.
 /// </remarks>
 public static class BoardPacing
 {
@@ -29,16 +29,19 @@ public static class BoardPacing
     /// <summary>Beat after acts 1 and 2, so each reads on its own.</summary>
     public const int PauseMs = 350;
 
-    /// <summary>Act 2 — the board making room for the placed tiles, in one glide.</summary>
-    public const int RoomMs = 900;
+    /// <summary>Act 2 — the board making room as the placed tiles travel above their gaps.</summary>
+    public const int RoomMs = 1000;
 
-    /// <summary>Act 3 — one placed tile's flight into its gap.</summary>
+    /// <summary>Act 3 — one hovering tile dropping into its gap.</summary>
+    public const int DropMs = 550;
+
+    /// <summary>A placed tile flying straight into its slot, when there is no room to make.</summary>
     public const int FlightMs = 1000;
 
-    /// <summary>Act 3 — interval between two placed tiles taking off.</summary>
+    /// <summary>Interval between two drops (or two straight flights).</summary>
     public const int StaggerMs = 320;
 
-    /// <summary>Act 3 — longest spread of the take-offs: many tiles take off closer together.</summary>
+    /// <summary>Longest spread of the drops: many tiles drop closer together.</summary>
     public const int MaxStaggerSpreadMs = 2400;
 
     /// <summary>Slack absorbing client jitter.</summary>
@@ -67,14 +70,14 @@ public static class BoardPacing
     /// <summary>
     /// Duration of the board story placing <paramref name="placed"/> tiles. Conservative: it always
     /// counts acts 1 and 2, since whether the board really has to make room depends on the
-    /// client's layout (line wrapping), unknown here.
+    /// client's layout (line wrapping), unknown here; flying straight in is shorter.
     /// </summary>
     public static int DurationForPlacedTiles(int placed)
         => placed == 0
             ? 0
-            : LiftMs + PauseMs                                            // act 1 — the play
-              + RoomMs + PauseMs                                          // act 2 — the board makes room
-              + FlightMs + Spread(placed, StaggerMs, MaxStaggerSpreadMs)  // act 3 — the tiles fly in
+            : LiftMs + PauseMs                                          // act 1 — the play
+              + RoomMs + PauseMs                                        // act 2 — the board makes room
+              + DropMs + Spread(placed, StaggerMs, MaxStaggerSpreadMs)  // act 3 — the tiles drop in
               + BufferMs;
 
     // Time from the first to the last of `count` staggered starts: `step` apart, squeezed so
@@ -197,7 +200,7 @@ public static class BoardPacing
         return modified;
     }
 
-    // Tiles the client PLACES (act 3): every tile of the next board its paired previous
+    // Tiles the client PLACES (acts 2 and 3): every tile of the next board its paired previous
     // set doesn't keep — tiles entering from the hand, plus board tiles changing set. Counted one
     // by one; the client flies tiles changing set together as one block, so this can only
     // over-estimate.
