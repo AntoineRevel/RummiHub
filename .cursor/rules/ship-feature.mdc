@@ -1,0 +1,12 @@
+---
+description: Après une fonctionnalité, ouvrir une PR et déployer sur le site de test
+alwaysApply: true
+---
+
+Quand une fonctionnalité est prête, faire les deux sans attendre qu'on le redemande :
+
+1. Branche `cursor/<sujet>` depuis `origin/master`, commit, pousser, et ouvrir une pull request vers `master`. Ne pas pousser sur `master`.
+2. Déployer cette branche sur le site de test : `git push --force origin HEAD:test`.
+   Ça lance `.github/workflows/deploy-test.yml` (tests, puis https://test.rummisolve.com).
+   Le commit ne doit pas modifier `deploy/` : le serveur refuse le déploiement sinon.
+   Le `--force` ne vise que la ref `test`, jamais `master`.

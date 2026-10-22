@@ -438,8 +438,10 @@ else
 
 <style>
     .game-container {
-        max-width: 1300px;
-        margin: 16px auto 140px auto;
+        /* No fixed column: on a wide monitor a 1300px card left the table
+           floating in empty space. It fills the area beside the sidebar. */
+        max-width: none;
+        margin: 12px;
         padding: 16px 20px;
         font-family: Arial, sans-serif;
         background: #fff;
@@ -447,6 +449,22 @@ else
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
         outline: none;
         transition: box-shadow 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        box-sizing: border-box;
+    }
+
+    /* Sidebar is beside the page from 641px up, so the card can take the
+       viewport height. Below that the menu stacks on top and the card
+       stays as tall as its content. 1.1rem is .content's top padding. */
+    @@media (min-width: 641px) {
+        .game-container {
+            min-height: calc(100vh - 1.1rem - 24px);
+        }
+    }
+
+    .game-container:has(.loading-state) {
+        justify-content: center;
     }
 
     .game-container.is-my-turn {
@@ -826,6 +844,7 @@ else
     /* Taller on top: the first row's lift lane (see SolutionComponent). The last row's
        margin already spaces the bottom. */
     .solution-section {
+        flex: 1 1 auto;
         padding: 36px 20px 5px;
         border: 2px solid #e0e0e0;
         border-radius: 10px;

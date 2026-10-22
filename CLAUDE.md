@@ -25,6 +25,19 @@ dotnet test --filter "FullyQualifiedName~GetRuns_WithJoker"        # run a singl
 
 Tests use **xUnit** with **FluentAssertions**. There are no integration tests — all tests in `RummiHub.Tests` are unit tests covering `Core` models, the solver primitives, and `GameEngine` logic.
 
+## Shipping a feature
+
+When a feature is ready, finish with both of these. Do this for every new feature, without waiting to be asked again.
+
+1. Branch from `origin/master` (`cursor/<topic>`), commit, push, and open a pull request to `master`. Do not push to `master` directly.
+2. Deploy that same branch to the test site:
+
+```bash
+git push --force origin HEAD:test
+```
+
+A push to `test` runs `.github/workflows/deploy-test.yml`: the tests, then https://test.rummisolve.com. The commit must not change `deploy/` — the server rejects the deploy otherwise. Force-push only the `test` ref, never `master`.
+
 ## Architecture
 
 ### Service Topology
