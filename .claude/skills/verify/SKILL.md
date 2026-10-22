@@ -17,6 +17,8 @@ Find the web frontend URL with the Aspire MCP tool `list_resources` (resource
 
 ## Drive the UI (Playwright, python)
 
+In cloud sessions the SessionStart hook (`.claude/hooks/session-start.sh`) installs Python
+Playwright against the preinstalled Chromium — nothing to do there.
 The devcontainer preinstalls the toolchain (`.devcontainer/install-ui-testing.sh`:
 pip + playwright + headless Chromium). If it's ever missing, run that script — do NOT
 apt-install `chromium-browser`, it's a snap stub that cannot run in this container.
