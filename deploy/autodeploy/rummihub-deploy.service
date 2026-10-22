@@ -14,10 +14,13 @@ Type=oneshot
 User=ubuntu
 WorkingDirectory=/home/ubuntu/apps/RummiHub/deploy
 Environment="GIT_SSH_COMMAND=ssh -o ConnectTimeout=20 -o BatchMode=yes"
+Environment=GIT_TERMINAL_PROMPT=0
 ExecStart=/usr/bin/git fetch origin master
 ExecStart=/usr/bin/git merge --ff-only origin/master
 # Le build tourne pendant que l'ancienne version reste en ligne ; seuls les services
 # modifiés sont recréés. Un échec laisse l'ancienne version en place.
-ExecStart=/usr/bin/docker compose up -d --build --remove-orphans --wait --wait-timeout 300
-ExecStart=/usr/bin/docker image prune -f
-TimeoutStartSec=30min
+# rummihub-compose-prod crée le réseau rummihub-edge si besoin, puis prend le verrou
+# partagé avec le site de test avant `docker compose up` (évite deux builds à la fois).
+# L'attente du verrou est dans le TimeoutStartSec : un échec de verrou ne lance pas Compose.
+ExecStart=/usr/local/bin/rummihub-compose-prod
+TimeoutStartSec=75min

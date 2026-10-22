@@ -1,0 +1,5 @@
+# Démarre uniquement une instance de rummihub-deploy-test@.service.
+# L'instance est l'hexadécimal de la branche ; le script la revalide avant git
+# (lettres, chiffres, point, tiret bas, tiret, slash ; pas de « .. » ni de tiret initial).
+# Pas de stop, pas d'autre unité, pas de shell.
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test@*.service

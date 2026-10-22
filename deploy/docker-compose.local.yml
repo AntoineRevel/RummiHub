@@ -16,6 +16,14 @@ services:
       - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
       - caddy_local_data:/data
       - caddy_local_config:/config
+    # Pas de réseau partagé avec un site de test sur la machine de dev.
+    # Caddyfile.local ne route pas test.*.
+    networks: !override
+      - edge
+      - internal
+
+networks:
+  rummihub-edge: !reset null
 
 volumes:
   caddy_local_data:

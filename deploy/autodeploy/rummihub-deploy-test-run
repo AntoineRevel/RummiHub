@@ -1,0 +1,72 @@
+#!/bin/sh
+# Corps de rummihub-deploy-test@.service. L'argument est la branche en
+# hexadécimal (%i, non déséchappé). On la redécode et on la revalide avant
+# tout appel à git. Puis on détache le clone de test sur ce commit et on
+# reconstruit la pile rummihub-test.
+#
+# Le clone est jetable, sauf deploy/.env et deploy/.env.test (gitignorés, et
+# exclus de git clean). Pas de Caddy ici : le routage est dans le Caddy de prod.
+
+set -eu
+
+root=/home/ubuntu/apps/RummiHub-test
+enc=${1-}
+
+case "$enc" in
+  *[!0-9a-f]*|"")
+    echo "Instance refusée." >&2
+    exit 1
+    ;;
+esac
+
+if [ "$(( ${#enc} % 2 ))" -ne 0 ] || [ "${#enc}" -gt 200 ]; then
+  echo "Instance refusée." >&2
+  exit 1
+fi
+
+# printf %b de bash interprète \xHH. dash ne le fait pas.
+branch=$(bash -c 'printf "%b" "$(printf "%s" "$1" | sed "s/../\\\\x&/g")"' _ "$enc")
+/usr/local/bin/rummihub-branch-ok "$branch"
+
+if [ ! -d "$root/.git" ]; then
+  echo "Clone absent : $root (deploy/README.md, « Site de test »)." >&2
+  exit 1
+fi
+
+if [ ! -f "$root/deploy/.env.test" ]; then
+  echo "Fichier $root/deploy/.env.test manquant. Voir deploy/.env.test.example." >&2
+  exit 1
+fi
+
+/usr/local/bin/rummihub-ensure-edge-network
+
+if [ ! -d /run/rummihub ]; then
+  echo "Répertoire /run/rummihub absent. Installer deploy/autodeploy/rummihub.tmpfiles." >&2
+  exit 1
+fi
+
+exec 9>/run/rummihub/compose.lock
+if ! flock -w 1500 9; then
+  echo "Un déploiement (prod ou test) tient le verrou Docker depuis plus de 25 min." >&2
+  exit 1
+fi
+
+cd "$root"
+echo "rummihub-deploy-test: branche=$branch"
+
+# Échoue si la branche n'existe pas sur origin. FETCH_HEAD pointe ensuite dessus.
+git fetch origin "$branch"
+git checkout --force --detach FETCH_HEAD
+# -x n'est pas passé : les fichiers ignorés (.env, .env.test) restent.
+git clean -ffd -e deploy/.env.test -e deploy/.env
+
+docker compose \
+  --project-directory "$root/deploy" \
+  --project-name rummihub-test \
+  --env-file "$root/deploy/.env.test" \
+  -f "$root/deploy/docker-compose.yml" \
+  -f "$root/deploy/docker-compose.test.yml" \
+  up -d --build --remove-orphans --wait --wait-timeout 300
+
+docker image prune -f
+echo "rummihub-deploy-test: termine branche=$branch"
