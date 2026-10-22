@@ -15,16 +15,18 @@ public partial class GameHub(
     ILogger<GameHub> logger) : Hub
 {
     /// <summary>
-    /// Watchable pause before an AI seat plays its automatic move, so humans can
-    /// follow the action rather than seeing the board jump instantly.
+    /// Shortest watchable pause before an AI seat plays its automatic move, so humans can
+    /// follow the action rather than seeing the board jump instantly. A move that changed the
+    /// board waits longer: its reading window (<see cref="BoardPacing.ReadingMs"/>).
     /// </summary>
     private static readonly TimeSpan AutoPlayDelay = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// Reading window the played-tiles highlight stays on AFTER the board animation ends;
-    /// the client then fades it out, so the previous move's yellow never lingers forever.
+    /// How long the played-tiles highlight stays on AFTER the board animation ends; the client
+    /// then fades it out, so the previous move's yellow never lingers forever. It outlasts the
+    /// longest reading window, so a move stays lit until the next one lands.
     /// </summary>
-    private const int HighlightLingerMs = 4000;
+    private const int HighlightLingerMs = BoardPacing.MaxReadMs + 1000;
 
     // ========== LOBBY PHASE ==========
 
@@ -380,16 +382,13 @@ public partial class GameHub(
                     else
                         await PauseForReviewAsync(game, playerIndex.Value);
 
-                    // Highlight, privately, the tiles that ENTERED the board — by reading-order
-                    // index on the aligned board just broadcast, so when the played tile has an
-                    // identical twin already resting on the board, the new copy lights up, not
-                    // the old one. Sent after the state so the client maps indices onto it.
-                    // Shown for the animation's duration (played tiles land in its last act)
-                    // plus a reading window, then the client clears it on its own.
-                    if (boardBefore is not null)
-                        await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated,
-                            BoardPacing.EnteredIndices(boardBefore, game.LastBroadcastBoard!),
-                            game.PendingAnimationMs + HighlightLingerMs);
+                    // Highlight, for everyone at the table, the tiles played from the rack and
+                    // the sets the move changed. Indices are on the aligned board just
+                    // broadcast, so when the played tile has an identical twin already resting
+                    // there, the new copy lights up. Sent after the state so clients map
+                    // indices onto it. Shown for the animation plus a reading window, then
+                    // cleared.
+                    await BroadcastMoveHighlightAsync(game, boardBefore, OptimalTiles(result));
                 }
                 else
                 {
@@ -560,8 +559,8 @@ public partial class GameHub(
             }).ToList(),
             CurrentPlayerIndex = engine.PlayerIndex,
             Turn = engine.Turn,
-            // The aligned board kept in LastBroadcastBoard is what clients render and animate;
-            // engine.Board (unaligned) is only the solver's input for the next turn.
+            // LastBroadcastBoard is the post-move board seated so unchanged sets stay put.
+            // engine.Board mirrors it, which is what the next solve stabilizes against.
             Board = game.LastBroadcastBoard ?? engine.Board,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,
@@ -585,14 +584,7 @@ public partial class GameHub(
     {
         var engine = game.Engine!;
         engine.AdvanceToNextPlayer();
-
-        // Align the post-move board to the one currently shown so unchanged sets keep their
-        // place, then estimate how long the client's board animation (play → make room →
-        // place) runs so the next AI move can wait for it to finish before playing.
-        var previous = game.LastBroadcastBoard;
-        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
-        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
-        game.LastBroadcastBoard = aligned;
+        SeatBoard(game);
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
@@ -609,16 +601,28 @@ public partial class GameHub(
     /// </summary>
     private async Task PauseForReviewAsync(Game game, int playerIndex)
     {
-        var engine = game.Engine!;
-
-        var previous = game.LastBroadcastBoard;
-        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
-        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
-        game.LastBroadcastBoard = aligned;
-        game.PendingTurnConfirmation = new PendingTurnConfirmation(engine.Turn, playerIndex);
+        SeatBoard(game);
+        game.PendingTurnConfirmation = new PendingTurnConfirmation(game.Engine!.Turn, playerIndex);
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
+    }
+
+    /// <summary>
+    /// Aligns the post-move board to the one currently shown so unchanged sets keep their
+    /// place, and records how long clients take to play the change out — the board animation
+    /// (play → make room → place), then the reading window — so the next AI move waits for
+    /// both. Callers must hold <see cref="Game.ActionLock"/>.
+    /// </summary>
+    private static void SeatBoard(Game game)
+    {
+        var engine = game.Engine!;
+        var previous = game.LastBroadcastBoard;
+        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
+        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
+        game.PendingReadingMs = previous is null ? 0 : BoardPacing.ReadingMs(previous, aligned);
+        game.LastBroadcastBoard = aligned;
+        engine.Board = aligned;
     }
 
     /// <summary>
@@ -739,9 +743,12 @@ public partial class GameHub(
     {
         try
         {
-            // Wait for the currently-shown transition's animation to finish, then the watchable
-            // pause, so an AI move never lands on top of the still-running board animation.
-            await Task.Delay(TimeSpan.FromMilliseconds(game.PendingAnimationMs) + AutoPlayDelay, ct);
+            // Wait for the currently-shown transition's animation to finish, then for its
+            // reading window (at least the watchable pause), so an AI move never lands on top
+            // of the previous one before the table has had time to read it.
+            var pause = TimeSpan.FromMilliseconds(game.PendingReadingMs);
+            await Task.Delay(TimeSpan.FromMilliseconds(game.PendingAnimationMs)
+                             + (pause > AutoPlayDelay ? pause : AutoPlayDelay), ct);
             await game.ActionLock.WaitAsync(ct);
         }
         catch (OperationCanceledException)
@@ -764,6 +771,7 @@ public partial class GameHub(
             var hasMove = result is { Found: true }
                           && result.TilesToPlay.Count + result.JokersToPlay > 0;
 
+            var boardBefore = game.LastBroadcastBoard;
             if (hasMove)
                 engine.ApplySolveResult(result!);
             else if (engine.TilePoolCount > 0)
@@ -773,6 +781,8 @@ public partial class GameHub(
             // Advance the turn, broadcast, and arm the next solve. If that player is also
             // an AI, the chain continues automatically.
             await AdvanceTurnAndNotifyAsync(game);
+            if (hasMove)
+                await BroadcastMoveHighlightAsync(game, boardBefore, OptimalTiles(result));
         }
         catch (Exception ex)
         {
@@ -836,6 +846,22 @@ public partial class GameHub(
         }
 
         await Clients.Caller.SendAsync(HubEvents.OptimalPlay, tiles, ct);
+    }
+
+    /// <summary>
+    /// Tells every seat which tiles came out of the mover's rack and which sets the move
+    /// changed, so an AI turn is as readable as a human one. Indices refer to the board just
+    /// broadcast.
+    /// </summary>
+    private async Task BroadcastMoveHighlightAsync(Game game, Solution? boardBefore, List<Tile> played)
+    {
+        if (boardBefore is null || game.LastBroadcastBoard is not { } next) return;
+
+        await hubContext.Clients.Group(game.Id).SendAsync(
+            HubEvents.HighlightTilesUpdated,
+            BoardPacing.PlayedIndices(boardBefore, next, played),
+            game.PendingAnimationMs + HighlightLingerMs,
+            BoardPacing.ModifiedSetIndices(boardBefore, next));
     }
 
     /// <summary>Flattens a solve result into the tile list it plays (jokers included).</summary>

@@ -12,18 +12,18 @@
 //      stood BEFORE this render (the mover's chip for the board, the pool for the rack).
 //      With no origin on screen, it pops in place.
 //
-// The board ([data-anim-staged]) never moves before the play that causes it. Each change
-// is told in three acts:
-//   1. Play  — the placed tiles take off one after the other: first the tiles entering the
-//              board (from the play zone, or out of the mover's chip), then board tiles
-//              changing set (one block per source → destination set). Each one flies to
-//              HOVER just above its final slot.
-//   2. Room  — the board makes room under them: the sets they join or leave close up or
-//              open up and the rest of the board reflows, all in ONE glide. That is the
-//              consequence of the play, not a series of moves.
-//   3. Place — the hovering tiles drop into their slots, in reading order.
-// With no room to make and no tile changing set (a new set laid at the end of the board),
-// the placed tiles fly straight into their slots. A board change arriving while another
+// On the board ([data-anim-staged]) a tile at rest never covers another. Each change is told
+// in three acts:
+//   1. Lift  — the tiles about to be placed that are already on screen (in the play zone,
+//              or board tiles changing set) rise in place, all at once: this is the play.
+//   2. Room  — ONE glide: the board makes room (the sets the placed tiles join or leave open
+//              gaps or close up, the rest reflows) while every placed tile travels to hover
+//              just above its own gap; tiles out of the mover's chip fly in meanwhile.
+//   3. Place — the hovering tiles drop into their gaps one after the other, in reading order.
+// A beat follows acts 1 and 2, so each reads on its own. Lifted and hovering tiles rest in
+// the lane the board leaves between its rows, above their own (empty) slot. With no room to
+// make and no tile changing set (a new set laid at the end of the board), the placed tiles
+// fly straight into their slots one after the other. A board change arriving while another
 // one plays waits for it to end — its animations hold their first keyframe meanwhile
 // (movers on their old spot, newcomers hidden); only a runaway backlog fast-forwards.
 //
@@ -41,13 +41,15 @@
 // Tempo, pushed from the server (Rendering/BoardPacing.cs), which mirrors the board story
 // to pace AI moves so they never land on top of a still-running animation.
 const tempo = {
-    moveMs: 350,       // a hand tile gliding between the rack and the play zone
-    popMs: 300,        // a newcomer with no origin on screen popping in
-    flightMs: 480,     // act 1: one placed tile's flight
-    staggerMs: 120,    // act 1: between two take-offs
-    roomMs: 420,       // act 2: the board making room, in one glide
-    dropMs: 280,       // act 3: one hovering tile dropping into its slot
-    dropStaggerMs: 60, // act 3: between two drops
+    moveMs: 350,              // a hand tile gliding between the rack and the play zone
+    popMs: 300,               // a newcomer with no origin on screen popping in
+    liftMs: 500,              // act 1: the placed tiles on screen rising in place
+    pauseMs: 450,             // beat after acts 1 and 2
+    roomMs: 1200,             // act 2: the board making room as the placed tiles travel, one glide
+    dropMs: 650,              // act 3: one hovering tile dropping into its gap
+    flightMs: 1200,           // a placed tile flying straight into its slot (nothing to make room for)
+    staggerMs: 400,           // between two drops, or two straight flights
+    maxStaggerSpreadMs: 3000, // first to last of those, at most
 };
 
 const MIN_DELTA = 4;    // px — cross-scope flights below this just display
@@ -57,14 +59,17 @@ const MIN_DELTA = 4;    // px — cross-scope flights below this just display
 const STILL_DELTA = 18;
 const BLOCK_DELTA = 6;  // px — tiles changing set together this close fly as one block
 const HAND_STAGGER_MS = 40; // a burst of picks (auto-pick, clear) cascades instead of jumping
-const HOVER_LIFT = 26;  // px — how high a placed tile hovers above its slot
-const HOVER_SCALE = 1.06;
-const HOVER_SHADOW = '0 12px 18px rgba(0, 0, 0, 0.28)';
+// px — how high a lifted or hovering tile rests above its slot. The board leaves a lane at
+// least this tall between rows (SolutionComponent), so it never covers the row above.
+const LIFT = 34;
+const LIFT_SCALE = 1.06;
+const LIFT_SHADOW = '0 12px 18px rgba(0, 0, 0, 0.28)';
 // A board story due to start this late means the client fell behind (burst of updates):
 // snap to the final layout instead of replaying history.
-const MAX_BACKLOG_MS = 8000;
+const MAX_BACKLOG_MS = 20000;
 const FLIGHT_EASING = 'cubic-bezier(0.22, 0.9, 0.26, 1)';
 const ROOM_EASING = 'cubic-bezier(0.45, 0, 0.25, 1)';
+const LIFT_EASING = 'cubic-bezier(0.3, 0, 0.2, 1)';
 const DROP_EASING = 'cubic-bezier(0.5, 0, 0.5, 1.4)'; // falls in, settles with a tiny bump
 
 let last = null;         // previous snapshot — plain data, never old DOM nodes
@@ -311,41 +316,44 @@ function diff(snap, prev) {
 }
 
 // Where a moving tile starts, relative to its final spot: its old spot, else the centre
-// of its origin (shrunk, transparent), else — nothing to come from — right where it
-// first shows (its hover spot or its slot), popping in.
-function startOf(item, hover) {
+// of its origin (shrunk, transparent), else — nothing to come from — right in its slot,
+// popping in.
+function startOf(item) {
     if (item.dx !== undefined) return { x: item.dx, y: item.dy, scale: 1, opacity: 1 };
     const { tile, origin } = item;
     if (origin) {
         return { x: origin.x - (tile.x + tile.w / 2), y: origin.y - (tile.y + tile.h / 2),
                  scale: 0.5, opacity: 0 };
     }
-    return { x: 0, y: hover ? -HOVER_LIFT : 0, scale: 0.6, opacity: 0 };
+    return { x: 0, y: 0, scale: 0.6, opacity: 0 };
 }
 
-// Keyframes of a placed tile: a flight that lifts it, then (hover) a hold just above its
-// slot while the board makes room, and the drop. Properties a keyframe leaves out (the
-// shadow at both ends) fall back to the tile's own style, highlight included.
-function placeFrames(start, { flight, hold, drop }) {
+// Keyframes of a tile flying straight into its slot, swelling a little on the way like a
+// tile carried over the table. Properties a keyframe leaves out (the shadow at both ends)
+// fall back to the tile's own style, highlight included.
+function placeFrames(start, { flight }) {
     const from = { offset: 0, translate: `${start.x}px ${start.y}px`, scale: start.scale,
                    easing: FLIGHT_EASING };
     if (start.opacity < 1) from.opacity = start.opacity;
-    if (!drop) {
-        return [
-            from,
-            { offset: 0.4, scale: HOVER_SCALE, boxShadow: HOVER_SHADOW, opacity: 1, easing: 'ease-in-out' },
-            { offset: 1, translate: '0px 0px', scale: 1 },
-        ];
-    }
-    const total = flight + hold + drop;
-    const hovering = { translate: `0px ${-HOVER_LIFT}px`, scale: HOVER_SCALE,
-                       boxShadow: HOVER_SHADOW, opacity: 1 };
     return [
         from,
-        { offset: flight / total, ...hovering, easing: 'linear' },
-        { offset: (flight + hold) / total, ...hovering, easing: DROP_EASING },
+        { offset: 0.4, scale: LIFT_SCALE, boxShadow: LIFT_SHADOW, opacity: 1, easing: 'ease-in-out' },
         { offset: 1, translate: '0px 0px', scale: 1 },
     ];
+}
+
+// Keyframes from timed poses ({ t, x, y, scale, opacity?, lifted?, easing? }), t in ms from
+// the first one. A lifted pose casts the carried-tile shadow; the end pose falls back to
+// the tile's own style.
+function timeline(poses) {
+    const t0 = poses[0].t, total = poses.at(-1).t - t0;
+    return poses.map(({ t, x, y, scale, opacity, lifted, easing }) => {
+        const frame = { offset: (t - t0) / total, translate: `${x}px ${y}px`, scale };
+        if (opacity !== undefined) frame.opacity = opacity;
+        if (lifted) frame.boxShadow = LIFT_SHADOW;
+        if (easing) frame.easing = easing;
+        return frame;
+    });
 }
 
 // Runs one animation on `el`, replacing whatever was moving it. Until `delay` it holds its
@@ -375,10 +383,10 @@ function playHand(hand) {
         const delay = i * HAND_STAGGER_MS;
         if (item.dx === undefined) {
             const flight = item.origin ? tempo.flightMs : tempo.popMs;
-            move(item.tile.el, placeFrames(startOf(item, false), { flight, hold: 0, drop: 0 }),
+            move(item.tile.el, placeFrames(startOf(item), { flight }),
                  { delay, duration: flight, elevate: true });
         } else if (item.tile.from.scope !== item.tile.scope) {
-            move(item.tile.el, placeFrames(startOf(item, false), { flight: tempo.moveMs, hold: 0, drop: 0 }),
+            move(item.tile.el, placeFrames(startOf(item), { flight: tempo.moveMs }),
                  { delay, duration: tempo.moveMs, elevate: true });
         } else {
             move(item.tile.el, [
@@ -389,8 +397,12 @@ function playHand(hand) {
     });
 }
 
-// Schedules the board story — act 1 (take-offs), act 2 (room), act 3 (drops) — to start
-// when the story already playing ends. Returns false when nothing on the board moves.
+// Interval between `count` staggered starts: `step`, squeezed so first to last never
+// exceeds `maxSpread` (mirrors BoardPacing.Spread).
+const gap = (count, step, maxSpread) => count > 1 ? Math.min(step, maxSpread / (count - 1)) : 0;
+
+// Schedules the board story — act 1 (lift), act 2 (room), act 3 (place) — to start when the
+// story already playing ends. Returns false when nothing on the board moves.
 function tell(story) {
     const units = [...story.entering, ...story.migrating];
     if (units.length === 0 && story.room.length === 0) return false;
@@ -399,38 +411,63 @@ function tell(story) {
     if (boardBusyUntil - now > MAX_BACKLOG_MS) fastForward();
     const wait = Math.max(0, boardBusyUntil - now);
 
-    // Placed tiles hover only when they must wait for room — the board reflowing under
-    // them, or tiles changing set clearing the way. Otherwise they fly straight in.
-    const hover = story.room.length > 0 || story.migrating.length > 0;
-
-    units.forEach((unit, i) => { unit.start = i * tempo.staggerMs; });
-    const playEnd = units.length ? units.at(-1).start + tempo.flightMs : 0;
-    const roomEnd = playEnd + (story.room.length ? tempo.roomMs : 0);
-    let end = hover ? roomEnd : playEnd;
-    if (hover) {
+    // The way is opened first only when something stands in it — the board reflowing, or
+    // tiles changing set. Otherwise the placed tiles fly straight in, one after the other.
+    const staged = story.room.length > 0 || story.migrating.length > 0;
+    const placeGap = gap(units.length, tempo.staggerMs, tempo.maxStaggerSpreadMs);
+    let end;
+    if (!staged) {
+        units.forEach((unit, i) => {
+            for (const item of unit.items) {
+                move(item.tile.el, placeFrames(startOf(item), { flight: tempo.flightMs }), {
+                    delay: wait + i * placeGap, duration: tempo.flightMs,
+                    elevate: true, lands: unit.entering === true,
+                });
+            }
+        });
+        end = units.length ? (units.length - 1) * placeGap + tempo.flightMs : 0;
+    } else {
+        // Only tiles already on screen lift; those out of the mover's chip show up in act 2.
+        const onScreen = item => item.dx !== undefined;
+        const lifting = units.some(unit => unit.items.some(onScreen));
+        const roomStart = lifting ? tempo.liftMs + tempo.pauseMs : 0;
+        const roomEnd = roomStart + tempo.roomMs;
+        const dropStart = roomEnd + tempo.pauseMs;
         [...units].sort((a, b) => a.items[0].tile.order - b.items[0].tile.order)
-            .forEach((unit, i) => {
-                unit.drop = roomEnd + i * tempo.dropStaggerMs;
-                end = unit.drop + tempo.dropMs;
-            });
-    }
+            .forEach((unit, i) => { unit.drop = dropStart + i * placeGap; });
+        end = dropStart + (units.length - 1) * placeGap + tempo.dropMs;
 
-    for (const unit of units) {
-        const timing = hover
-            ? { flight: tempo.flightMs, hold: unit.drop - unit.start - tempo.flightMs, drop: tempo.dropMs }
-            : { flight: tempo.flightMs, hold: 0, drop: 0 };
-        for (const item of unit.items) {
-            move(item.tile.el, placeFrames(startOf(item, hover), timing), {
-                delay: wait + unit.start, duration: timing.flight + timing.hold + timing.drop,
-                elevate: true, lands: unit.entering === true,
-            });
+        const hovering = { x: 0, y: -LIFT, scale: LIFT_SCALE, opacity: 1, lifted: true };
+        for (const unit of units) {
+            for (const item of unit.items) {
+                const start = startOf(item);
+                const poses = [];
+                if (onScreen(item)) {
+                    const up = { x: start.x, y: start.y - LIFT, scale: LIFT_SCALE, lifted: true };
+                    poses.push({ t: 0, ...start, easing: LIFT_EASING },
+                               { t: tempo.liftMs, ...up, easing: 'linear' },
+                               { t: roomStart, ...up, easing: ROOM_EASING });
+                } else {
+                    // Out of the chip, or — no origin on screen — popping in where it hovers.
+                    const from = item.origin ? start : { ...start, y: -LIFT };
+                    poses.push({ t: roomStart, ...from, easing: FLIGHT_EASING });
+                }
+                poses.push({ t: roomEnd, ...hovering, easing: 'linear' },
+                           { t: unit.drop, ...hovering, easing: DROP_EASING },
+                           { t: unit.drop + tempo.dropMs, x: 0, y: 0, scale: 1 });
+                move(item.tile.el, timeline(poses), {
+                    delay: wait + poses[0].t, duration: poses.at(-1).t - poses[0].t,
+                    elevate: true, lands: unit.entering === true,
+                });
+            }
         }
-    }
-    for (const { tile, dx, dy } of story.room) {
-        move(tile.el, [
-            { translate: `${dx}px ${dy}px`, easing: ROOM_EASING },
-            { translate: '0px 0px' },
-        ], { delay: wait + playEnd, duration: tempo.roomMs });
+        for (const { tile, dx, dy } of story.room) {
+            move(tile.el, [
+                { translate: `${dx}px ${dy}px`, easing: ROOM_EASING },
+                { translate: '0px 0px' },
+            ], { delay: wait + roomStart, duration: tempo.roomMs });
+        }
+        if (units.length === 0) end = roomEnd;
     }
 
     boardBusyUntil = now + wait + end;

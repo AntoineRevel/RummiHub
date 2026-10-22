@@ -28,6 +28,7 @@ public partial class GamePage : IAsyncDisposable
     private bool _showDrawnTileToast;
     private Timer? _toastTimer;
     private HashSet<int>? _highlightIndices;
+    private HashSet<int>? _modifiedSetIndices;
     private Timer? _highlightTimer;
     private List<Tile>? _optimalPlayTiles;
     private bool _optimalSeenFirstUpdate;
@@ -39,6 +40,7 @@ public partial class GamePage : IAsyncDisposable
     private string? _seatToken;
     private bool _hubStartRequested;
     private List<int>? _lastHighlightIndices;
+    private List<int>? _lastModifiedSetIndices;
     private int _lastHighlightMs;
 
     // My play's new rack, which the server sends BEFORE the board: held back until the board
@@ -213,9 +215,8 @@ public partial class GamePage : IAsyncDisposable
                 await _tileAnimations.InvokeVoidAsync("configure", new
                 {
                     BoardPacing.MoveMs, BoardPacing.PopMs,
-                    BoardPacing.FlightMs, BoardPacing.StaggerMs,
-                    BoardPacing.RoomMs,
-                    BoardPacing.DropMs, BoardPacing.DropStaggerMs
+                    BoardPacing.LiftMs, BoardPacing.PauseMs, BoardPacing.RoomMs, BoardPacing.DropMs,
+                    BoardPacing.FlightMs, BoardPacing.StaggerMs, BoardPacing.MaxStaggerSpreadMs
                 });
             }
 
@@ -244,8 +245,8 @@ public partial class GamePage : IAsyncDisposable
         void Handle<T>(string method, Action<T> apply) =>
             hub.On<T>(method, value => InvokeAsync(() => { apply(value); StateHasChanged(); }));
 
-        void Handle2<T1, T2>(string method, Action<T1, T2> apply) =>
-            hub.On<T1, T2>(method, (a, b) => InvokeAsync(() => { apply(a, b); StateHasChanged(); }));
+        void Handle3<T1, T2, T3>(string method, Action<T1, T2, T3> apply) =>
+            hub.On<T1, T2, T3>(method, (a, b, c) => InvokeAsync(() => { apply(a, b, c); StateHasChanged(); }));
 
         Handle<GameStateDto>(HubEvents.GameStateUpdated, state =>
         {
@@ -257,12 +258,19 @@ public partial class GamePage : IAsyncDisposable
             ClearSelection();
             ApplyRackAwaitingBoard();
 
-            // The highlight always arrives AFTER its own state update, so any state seen
-            // while one is showing means the next move landed: clear it. The suggestion
-            // is per-turn; a new one arrives with the next OptimalReady.
-            _highlightIndices = null;
-            _lastHighlightIndices = null;
-            StopHighlightTimer();
+            // The highlight always arrives AFTER its own state update, so a state that changes
+            // the board while one is showing means the next move landed: clear it. A state
+            // that leaves the board as is (a draw, a turn confirmation) keeps the last move
+            // lit until its timer runs out, so it can still be read. The suggestion is
+            // per-turn; a new one arrives with the next OptimalReady.
+            if (_gameState is null || !BoardPacing.SameBoard(_gameState.Board, state.Board))
+            {
+                _highlightIndices = null;
+                _modifiedSetIndices = null;
+                _lastHighlightIndices = null;
+                _lastModifiedSetIndices = null;
+                StopHighlightTimer();
+            }
             _optimalSuggestion = null;
 
             // A newer state supersedes a turn still waiting for the board.
@@ -287,15 +295,18 @@ public partial class GamePage : IAsyncDisposable
             }
         });
 
-        Handle2<List<int>, int>(HubEvents.HighlightTilesUpdated, (indices, displayMs) =>
+        Handle3<List<int>, int, List<int>>(HubEvents.HighlightTilesUpdated, (indices, displayMs, modifiedSets) =>
         {
             // Reading-order indices of the tiles that entered the board (server-computed),
             // so the freshly-played copy lights up — never an identical twin already there.
-            // The server sizes displayMs to the board animation plus a reading window; the
-            // highlight then fades on its own instead of lingering until the next move.
+            // Modified-set indices outline every combination the move touched. The server
+            // sizes displayMs to the board animation plus a reading window; the highlight
+            // then fades on its own instead of lingering until the next move.
             _highlightIndices = indices is { Count: > 0 } ? [..indices] : null;
+            _modifiedSetIndices = modifiedSets is { Count: > 0 } ? [..modifiedSets] : null;
             // Remembered so a "replay animation" can bring the highlight back too.
             _lastHighlightIndices = _highlightIndices?.ToList();
+            _lastModifiedSetIndices = _modifiedSetIndices?.ToList();
             _lastHighlightMs = displayMs;
             SetupHighlightTimer(displayMs);
         });
@@ -473,9 +484,10 @@ public partial class GamePage : IAsyncDisposable
         try
         {
             var replayed = await _tileAnimations.InvokeAsync<bool>("replayLast");
-            if (replayed && _lastHighlightIndices is { Count: > 0 })
+            if (replayed && (_lastHighlightIndices is { Count: > 0 } || _lastModifiedSetIndices is { Count: > 0 }))
             {
-                _highlightIndices = [.._lastHighlightIndices];
+                _highlightIndices = _lastHighlightIndices is { Count: > 0 } ? [.._lastHighlightIndices] : null;
+                _modifiedSetIndices = _lastModifiedSetIndices is { Count: > 0 } ? [.._lastModifiedSetIndices] : null;
                 SetupHighlightTimer(_lastHighlightMs);
                 StateHasChanged();
             }
@@ -616,7 +628,7 @@ public partial class GamePage : IAsyncDisposable
     private void SetupHighlightTimer(int displayMs)
     {
         StopHighlightTimer();
-        if (_highlightIndices is null) return;
+        if (_highlightIndices is null && _modifiedSetIndices is null) return;
 
         _highlightTimer = new Timer(Math.Max(displayMs, 1000)) { AutoReset = false };
         _highlightTimer.Elapsed += (_, _) =>
@@ -624,6 +636,7 @@ public partial class GamePage : IAsyncDisposable
             InvokeAsync(() =>
             {
                 _highlightIndices = null;
+                _modifiedSetIndices = null;
                 StopHighlightTimer();
                 StateHasChanged();
             });

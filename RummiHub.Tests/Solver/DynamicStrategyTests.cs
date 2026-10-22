@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using FluentAssertions;
 using RummiHub.Core.Models;
 using RummiHub.Core.Solver;
@@ -29,19 +30,27 @@ public class DynamicStrategyTests
         var (board, rack) = CrowdedTableWithNoPlay();
         var fallback = new SpyFallback();
 
-        // Warm up the DP's static tables and JIT so the stopwatch only sees the solve itself.
+        // Warm up the DP's static tables and JIT so the measurement only sees the solve itself.
         DynamicSolver.Create(board.ToSet(), new Set(rack)).SearchSolution();
 
+        var cpuBefore = ThreadCpu.Now();
         var stopwatch = Stopwatch.StartNew();
         var result = await new DynamicStrategy(fallback).GetSolverResult(board.ToSet(), rack, hasPlayed: true);
         stopwatch.Stop();
+        var cpu = ThreadCpu.Now() - cpuBefore;
 
         result.Found.Should().BeFalse();
         result.Source.Should().Be(nameof(DynamicSolver));
         fallback.Calls.Should().Be(0, "an exact \"no move\" must never be re-searched by the exponential fallback");
-        // Generous bound (the DP takes ~0.1 s here, ~0.5 s under parallel test load) that still sits
-        // far below the tens of seconds the exponential search spends on this table.
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
+        // The DP itself is ~0.1 s of CPU. Wall clock on a loaded 2-vCPU runner is not: a CI
+        // run spent 5.7 s of wall time here while the two assertions above still held
+        // (no GraphSolver fallback, and the stabilizer never runs unless a move was found).
+        // Judge the work by this thread's CPU time, which a deschedule does not inflate.
+        // The wall-clock cap only catches a true hang; it stays under the ~25 s the
+        // exponential search takes on this table.
+        cpu.Should().BeGreaterThan(TimeSpan.FromMilliseconds(1), "thread CPU time must actually be readable");
+        cpu.Should().BeLessThan(TimeSpan.FromSeconds(2));
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15));
     }
 
     [Fact]
@@ -172,5 +181,40 @@ public class DynamicStrategyTests
         ]);
 
         return (board, rack);
+    }
+
+    /// <summary>CPU time of the calling thread. Waiting on a busy runner does not accumulate.</summary>
+    private static class ThreadCpu
+    {
+        public static TimeSpan Now()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                if (!GetThreadTimes(GetCurrentThread(), out _, out _, out var kernel, out var user))
+                    throw new InvalidOperationException("GetThreadTimes failed");
+                return TimeSpan.FromTicks(kernel + user);
+            }
+
+            // CLOCK_THREAD_CPUTIME_ID is 3 on Linux.
+            if (clock_gettime(3, out var time) != 0)
+                throw new InvalidOperationException("clock_gettime(CLOCK_THREAD_CPUTIME_ID) failed");
+            return TimeSpan.FromTicks(time.Seconds * TimeSpan.TicksPerSecond + time.Nanoseconds / 100);
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TimeSpec
+        {
+            public long Seconds;
+            public long Nanoseconds;
+        }
+
+        [DllImport("libc", EntryPoint = "clock_gettime")]
+        private static extern int clock_gettime(int clockId, out TimeSpec time);
+
+        [DllImport("kernel32.dll")]
+        private static extern nint GetCurrentThread();
+
+        [DllImport("kernel32.dll")]
+        private static extern bool GetThreadTimes(nint thread, out long creation, out long exit, out long kernel, out long user);
     }
 }

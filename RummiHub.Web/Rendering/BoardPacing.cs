@@ -9,10 +9,11 @@ namespace RummiHub.Web.Rendering;
 /// (<see cref="Models.Game.PendingAnimationMs"/>) never plays a move mid-animation.
 /// </summary>
 /// <remarks>
-/// The client never moves the board before the play that causes it. Every board change is told
-/// in three acts: (1) the placed tiles — played from the hand, or board tiles changing set —
-/// take off one after the other and hover just above their slots; (2) the board makes room under
-/// them in ONE glide; (3) they drop into place. With no room to make they fly straight in.
+/// A tile at rest never covers another. Every board change is told in three acts: (1) the
+/// placed tiles already on screen — in the play zone, or board tiles changing set — rise in
+/// place; (2) in ONE glide the board makes room while every placed tile travels to hover just
+/// above its own gap; (3) they drop in, one after the other. A beat follows acts 1 and 2. With
+/// no room to make they fly straight in, one after the other.
 /// </remarks>
 public static class BoardPacing
 {
@@ -22,23 +23,41 @@ public static class BoardPacing
     /// <summary>A newcomer with no origin on screen popping in.</summary>
     public const int PopMs = 300;
 
-    /// <summary>Act 1 — one placed tile's flight to its slot (or just above it).</summary>
-    public const int FlightMs = 480;
+    /// <summary>Act 1 — the placed tiles already on screen rising in place.</summary>
+    public const int LiftMs = 500;
 
-    /// <summary>Act 1 — interval between two placed tiles taking off.</summary>
-    public const int StaggerMs = 120;
+    /// <summary>Beat after acts 1 and 2, so each reads on its own.</summary>
+    public const int PauseMs = 450;
 
-    /// <summary>Act 2 — the board making room under the placed tiles, in one glide.</summary>
-    public const int RoomMs = 420;
+    /// <summary>Act 2 — the board making room as the placed tiles travel above their gaps.</summary>
+    public const int RoomMs = 1200;
 
-    /// <summary>Act 3 — one hovering tile dropping into its slot.</summary>
-    public const int DropMs = 280;
+    /// <summary>Act 3 — one hovering tile dropping into its gap.</summary>
+    public const int DropMs = 650;
 
-    /// <summary>Act 3 — interval between two drops.</summary>
-    public const int DropStaggerMs = 60;
+    /// <summary>A placed tile flying straight into its slot, when there is no room to make.</summary>
+    public const int FlightMs = 1200;
+
+    /// <summary>Interval between two drops (or two straight flights).</summary>
+    public const int StaggerMs = 400;
+
+    /// <summary>Longest spread of the drops: many tiles drop closer together.</summary>
+    public const int MaxStaggerSpreadMs = 3000;
 
     /// <summary>Slack absorbing client jitter.</summary>
     private const int BufferMs = 200;
+
+    /// <summary>
+    /// Reading window once a move has landed, before an AI seat may play: time to see which
+    /// tiles came in and which sets changed. Grows with each further set the move touched.
+    /// </summary>
+    public const int ReadMs = 2500;
+
+    /// <summary>Extra reading time per set the move touched beyond the first.</summary>
+    public const int ReadPerSetMs = 500;
+
+    /// <summary>Longest reading window, however much the move rearranged.</summary>
+    public const int MaxReadMs = 5000;
 
     /// <summary>
     /// Estimated client animation duration (ms) for <paramref name="previous"/> →
@@ -50,16 +69,43 @@ public static class BoardPacing
 
     /// <summary>
     /// Duration of the board story placing <paramref name="placed"/> tiles. Conservative: it always
-    /// counts acts 2 and 3, since whether the board really has to make room depends on the
-    /// client's layout (line wrapping), unknown here.
+    /// counts acts 1 and 2, since whether the board really has to make room depends on the
+    /// client's layout (line wrapping), unknown here; flying straight in is shorter.
     /// </summary>
     public static int DurationForPlacedTiles(int placed)
         => placed == 0
             ? 0
-            : FlightMs + (placed - 1) * StaggerMs        // act 1 — the play
-              + RoomMs                                   // act 2 — the board makes room
-              + DropMs + (placed - 1) * DropStaggerMs    // act 3 — the tiles drop in
+            : LiftMs + PauseMs                                          // act 1 — the play
+              + RoomMs + PauseMs                                        // act 2 — the board makes room
+              + DropMs + Spread(placed, StaggerMs, MaxStaggerSpreadMs)  // act 3 — the tiles drop in
               + BufferMs;
+
+    // Time from the first to the last of `count` staggered starts: `step` apart, squeezed so
+    // the whole spread never exceeds `max` (the client spaces them the same way).
+    private static int Spread(int count, int step, int max) => Math.Min((count - 1) * step, max);
+
+    /// <summary>
+    /// Reading window (ms) after the <paramref name="previous"/> → <paramref name="next"/>
+    /// animation: 0 when no set changed (a draw), else <see cref="ReadMs"/> plus
+    /// <see cref="ReadPerSetMs"/> per further set touched, capped at <see cref="MaxReadMs"/>.
+    /// Both boards must already be aligned, like <see cref="EstimateMs"/>.
+    /// </summary>
+    public static int ReadingMs(Solution previous, Solution next)
+    {
+        var touched = ModifiedSetIndices(previous, next).Count;
+        return touched == 0 ? 0 : Math.Min(ReadMs + (touched - 1) * ReadPerSetMs, MaxReadMs);
+    }
+
+    /// <summary>
+    /// True when both boards hold the same sets with the same tiles in the same order, i.e.
+    /// the client has nothing to redraw (a draw, a turn confirmation).
+    /// </summary>
+    public static bool SameBoard(Solution previous, Solution next) =>
+        SameSets(previous.Runs, next.Runs) && SameSets(previous.Groups, next.Groups);
+
+    private static bool SameSets(List<ValidSet> previous, List<ValidSet> next) =>
+        previous.Count == next.Count
+        && previous.Zip(next).All(pair => pair.First.Tiles.AsSpan().SequenceEqual(pair.Second.Tiles));
 
     /// <summary>
     /// Reading-order indices (on <paramref name="next"/>, runs then groups) of the tiles that
@@ -102,7 +148,59 @@ public static class BoardPacing
         return entered;
     }
 
-    // Tiles the client PLACES (acts 1 and 3): every tile of the next board its paired previous
+    /// <summary>
+    /// The <see cref="EnteredIndices"/> that hold a <paramref name="played"/> tile: what came
+    /// out of the mover's rack, without the board tiles that merely changed set (those show
+    /// through <see cref="ModifiedSetIndices"/>). Where a played tile and an identical board
+    /// tile both changed set, either copy may light up — they look the same.
+    /// </summary>
+    public static List<int> PlayedIndices(Solution previous, Solution next, IEnumerable<Tile> played)
+    {
+        var remaining = new Dictionary<int, int>();
+        foreach (var tile in played)
+        {
+            var key = TileKey(tile);
+            remaining[key] = remaining.GetValueOrDefault(key) + 1;
+        }
+
+        var tiles = ReadingOrder(next).SelectMany(set => set.Tiles).ToArray();
+        var result = new List<int>();
+        foreach (var index in EnteredIndices(previous, next))
+        {
+            var key = TileKey(tiles[index]);
+            if (!remaining.TryGetValue(key, out var count) || count == 0) continue;
+            remaining[key] = count - 1;
+            result.Add(index);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reading-order indices (runs, then groups) of sets whose tiles changed between the two
+    /// boards: a tile was added or removed, or the set is new. Sets that merely kept their
+    /// seat are absent, so the UI can outline what the move actually touched.
+    /// </summary>
+    public static List<int> ModifiedSetIndices(Solution previous, Solution next)
+    {
+        var prevSets = ReadingOrder(previous);
+        var nextSets = ReadingOrder(next);
+        var pairs = PairSets(prevSets, nextSets);
+
+        var modified = new List<int>();
+        for (var j = 0; j < nextSets.Count; j++)
+        {
+            var prevIndex = pairs[j].PrevIndex;
+            if (prevIndex < 0
+                || pairs[j].Shared != prevSets[prevIndex].Tiles.Length
+                || pairs[j].Shared != nextSets[j].Tiles.Length)
+                modified.Add(j);
+        }
+
+        return modified;
+    }
+
+    // Tiles the client PLACES (acts 2 and 3): every tile of the next board its paired previous
     // set doesn't keep — tiles entering from the hand, plus board tiles changing set. Counted one
     // by one; the client flies tiles changing set together as one block, so this can only
     // over-estimate.
