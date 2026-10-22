@@ -184,6 +184,77 @@ public class BoardPacingTests
     }
 
     [Fact]
+    public void ReadingMs_UnchangedBoard_IsZero()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+
+        BoardPacing.ReadingMs(previous, next).Should().Be(0);
+    }
+
+    [Fact]
+    public void ReadingMs_OneSetTouched_IsTheBaseWindow()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun] };
+        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+
+        BoardPacing.ReadingMs(previous, next).Should().Be(BoardPacing.ReadMs);
+    }
+
+    [Fact]
+    public void ReadingMs_EachFurtherSetTouched_AddsTime()
+    {
+        var blueRunExtended = Set(
+            T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
+        var previous = new Solution { Runs = [BlueRun, RedRun] };
+        var next = new Solution { Runs = [blueRunExtended, RedRunExtended] };
+
+        BoardPacing.ReadingMs(previous, next).Should().Be(BoardPacing.ReadMs + BoardPacing.ReadPerSetMs);
+    }
+
+    [Fact]
+    public void ReadingMs_IsCapped()
+    {
+        // Twelve brand-new sets: far past the cap.
+        var next = new Solution
+        {
+            Runs = Enumerable.Range(1, 6).Select(v => Set(
+                T(v, TileColor.Red), T(v + 1, TileColor.Red), T(v + 2, TileColor.Red))).ToList(),
+            Groups = Enumerable.Range(1, 6).Select(v => Set(
+                T(v, TileColor.Blue), T(v, TileColor.Black), T(v, TileColor.Mango))).ToList(),
+        };
+
+        BoardPacing.ReadingMs(new Solution(), next).Should().Be(BoardPacing.MaxReadMs);
+    }
+
+    [Fact]
+    public void SameBoard_SameSetsAndTiles_IsTrue()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+
+        BoardPacing.SameBoard(previous, next).Should().BeTrue();
+    }
+
+    [Fact]
+    public void SameBoard_ExtendedSet_IsFalse()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun] };
+        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+
+        BoardPacing.SameBoard(previous, next).Should().BeFalse();
+    }
+
+    [Fact]
+    public void SameBoard_SetsSwapped_IsFalse()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun] };
+        var next = new Solution { Runs = [RedRun, BlueRun] };
+
+        BoardPacing.SameBoard(previous, next).Should().BeFalse();
+    }
+
+    [Fact]
     public void DurationForPlacedTiles_EachExtraTileAddsATakeOffAndADrop()
     {
         for (var placed = 1; placed < 40; placed++)

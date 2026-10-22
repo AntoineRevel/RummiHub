@@ -259,14 +259,19 @@ public partial class GamePage : IAsyncDisposable
             ClearSelection();
             ApplyRackAwaitingBoard();
 
-            // The highlight always arrives AFTER its own state update, so any state seen
-            // while one is showing means the next move landed: clear it. The suggestion
-            // is per-turn; a new one arrives with the next OptimalReady.
-            _highlightIndices = null;
-            _modifiedSetIndices = null;
-            _lastHighlightIndices = null;
-            _lastModifiedSetIndices = null;
-            StopHighlightTimer();
+            // The highlight always arrives AFTER its own state update, so a state that changes
+            // the board while one is showing means the next move landed: clear it. A state
+            // that leaves the board as is (a draw, a turn confirmation) keeps the last move
+            // lit until its timer runs out, so it can still be read. The suggestion is
+            // per-turn; a new one arrives with the next OptimalReady.
+            if (_gameState is null || !BoardPacing.SameBoard(_gameState.Board, state.Board))
+            {
+                _highlightIndices = null;
+                _modifiedSetIndices = null;
+                _lastHighlightIndices = null;
+                _lastModifiedSetIndices = null;
+                StopHighlightTimer();
+            }
             _optimalSuggestion = null;
 
             // A newer state supersedes a turn still waiting for the board.

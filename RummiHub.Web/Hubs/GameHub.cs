@@ -15,16 +15,18 @@ public partial class GameHub(
     ILogger<GameHub> logger) : Hub
 {
     /// <summary>
-    /// Watchable pause before an AI seat plays its automatic move, so humans can
-    /// follow the action rather than seeing the board jump instantly.
+    /// Shortest watchable pause before an AI seat plays its automatic move, so humans can
+    /// follow the action rather than seeing the board jump instantly. A move that changed the
+    /// board waits longer: its reading window (<see cref="BoardPacing.ReadingMs"/>).
     /// </summary>
     private static readonly TimeSpan AutoPlayDelay = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// Reading window the played-tiles highlight stays on AFTER the board animation ends;
-    /// the client then fades it out, so the previous move's yellow never lingers forever.
+    /// How long the played-tiles highlight stays on AFTER the board animation ends; the client
+    /// then fades it out, so the previous move's yellow never lingers forever. It outlasts the
+    /// longest reading window, so a move stays lit until the next one lands.
     /// </summary>
-    private const int HighlightLingerMs = 4000;
+    private const int HighlightLingerMs = BoardPacing.MaxReadMs + 1000;
 
     // ========== LOBBY PHASE ==========
 
@@ -581,15 +583,7 @@ public partial class GameHub(
     {
         var engine = game.Engine!;
         engine.AdvanceToNextPlayer();
-
-        // Align the post-move board to the one currently shown so unchanged sets keep their
-        // place, then estimate how long the client's board animation (play → make room →
-        // place) runs so the next AI move can wait for it to finish before playing.
-        var previous = game.LastBroadcastBoard;
-        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
-        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
-        game.LastBroadcastBoard = aligned;
-        engine.Board = aligned;
+        SeatBoard(game);
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
@@ -606,17 +600,28 @@ public partial class GameHub(
     /// </summary>
     private async Task PauseForReviewAsync(Game game, int playerIndex)
     {
-        var engine = game.Engine!;
-
-        var previous = game.LastBroadcastBoard;
-        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
-        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
-        game.LastBroadcastBoard = aligned;
-        engine.Board = aligned;
-        game.PendingTurnConfirmation = new PendingTurnConfirmation(engine.Turn, playerIndex);
+        SeatBoard(game);
+        game.PendingTurnConfirmation = new PendingTurnConfirmation(game.Engine!.Turn, playerIndex);
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
+    }
+
+    /// <summary>
+    /// Aligns the post-move board to the one currently shown so unchanged sets keep their
+    /// place, and records how long clients take to play the change out — the board animation
+    /// (play → make room → place), then the reading window — so the next AI move waits for
+    /// both. Callers must hold <see cref="Game.ActionLock"/>.
+    /// </summary>
+    private static void SeatBoard(Game game)
+    {
+        var engine = game.Engine!;
+        var previous = game.LastBroadcastBoard;
+        var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
+        game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
+        game.PendingReadingMs = previous is null ? 0 : BoardPacing.ReadingMs(previous, aligned);
+        game.LastBroadcastBoard = aligned;
+        engine.Board = aligned;
     }
 
     /// <summary>
@@ -737,9 +742,12 @@ public partial class GameHub(
     {
         try
         {
-            // Wait for the currently-shown transition's animation to finish, then the watchable
-            // pause, so an AI move never lands on top of the still-running board animation.
-            await Task.Delay(TimeSpan.FromMilliseconds(game.PendingAnimationMs) + AutoPlayDelay, ct);
+            // Wait for the currently-shown transition's animation to finish, then for its
+            // reading window (at least the watchable pause), so an AI move never lands on top
+            // of the previous one before the table has had time to read it.
+            var pause = TimeSpan.FromMilliseconds(game.PendingReadingMs);
+            await Task.Delay(TimeSpan.FromMilliseconds(game.PendingAnimationMs)
+                             + (pause > AutoPlayDelay ? pause : AutoPlayDelay), ct);
             await game.ActionLock.WaitAsync(ct);
         }
         catch (OperationCanceledException)

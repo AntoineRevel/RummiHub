@@ -93,6 +93,13 @@ public class Game
     /// </summary>
     public int PendingAnimationMs { get; set; }
 
+    /// <summary>
+    /// Reading window (ms) the most recently broadcast move gets once it has landed, before the
+    /// next AI move (0 when the board did not change). Read/written only inside
+    /// <see cref="ActionLock"/>.
+    /// </summary>
+    public int PendingReadingMs { get; set; }
+
     public int PlayerCount
     {
         get

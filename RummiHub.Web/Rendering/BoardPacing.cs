@@ -23,22 +23,34 @@ public static class BoardPacing
     public const int PopMs = 300;
 
     /// <summary>Act 1 — one placed tile's flight to its slot (or just above it).</summary>
-    public const int FlightMs = 480;
+    public const int FlightMs = 620;
 
     /// <summary>Act 1 — interval between two placed tiles taking off.</summary>
-    public const int StaggerMs = 120;
+    public const int StaggerMs = 160;
 
     /// <summary>Act 2 — the board making room under the placed tiles, in one glide.</summary>
-    public const int RoomMs = 420;
+    public const int RoomMs = 560;
 
     /// <summary>Act 3 — one hovering tile dropping into its slot.</summary>
-    public const int DropMs = 280;
+    public const int DropMs = 360;
 
     /// <summary>Act 3 — interval between two drops.</summary>
-    public const int DropStaggerMs = 60;
+    public const int DropStaggerMs = 90;
 
     /// <summary>Slack absorbing client jitter.</summary>
     private const int BufferMs = 200;
+
+    /// <summary>
+    /// Reading window once a move has landed, before an AI seat may play: time to see which
+    /// tiles came in and which sets changed. Grows with each further set the move touched.
+    /// </summary>
+    public const int ReadMs = 2500;
+
+    /// <summary>Extra reading time per set the move touched beyond the first.</summary>
+    public const int ReadPerSetMs = 500;
+
+    /// <summary>Longest reading window, however much the move rearranged.</summary>
+    public const int MaxReadMs = 5000;
 
     /// <summary>
     /// Estimated client animation duration (ms) for <paramref name="previous"/> →
@@ -60,6 +72,29 @@ public static class BoardPacing
               + RoomMs                                   // act 2 — the board makes room
               + DropMs + (placed - 1) * DropStaggerMs    // act 3 — the tiles drop in
               + BufferMs;
+
+    /// <summary>
+    /// Reading window (ms) after the <paramref name="previous"/> → <paramref name="next"/>
+    /// animation: 0 when no set changed (a draw), else <see cref="ReadMs"/> plus
+    /// <see cref="ReadPerSetMs"/> per further set touched, capped at <see cref="MaxReadMs"/>.
+    /// Both boards must already be aligned, like <see cref="EstimateMs"/>.
+    /// </summary>
+    public static int ReadingMs(Solution previous, Solution next)
+    {
+        var touched = ModifiedSetIndices(previous, next).Count;
+        return touched == 0 ? 0 : Math.Min(ReadMs + (touched - 1) * ReadPerSetMs, MaxReadMs);
+    }
+
+    /// <summary>
+    /// True when both boards hold the same sets with the same tiles in the same order, i.e.
+    /// the client has nothing to redraw (a draw, a turn confirmation).
+    /// </summary>
+    public static bool SameBoard(Solution previous, Solution next) =>
+        SameSets(previous.Runs, next.Runs) && SameSets(previous.Groups, next.Groups);
+
+    private static bool SameSets(List<ValidSet> previous, List<ValidSet> next) =>
+        previous.Count == next.Count
+        && previous.Zip(next).All(pair => pair.First.Tiles.AsSpan().SequenceEqual(pair.Second.Tiles));
 
     /// <summary>
     /// Reading-order indices (on <paramref name="next"/>, runs then groups) of the tiles that
