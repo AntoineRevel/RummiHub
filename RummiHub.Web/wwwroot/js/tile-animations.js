@@ -43,13 +43,13 @@
 const tempo = {
     moveMs: 350,              // a hand tile gliding between the rack and the play zone
     popMs: 300,               // a newcomer with no origin on screen popping in
-    liftMs: 450,              // act 1: the placed tiles on screen rising in place
-    pauseMs: 350,             // beat after acts 1 and 2
-    roomMs: 1000,             // act 2: the board making room as the placed tiles travel, one glide
-    dropMs: 550,              // act 3: one hovering tile dropping into its gap
-    flightMs: 1000,           // a placed tile flying straight into its slot (nothing to make room for)
-    staggerMs: 320,           // between two drops, or two straight flights
-    maxStaggerSpreadMs: 2400, // first to last of those, at most
+    liftMs: 500,              // act 1: the placed tiles on screen rising in place
+    pauseMs: 450,             // beat after acts 1 and 2
+    roomMs: 1200,             // act 2: the board making room as the placed tiles travel, one glide
+    dropMs: 650,              // act 3: one hovering tile dropping into its gap
+    flightMs: 1200,           // a placed tile flying straight into its slot (nothing to make room for)
+    staggerMs: 400,           // between two drops, or two straight flights
+    maxStaggerSpreadMs: 3000, // first to last of those, at most
 };
 
 const MIN_DELTA = 4;    // px — cross-scope flights below this just display

@@ -24,25 +24,25 @@ public static class BoardPacing
     public const int PopMs = 300;
 
     /// <summary>Act 1 — the placed tiles already on screen rising in place.</summary>
-    public const int LiftMs = 450;
+    public const int LiftMs = 500;
 
     /// <summary>Beat after acts 1 and 2, so each reads on its own.</summary>
-    public const int PauseMs = 350;
+    public const int PauseMs = 450;
 
     /// <summary>Act 2 — the board making room as the placed tiles travel above their gaps.</summary>
-    public const int RoomMs = 1000;
+    public const int RoomMs = 1200;
 
     /// <summary>Act 3 — one hovering tile dropping into its gap.</summary>
-    public const int DropMs = 550;
+    public const int DropMs = 650;
 
     /// <summary>A placed tile flying straight into its slot, when there is no room to make.</summary>
-    public const int FlightMs = 1000;
+    public const int FlightMs = 1200;
 
     /// <summary>Interval between two drops (or two straight flights).</summary>
-    public const int StaggerMs = 320;
+    public const int StaggerMs = 400;
 
     /// <summary>Longest spread of the drops: many tiles drop closer together.</summary>
-    public const int MaxStaggerSpreadMs = 2400;
+    public const int MaxStaggerSpreadMs = 3000;
 
     /// <summary>Slack absorbing client jitter.</summary>
     private const int BufferMs = 200;
