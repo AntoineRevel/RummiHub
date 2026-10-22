@@ -1,8 +1,31 @@
 #!/bin/sh
-# Déploie origin/master et affiche le journal jusqu'à la fin ; sort en erreur si le
-# déploiement échoue. Commande forcée de la clé SSH de GitHub Actions, se lance aussi à
-# la main sur le VPS. Le travail tourne dans rummihub-deploy.service : une connexion
-# coupée ne l'interrompt pas.
+# Commande forcée de la clé SSH de GitHub Actions (authorized_keys), et déploiement
+# de la production à la main sur le VPS.
+#
+# SSH place la commande demandée par le client dans SSH_ORIGINAL_COMMAND et exécute
+# ce fichier à la place. Contrat, à ne pas élargir :
+#   - commande vide (ou lancement à la main) : déploiement de origin/master ;
+#   - « deploy-test <branche> » : site de test, via rummihub-deploy-test ;
+#   - tout le reste est refusé. La clé ne donne pas de shell.
+#
+# Le travail tourne dans systemd : une connexion coupée ne l'interrompt pas.
+
+set -u
+
+cmd=${SSH_ORIGINAL_COMMAND-}
+
+case "$cmd" in
+  "")
+    ;;
+  "deploy-test "*)
+    branch=${cmd#"deploy-test "}
+    exec /usr/local/bin/rummihub-deploy-test "$branch"
+    ;;
+  *)
+    echo "Commande refusée." >&2
+    exit 1
+    ;;
+esac
 
 journalctl -u rummihub-deploy.service -f -n 0 -o cat &
 follow=$!
@@ -12,5 +35,5 @@ sudo -n systemctl start rummihub-deploy.service
 status=$?
 
 sleep 1
-kill "$follow"
+kill "$follow" 2>/dev/null || true
 exit "$status"

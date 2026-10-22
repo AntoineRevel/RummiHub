@@ -1,0 +1,53 @@
+#!/bin/sh
+# Déploie une branche sur le site de test et affiche le journal jusqu'à la fin.
+# Se lance à la main (rummihub-deploy-test <branche>) ou via la commande forcée
+# SSH, qui transmet « deploy-test <branche> ».
+#
+# La branche est passée au service comme nom d'instance, en hexadécimal : un « / »
+# survit (systemd-escape, lui, le transformerait en « - »), et deux déploiements
+# concurrents ne partagent pas un fichier de branche. Le service tourne encore
+# si la connexion SSH tombe.
+
+set -u
+
+branch=${1-}
+
+if ! /usr/local/bin/rummihub-branch-ok "$branch"; then
+  exit 1
+fi
+
+if [ ! -d /home/ubuntu/apps/RummiHub-test/.git ]; then
+  echo "Clone absent : /home/ubuntu/apps/RummiHub-test (deploy/README.md, « Site de test »)." >&2
+  exit 1
+fi
+
+if [ ! -f /home/ubuntu/apps/RummiHub-test/deploy/.env.test ]; then
+  echo "Fichier /home/ubuntu/apps/RummiHub-test/deploy/.env.test manquant. Voir deploy/.env.test.example." >&2
+  exit 1
+fi
+
+if [ ! -d /run/rummihub ]; then
+  echo "Répertoire /run/rummihub absent. Installer deploy/autodeploy/rummihub.tmpfiles (deploy/README.md)." >&2
+  exit 1
+fi
+
+enc=$(printf '%s' "$branch" | od -An -tx1 | tr -d ' \t\n')
+case "$enc" in
+  *[!0-9a-f]*|"")
+    echo "Encodage de la branche impossible." >&2
+    exit 1
+    ;;
+esac
+
+unit="rummihub-deploy-test@${enc}.service"
+
+journalctl -u "$unit" -f -n 0 -o cat &
+follow=$!
+sleep 1
+
+sudo -n systemctl start "$unit"
+status=$?
+
+sleep 1
+kill "$follow" 2>/dev/null || true
+exit "$status"

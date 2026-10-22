@@ -35,6 +35,11 @@ services:
     networks:
       - edge
       - internal
+      # Réseau partagé avec le webfrontend du site de test (alias webfrontend-test).
+      # Externe et interne : pas de passerelle, donc la pile de test ne peut pas
+      # sortir vers Internet ni joindre les autres réseaux par là. Si le conteneur
+      # de test est absent, le nom ne résout pas et Caddy répond 502 sur ce seul site.
+      - rummihub-edge
     deploy:
       resources:
         limits:
@@ -162,6 +167,12 @@ networks:
   edge:
   internal:
     internal: true
+  # Créé une fois sur l'hôte : docker network create --internal rummihub-edge
+  # (rummihub-ensure-edge-network le fait aussi). Externe pour qu'un
+  # `docker compose down` de l'un ou l'autre projet ne le supprime pas.
+  rummihub-edge:
+    external: true
+    name: rummihub-edge
 
 volumes:
   caddy_data:

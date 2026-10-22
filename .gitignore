@@ -35,6 +35,7 @@ appsettings.Development.json
 # Docker — never commit a filled-in environment file
 .env
 deploy/.env
+deploy/.env.test
 
 # OS
 .DS_Store

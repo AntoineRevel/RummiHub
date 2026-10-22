@@ -1,0 +1,27 @@
+#!/bin/sh
+# Crée le réseau Docker partagé entre le Caddy de production et le webfrontend
+# de test, s'il n'existe pas. --internal : pas de passerelle, donc pas de sortie
+# vers Internet par ce réseau. Un réseau du même nom qui ne serait pas interne
+# est un échec (il donnerait une route à la pile de test).
+
+set -eu
+
+name=rummihub-edge
+
+if ! docker network inspect "$name" >/dev/null 2>&1; then
+  # Deux déploiements peuvent le créer en même temps : le second inspect
+  # suffit si le premier a gagné la course.
+  docker network create --internal "$name" >/dev/null 2>&1 || true
+fi
+
+if ! docker network inspect "$name" >/dev/null 2>&1; then
+  echo "Impossible de créer le réseau $name." >&2
+  exit 1
+fi
+
+internal=$(docker network inspect "$name" --format '{{.Internal}}')
+if [ "$internal" != "true" ]; then
+  echo "Le réseau $name existe mais n'est pas interne." >&2
+  echo "S'il n'est plus utilisé : docker network rm $name && docker network create --internal $name" >&2
+  exit 1
+fi

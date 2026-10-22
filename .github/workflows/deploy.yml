@@ -1,8 +1,9 @@
 # Tests sur chaque PR : le check requis « test » (branche à jour) est imposé
 # par la protection de master, donc le déploiement ne les relance pas.
 # Sur master (push ou lancement manuel) : déploiement direct sur le VPS.
-# Le job deploy se connecte en SSH avec une clé dont la seule commande possible est
-# rummihub-deploy (deploy/README.md, « Déploiement automatique »).
+# Le job deploy se connecte en SSH sans commande distante. La clé ne peut exécuter
+# que rummihub-deploy : sans commande, cela déploie origin/master. « deploy-test »
+# est réservé au site de test (deploy/README.md).
 name: Tests et déploiement
 
 on:
