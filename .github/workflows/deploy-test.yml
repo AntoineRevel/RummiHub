@@ -1,14 +1,19 @@
-# Déploiement du site de test (https://test.rummisolve.com) à chaque push sur la
-# branche test. Pour y mettre une branche : git push --force origin <branche>:test
-# Les tests tournent ici : ce workflow n'est pas exigé par la protection de master.
-# SSH réutilise la clé de production. La commande forcée n'accepte que
-# « deploy-test », sans argument : le VPS déploie origin/test, et refuse une
-# branche test qui modifie deploy/ (deploy/autodeploy/rummihub-deploy-test-run).
+# Déploiement du site de test (https://test.rummisolve.com).
+# Deux façons de le lancer, même résultat :
+#   - Actions → Run workflow, branche choisie dans « Use workflow from » ;
+#   - git push --force origin <branche>:test
+# La branche doit contenir ce fichier. Les tests tournent ici : ce workflow n'est
+# pas exigé par la protection de master. SSH réutilise la clé de production. La
+# commande forcée n'accepte que « deploy-test <SHA> » : le VPS déploie ce commit,
+# celui qui vient de passer les tests, et refuse s'il modifie deploy/
+# (deploy/autodeploy/rummihub-deploy-test-run). La branche test n'est pas déplacée
+# par le bouton : le site montre le dernier commit déployé.
 name: Déploiement du site de test
 
 on:
   push:
     branches: [test]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,6 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Vérifier que la ref est une branche
+        if: github.ref_type != 'branch'
+        run: |
+          echo "Refus : dans « Use workflow from », choisir une branche, pas une étiquette." >&2
+          exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
@@ -34,14 +44,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - name: Déployer origin/test sur le site de test
+      - name: Déployer le commit sur le site de test
         env:
           SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+          SHA: ${{ github.sha }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ServerAliveInterval=30 "ubuntu@$SSH_HOST" deploy-test
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ServerAliveInterval=30 "ubuntu@$SSH_HOST" "deploy-test $SHA"

@@ -71,7 +71,7 @@ Depuis la racine du dépôt. Le chemin du dépôt et l’utilisateur `ubuntu` so
 
 ```bash
 sudo install -m 644 deploy/autodeploy/rummihub-deploy.service /etc/systemd/system/
-sudo install -m 644 deploy/autodeploy/rummihub-deploy-test.service /etc/systemd/system/
+sudo install -m 644 deploy/autodeploy/rummihub-deploy-test@.service /etc/systemd/system/
 sudo install -m 644 deploy/autodeploy/rummihub.tmpfiles /etc/tmpfiles.d/rummihub.conf
 sudo install -m 755 deploy/autodeploy/rummihub-deploy \
   deploy/autodeploy/rummihub-deploy-test \
@@ -81,7 +81,7 @@ sudo install -m 755 deploy/autodeploy/rummihub-deploy \
   /usr/local/bin/
 echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy.service' \
   | sudo tee /etc/sudoers.d/rummihub-deploy && sudo chmod 440 /etc/sudoers.d/rummihub-deploy
-echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test.service' \
+echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test@*.service' \
   | sudo tee /etc/sudoers.d/rummihub-deploy-test && sudo chmod 440 /etc/sudoers.d/rummihub-deploy-test
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/rummihub.conf
 sudo systemctl daemon-reload
@@ -89,7 +89,7 @@ sudo systemctl daemon-reload
 
 Ces fichiers ne suivent pas le dépôt une fois copiés : refaire les `install` après une modification.
 
-Clé SSH de GitHub Actions, générée sur le VPS. Elle ne donne pas de shell. Sans commande distante, elle ne fait que redéployer `master`. La seule autre commande acceptée est `deploy-test`, sans argument, qui met à jour le site de test (section suivante) et ne touche pas à la pile de production. Même clé, mêmes secrets : pas de `DEPLOY_TEST_SSH_KEY`. La ligne `authorized_keys` ne change pas.
+Clé SSH de GitHub Actions, générée sur le VPS. Elle ne donne pas de shell. Sans commande distante, elle ne fait que redéployer `master`. La seule autre commande acceptée est `deploy-test <SHA>` (commit complet, 40 caractères hexadécimaux), qui met à jour le site de test (section suivante) et ne touche pas à la pile de production. Même clé, mêmes secrets : pas de `DEPLOY_TEST_SSH_KEY`. La ligne `authorized_keys` ne change pas.
 
 ```bash
 ssh-keygen -t ed25519 -N '' -C github-actions-deploy -f /tmp/gha_deploy
@@ -156,7 +156,7 @@ docker network inspect rummihub-edge >/dev/null 2>&1 \
   || docker network create --internal rummihub-edge
 
 sudo install -m 644 deploy/autodeploy/rummihub-deploy.service /etc/systemd/system/
-sudo install -m 644 deploy/autodeploy/rummihub-deploy-test.service /etc/systemd/system/
+sudo install -m 644 deploy/autodeploy/rummihub-deploy-test@.service /etc/systemd/system/
 sudo install -m 644 deploy/autodeploy/rummihub.tmpfiles /etc/tmpfiles.d/rummihub.conf
 sudo install -m 755 deploy/autodeploy/rummihub-deploy \
   deploy/autodeploy/rummihub-deploy-test \
@@ -164,7 +164,7 @@ sudo install -m 755 deploy/autodeploy/rummihub-deploy \
   deploy/autodeploy/rummihub-ensure-edge-network \
   deploy/autodeploy/rummihub-compose-prod \
   /usr/local/bin/
-echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test.service' \
+echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test@*.service' \
   | sudo tee /etc/sudoers.d/rummihub-deploy-test && sudo chmod 440 /etc/sudoers.d/rummihub-deploy-test
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/rummihub.conf
 sudo systemctl daemon-reload
@@ -195,17 +195,18 @@ rummihub-deploy
 
 ### Lancer un déploiement
 
-Le site de test affiche toujours la branche **`test`**. Pour y mettre une branche, la pousser dessus :
+*Actions → Déploiement du site de test → Run workflow*, puis choisir la branche dans *Use workflow from*. En ligne de commande, au choix :
 
 ```bash
+gh workflow run deploy-test.yml -R AntoineRevel/RummiHub --ref ma-branche
 git push --force origin ma-branche:test
 ```
 
-Chaque push sur `test` lance *Actions → Déploiement du site de test* : `dotnet test`, puis le SSH `deploy-test`. Pour relancer : *Re-run jobs*. La branche poussée doit contenir `.github/workflows/deploy-test.yml` (toute branche créée depuis `master` après ce changement). Un déploiement à la fois, jamais annulé au milieu. Le VPS déploie la pointe de `origin/test` au moment du SSH.
+Les deux font la même chose : `dotnet test` sur la branche, puis le SSH `deploy-test <SHA>` avec le commit qui vient de passer les tests. Le bouton ne déplace pas la branche `test` : le site montre le dernier commit déployé, quelle que soit la façon. Pour relancer : *Re-run jobs*. La branche doit contenir `.github/workflows/deploy-test.yml` dans sa version actuelle (toute branche créée depuis `master` après ce changement, sinon merger `master` dedans). Une étiquette est refusée. Un déploiement à la fois, jamais annulé au milieu.
 
-À la main, sur le VPS : `rummihub-deploy-test`. Il démarre `rummihub-deploy-test.service`, qui fait `git fetch origin test master`, `git checkout --force --detach origin/test`, puis `docker compose -p rummihub-test … up -d --build --wait --remove-orphans`. Journal : l’onglet *Actions*, ou `journalctl -u rummihub-deploy-test`.
+À la main, sur le VPS : `rummihub-deploy-test <SHA complet>`, par exemple `rummihub-deploy-test "$(git ls-remote origin refs/heads/ma-branche | cut -f1)"` depuis un clone. Il démarre `rummihub-deploy-test@<SHA>.service`, qui fait `git fetch origin master <SHA>`, `git checkout --force --detach <SHA>`, puis `docker compose -p rummihub-test … up -d --build --wait --remove-orphans`. Journal : l’onglet *Actions*, ou `journalctl -u 'rummihub-deploy-test@*'`.
 
-**`deploy/` doit être celui de `master`.** Si `test` modifie `deploy/` depuis son point de départ sur `master` (`git diff origin/master...origin/test -- deploy`), le déploiement est refusé avant le checkout. La pile de test tourne avec les fichiers Compose de la branche : un Compose modifié (volume `/`, `docker.sock`, `privileged`…) donnerait root sur le VPS de production. Le code applicatif et le `Dockerfile` peuvent changer librement. Pour essayer une modification de `deploy/`, la merger d’abord.
+**`deploy/` doit être celui de `master`.** Si le commit modifie `deploy/` depuis son point de départ sur `master` (`git diff origin/master...<SHA> -- deploy`), le déploiement est refusé avant le checkout. La pile de test tourne avec les fichiers Compose du commit : un Compose modifié (volume `/`, `docker.sock`, `privileged`…) donnerait root sur le VPS de production. Le code applicatif et le `Dockerfile` peuvent changer librement. Pour essayer une modification de `deploy/`, la merger d’abord.
 
 Arrêter le site de test sans toucher à la production :
 
