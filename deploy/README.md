@@ -71,26 +71,25 @@ Depuis la racine du dépôt. Le chemin du dépôt et l’utilisateur `ubuntu` so
 
 ```bash
 sudo install -m 644 deploy/autodeploy/rummihub-deploy.service /etc/systemd/system/
-sudo install -m 644 deploy/autodeploy/rummihub-deploy-test@.service /etc/systemd/system/
+sudo install -m 644 deploy/autodeploy/rummihub-deploy-test.service /etc/systemd/system/
 sudo install -m 644 deploy/autodeploy/rummihub.tmpfiles /etc/tmpfiles.d/rummihub.conf
 sudo install -m 755 deploy/autodeploy/rummihub-deploy \
   deploy/autodeploy/rummihub-deploy-test \
   deploy/autodeploy/rummihub-deploy-test-run \
-  deploy/autodeploy/rummihub-branch-ok \
   deploy/autodeploy/rummihub-ensure-edge-network \
   deploy/autodeploy/rummihub-compose-prod \
   /usr/local/bin/
 echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy.service' \
   | sudo tee /etc/sudoers.d/rummihub-deploy && sudo chmod 440 /etc/sudoers.d/rummihub-deploy
-sudo install -m 440 deploy/autodeploy/sudoers-rummihub-deploy-test /etc/sudoers.d/rummihub-deploy-test
-sudo visudo -cf /etc/sudoers.d/rummihub-deploy-test
+echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test.service' \
+  | sudo tee /etc/sudoers.d/rummihub-deploy-test && sudo chmod 440 /etc/sudoers.d/rummihub-deploy-test
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/rummihub.conf
 sudo systemctl daemon-reload
 ```
 
 Ces fichiers ne suivent pas le dépôt une fois copiés : refaire les `install` après une modification.
 
-Clé SSH de GitHub Actions, générée sur le VPS. Elle ne donne pas de shell. Sans commande distante, elle ne fait que redéployer `master`. La seule autre commande acceptée est `deploy-test <branche>`, qui met à jour le site de test (section suivante) et ne touche pas à la pile de production. Même clé, mêmes secrets : pas de `DEPLOY_TEST_SSH_KEY`. La ligne `authorized_keys` ne change pas.
+Clé SSH de GitHub Actions, générée sur le VPS. Elle ne donne pas de shell. Sans commande distante, elle ne fait que redéployer `master`. La seule autre commande acceptée est `deploy-test`, sans argument, qui met à jour le site de test (section suivante) et ne touche pas à la pile de production. Même clé, mêmes secrets : pas de `DEPLOY_TEST_SSH_KEY`. La ligne `authorized_keys` ne change pas.
 
 ```bash
 ssh-keygen -t ed25519 -N '' -C github-actions-deploy -f /tmp/gha_deploy
@@ -157,17 +156,16 @@ docker network inspect rummihub-edge >/dev/null 2>&1 \
   || docker network create --internal rummihub-edge
 
 sudo install -m 644 deploy/autodeploy/rummihub-deploy.service /etc/systemd/system/
-sudo install -m 644 deploy/autodeploy/rummihub-deploy-test@.service /etc/systemd/system/
+sudo install -m 644 deploy/autodeploy/rummihub-deploy-test.service /etc/systemd/system/
 sudo install -m 644 deploy/autodeploy/rummihub.tmpfiles /etc/tmpfiles.d/rummihub.conf
 sudo install -m 755 deploy/autodeploy/rummihub-deploy \
   deploy/autodeploy/rummihub-deploy-test \
   deploy/autodeploy/rummihub-deploy-test-run \
-  deploy/autodeploy/rummihub-branch-ok \
   deploy/autodeploy/rummihub-ensure-edge-network \
   deploy/autodeploy/rummihub-compose-prod \
   /usr/local/bin/
-sudo install -m 440 deploy/autodeploy/sudoers-rummihub-deploy-test /etc/sudoers.d/rummihub-deploy-test
-sudo visudo -cf /etc/sudoers.d/rummihub-deploy-test
+echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test.service' \
+  | sudo tee /etc/sudoers.d/rummihub-deploy-test && sudo chmod 440 /etc/sudoers.d/rummihub-deploy-test
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/rummihub.conf
 sudo systemctl daemon-reload
 ```
@@ -185,7 +183,7 @@ openssl rand -hex 32
 
 Coller la valeur dans `SOLVER_API_KEY` de `.env.test`. Ce n’est pas la clé de la production. `DOMAIN` et `ACME_EMAIL` sont là pour l’interpolation du compose de base ; le Caddy de test ne démarre pas. Ne pas lancer `docker compose up` sans `-f docker-compose.test.yml` dans ce clone : le fichier de base publierait 80 et 443.
 
-Le clone de test est jetable (`git checkout --force` et `git clean -ffd` à chaque déploiement). `.env` et `.env.test` sont gitignorés et exclus du `clean` ; le reste des fichiers non suivis est supprimé.
+Le clone de test est jetable (`git checkout --force` et `git clean -ffd` à chaque déploiement). `.env` et `.env.test` sont gitignorés, donc gardés par le `clean` ; le reste des fichiers non suivis est supprimé.
 
 Enfin, une fois le réseau créé et les enregistrements DNS en place, le redéploiement prod unique :
 
@@ -197,15 +195,17 @@ rummihub-deploy
 
 ### Lancer un déploiement
 
-*Actions → Déploiement du site de test → Run workflow*. Le champ `branch` (par défaut `master`) est la branche construite. Choisir *Use workflow from* `master` : c’est le fichier de workflow de cette branche-là qui s’exécute. Les tests (`dotnet test`) tournent d’abord ; le SSH n’a lieu qu’ensuite. Un déploiement à la fois, jamais annulé au milieu.
+Le site de test affiche toujours la branche **`test`**. Pour y mettre une branche, la pousser dessus :
 
 ```bash
-gh workflow run deploy-test.yml -R AntoineRevel/RummiHub -f branch=ma-branche
+git push --force origin ma-branche:test
 ```
 
-À la main, sur le VPS : `rummihub-deploy-test ma-branche`. Le nom doit matcher `^[A-Za-z0-9._/-]{1,100}$`, sans `..` et sans `-` initial, et exister sur `origin`. Sinon le script s’arrête avant `systemctl`. Il transmet la branche au service comme nom d’instance hexadécimal (`rummihub-deploy-test@<hex>.service`) : un `/` n’est pas perdu, et deux lancements ne s’écrasent pas la branche. Le verrou Docker les fait ensuite s’enchaîner.
+Chaque push sur `test` lance *Actions → Déploiement du site de test* : `dotnet test`, puis le SSH `deploy-test`. Pour relancer : *Re-run jobs*. La branche poussée doit contenir `.github/workflows/deploy-test.yml` (toute branche créée depuis `master` après ce changement). Un déploiement à la fois, jamais annulé au milieu. Le VPS déploie la pointe de `origin/test` au moment du SSH.
 
-Le service fait `git fetch origin <branche>`, `git checkout --force --detach FETCH_HEAD`, puis `docker compose -p rummihub-test … up -d --build --wait --remove-orphans`. Journal : l’onglet *Actions*, ou `journalctl -u 'rummihub-deploy-test@*'`.
+À la main, sur le VPS : `rummihub-deploy-test`. Il démarre `rummihub-deploy-test.service`, qui fait `git fetch origin test master`, `git checkout --force --detach origin/test`, puis `docker compose -p rummihub-test … up -d --build --wait --remove-orphans`. Journal : l’onglet *Actions*, ou `journalctl -u rummihub-deploy-test`.
+
+**`deploy/` doit être celui de `master`.** Si `test` modifie `deploy/` depuis son point de départ sur `master` (`git diff origin/master...origin/test -- deploy`), le déploiement est refusé avant le checkout. La pile de test tourne avec les fichiers Compose de la branche : un Compose modifié (volume `/`, `docker.sock`, `privileged`…) donnerait root sur le VPS de production. Le code applicatif et le `Dockerfile` peuvent changer librement. Pour essayer une modification de `deploy/`, la merger d’abord.
 
 Arrêter le site de test sans toucher à la production :
 

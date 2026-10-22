@@ -1,0 +1,21 @@
+# Met le site de test sur origin/test (clone séparé, projet rummihub-test). Démarré
+# par rummihub-deploy-test (SSH depuis GitHub Actions, ou à la main). Un « start »
+# pendant un déploiement attend la fin de celui en cours.
+# Installation : deploy/README.md, « Site de test ».
+
+[Unit]
+Description=RummiHub : déploiement du site de test (origin/test)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/apps/RummiHub-test
+Environment="GIT_SSH_COMMAND=ssh -o ConnectTimeout=20 -o BatchMode=yes"
+Environment=GIT_TERMINAL_PROMPT=0
+ExecStart=/usr/local/bin/rummihub-deploy-test-run
+# Laisse le temps d'attendre le verrou partagé avec la prod, puis de builder.
+TimeoutStartSec=70min
+SyslogIdentifier=rummihub-deploy-test

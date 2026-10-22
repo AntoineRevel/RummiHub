@@ -1,40 +1,21 @@
 #!/bin/sh
-# Corps de rummihub-deploy-test@.service. L'argument est la branche en
-# hexadécimal (%i, non déséchappé). On la redécode et on la revalide avant
-# tout appel à git. Puis on détache le clone de test sur ce commit et on
-# reconstruit la pile rummihub-test.
+# Corps de rummihub-deploy-test.service : détache le clone de test sur origin/test,
+# puis reconstruit la pile rummihub-test.
 #
-# Le clone est jetable, sauf deploy/.env et deploy/.env.test (gitignorés, et
-# exclus de git clean). Pas de Caddy ici : le routage est dans le Caddy de prod.
+# Une branche test qui modifie deploy/ est refusée. La pile est lancée avec les
+# fichiers Compose de la branche : un Compose modifié (volume /, docker.sock,
+# privileged…) donnerait root sur le VPS de production. Le code applicatif et le
+# Dockerfile, eux, restent dans les conteneurs.
+#
+# Le clone est jetable, sauf deploy/.env et deploy/.env.test (gitignorés, donc
+# gardés par git clean sans -x). Pas de Caddy ici : le routage est dans le Caddy de prod.
 
 set -eu
 
 root=/home/ubuntu/apps/RummiHub-test
-enc=${1-}
-
-case "$enc" in
-  *[!0-9a-f]*|"")
-    echo "Instance refusée." >&2
-    exit 1
-    ;;
-esac
-
-if [ "$(( ${#enc} % 2 ))" -ne 0 ] || [ "${#enc}" -gt 200 ]; then
-  echo "Instance refusée." >&2
-  exit 1
-fi
-
-# printf %b de bash interprète \xHH. dash ne le fait pas.
-branch=$(bash -c 'printf "%b" "$(printf "%s" "$1" | sed "s/../\\\\x&/g")"' _ "$enc")
-/usr/local/bin/rummihub-branch-ok "$branch"
-
-if [ ! -d "$root/.git" ]; then
-  echo "Clone absent : $root (deploy/README.md, « Site de test »)." >&2
-  exit 1
-fi
 
 if [ ! -f "$root/deploy/.env.test" ]; then
-  echo "Fichier $root/deploy/.env.test manquant. Voir deploy/.env.test.example." >&2
+  echo "Fichier $root/deploy/.env.test manquant (deploy/README.md, « Site de test »)." >&2
   exit 1
 fi
 
@@ -52,13 +33,19 @@ if ! flock -w 1500 9; then
 fi
 
 cd "$root"
-echo "rummihub-deploy-test: branche=$branch"
+git fetch origin test master
 
-# Échoue si la branche n'existe pas sur origin. FETCH_HEAD pointe ensuite dessus.
-git fetch origin "$branch"
-git checkout --force --detach FETCH_HEAD
-# -x n'est pas passé : les fichiers ignorés (.env, .env.test) restent.
-git clean -ffd -e deploy/.env.test -e deploy/.env
+# Trois points : seulement ce que test a changé depuis qu'elle a quitté master. Une
+# branche partie d'un master plus ancien garde le deploy/ de ce master-là.
+if ! git diff --quiet origin/master...origin/test -- deploy; then
+  echo "Refus : la branche test modifie deploy/ par rapport à master." >&2
+  git diff --stat origin/master...origin/test -- deploy >&2 || true
+  exit 1
+fi
+
+git checkout --force --detach origin/test
+git clean -ffd
+echo "rummihub-deploy-test: $(git log -1 --format='%h %s')"
 
 docker compose \
   --project-directory "$root/deploy" \
@@ -69,4 +56,3 @@ docker compose \
   up -d --build --remove-orphans --wait --wait-timeout 300
 
 docker image prune -f
-echo "rummihub-deploy-test: termine branche=$branch"
