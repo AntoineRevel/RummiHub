@@ -1,11 +1,41 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using RummiHub.Core.Contracts;
 using RummiHub.Web.Components;
 using RummiHub.Web.Services;
 using RummiHub.Web.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Set by deploy/docker-compose.yml. Caddy is the only public listener and terminates TLS.
+var trustForwardedHeaders = string.Equals(
+    builder.Configuration["ASPNETCORE_FORWARDEDHEADERS_ENABLED"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+
+if (trustForwardedHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders =
+            ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+        options.ForwardLimit = 1;
+        // The process is not published. Every peer is the reverse proxy on the docker network.
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
+var keysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrWhiteSpace(keysPath))
+{
+    Directory.CreateDirectory(keysPath);
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
+        .SetApplicationName("RummiHub");
+}
 
 var solverKey = builder.Configuration["SolverApi:Key"]?.Trim();
 if (string.IsNullOrEmpty(solverKey) && !builder.Environment.IsDevelopment())
@@ -34,8 +64,14 @@ builder.Services.AddSingleton<ISeedStore, AppSettingsSeedStore>();
 builder.Services.AddSingleton<IGameManager, GameManager>();
 
 builder.Services.AddTransient<SolverApiKeyHandler>();
+// Aspire injects service discovery for https+http://apiservice. Compose sets a plain
+// ApiService:BaseAddress (http://apiservice:8080) and the matching services__ endpoint.
+var apiBaseAddress = builder.Configuration["ApiService:BaseAddress"];
+if (string.IsNullOrWhiteSpace(apiBaseAddress))
+    apiBaseAddress = "https+http://apiservice";
+
 builder.Services.AddHttpClient("apiservice",
-        client => client.BaseAddress = new Uri("https+http://apiservice"))
+        client => client.BaseAddress = new Uri(apiBaseAddress))
     .AddHttpMessageHandler<SolverApiKeyHandler>();
 
 // Singleton service that manages Redis Pub/Sub subscriptions and dispatches results to Blazor components
@@ -43,13 +79,19 @@ builder.Services.AddSingleton<SolveResultSubscriber>();
 
 var app = builder.Build();
 
+if (trustForwardedHeaders)
+    app.UseForwardedHeaders();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// Behind Caddy, HTTP→HTTPS happens at the proxy. Redirecting here would also send the
+// in-process SignalR client (plain HTTP to loopback) at a TLS port nothing listens on.
+if (!trustForwardedHeaders)
+    app.UseHttpsRedirection();
 
 app.UseAntiforgery();
 

@@ -1,0 +1,22 @@
+# Essai sur la machine, sans DNS public ni Let's Encrypt.
+# rummisolve.localhost et www.rummisolve.localhost pointent vers 127.0.0.1.
+#
+#   cd deploy
+#   cp .env.example .env   # remplir SOLVER_API_KEY ; DOMAIN et ACME_EMAIL peuvent rester
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Le certificat est interne à Caddy. Un navigateur affiche un avertissement ;
+# curl -k ou un client qui ignore l'erreur TLS passent.
+
+services:
+  caddy:
+    environment:
+      DOMAIN: rummisolve.localhost
+    volumes: !override
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_local_data:/data
+      - caddy_local_config:/config
+
+volumes:
+  caddy_local_data:
+  caddy_local_config:

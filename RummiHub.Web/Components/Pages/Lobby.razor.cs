@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.JSInterop;
 using RummiHub.Web.Hubs;
+using RummiHub.Web.Services;
 
 namespace RummiHub.Web.Components.Pages;
 
@@ -57,9 +58,8 @@ public partial class Lobby
     {
         _playerName = DefaultNames[Random.Shared.Next(DefaultNames.Length)];
 
-        var addresses = Server.Features.Get<IServerAddressesFeature>()?.Addresses;
-        var baseAddress = addresses?.FirstOrDefault(a => a.StartsWith("http://"))
-                          ?? addresses?.FirstOrDefault();
+        var baseAddress = InProcessHubAddress.TryGetBaseAddress(
+            Server.Features.Get<IServerAddressesFeature>()?.Addresses);
 
         if (baseAddress is null)
         {

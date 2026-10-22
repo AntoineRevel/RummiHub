@@ -32,8 +32,9 @@ logs/
 secrets.json
 appsettings.Development.json
 
-# Docker
-.dockerignore
+# Docker — never commit a filled-in environment file
+.env
+deploy/.env
 
 # OS
 .DS_Store

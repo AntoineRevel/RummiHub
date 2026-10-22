@@ -18,6 +18,14 @@
         <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="*" />
     </ItemGroup>
 
-
+    <!-- SolverBench references the worker, whose appsettings.json would otherwise collide
+         with this project's file at publish time (NETSDK1152). Aspire runs the projects
+         separately, so the clash only shows up in the container publish. -->
+    <Target Name="DropReferencedWorkerAppSettings" BeforeTargets="_HandleFileConflictsForPublish">
+        <ItemGroup>
+            <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                Condition="'%(RelativePath)' == 'appsettings.json' and $([System.String]::Copy('%(FullPath)').Contains('RummiHub.Solver.Worker'))" />
+        </ItemGroup>
+    </Target>
 
 </Project>
