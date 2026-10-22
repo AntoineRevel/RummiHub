@@ -12,8 +12,9 @@
 **/*.md
 **/Dockerfile*
 **/.dockerignore
-deploy/.env
 **/.env
+.github
+deploy
 RummiHub.Tests
 RummiHub.AppHost
 RummiHub.SolverBench.Runner

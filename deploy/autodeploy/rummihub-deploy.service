@@ -1,0 +1,23 @@
+# Met le VPS à jour sur origin/master : avance rapide du dépôt, build, puis Compose
+# attend les healthchecks. Démarré par rummihub-deploy (SSH depuis GitHub Actions, ou à
+# la main). Un « start » pendant un déploiement attend la fin de celui en cours.
+# Installation : deploy/README.md, « Déploiement automatique ».
+
+[Unit]
+Description=RummiHub : déploiement de origin/master
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/apps/RummiHub/deploy
+Environment="GIT_SSH_COMMAND=ssh -o ConnectTimeout=20 -o BatchMode=yes"
+ExecStart=/usr/bin/git fetch origin master
+ExecStart=/usr/bin/git merge --ff-only origin/master
+# Le build tourne pendant que l'ancienne version reste en ligne ; seuls les services
+# modifiés sont recréés. Un échec laisse l'ancienne version en place.
+ExecStart=/usr/bin/docker compose up -d --build --remove-orphans --wait --wait-timeout 300
+ExecStart=/usr/bin/docker image prune -f
+TimeoutStartSec=30min
