@@ -86,8 +86,36 @@ public class SetTests
         var set = new Set();
         set.AddTile(tile);
 
-        set.Remove(tile);
+        var removed = set.Remove(tile);
 
+        removed.Should().BeTrue();
+        set.Tiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Remove_MissingTile_ReturnsFalseAndLeavesSetUnchanged()
+    {
+        var kept = new Tile(4, TileColor.Mango);
+        var set = new Set([kept]);
+
+        var removed = set.Remove(new Tile(4, TileColor.Blue));
+
+        removed.Should().BeFalse();
+        set.Tiles.Should().ContainSingle().Which.Should().Be(kept);
+        set.Jokers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Remove_Duplicate_RemovesOneCopyAtATime()
+    {
+        var tile = new Tile(8, TileColor.Red);
+        var set = new Set([tile, tile]);
+
+        set.Remove(tile).Should().BeTrue();
+        set.Tiles.Should().ContainSingle().Which.Should().Be(tile);
+
+        set.Remove(tile).Should().BeTrue();
+        set.Remove(tile).Should().BeFalse();
         set.Tiles.Should().BeEmpty();
     }
 
@@ -97,8 +125,9 @@ public class SetTests
         var set = new Set();
         set.AddTile(new Tile(isJoker: true));
 
-        set.Remove(new Tile(isJoker: true));
+        var removed = set.Remove(new Tile(isJoker: true));
 
+        removed.Should().BeTrue();
         set.Jokers.Should().Be(0);
     }
 
@@ -107,9 +136,30 @@ public class SetTests
     {
         var set = new Set();
 
-        set.Remove(new Tile(isJoker: true));
+        var removed = set.Remove(new Tile(isJoker: true));
 
+        removed.Should().BeFalse();
         set.Jokers.Should().Be(0);
+    }
+
+    [Fact]
+    public void ContainsAll_CountsDuplicatesAndJokers()
+    {
+        var blue = new Tile(1, TileColor.Blue);
+        var red = new Tile(1, TileColor.Red);
+        var set = new Set([blue, blue, red, new Tile(isJoker: true)]);
+
+        set.ContainsAll([]).Should().BeTrue();
+        set.ContainsAll([blue, red]).Should().BeTrue();
+        set.ContainsAll([blue, blue]).Should().BeTrue();
+        set.ContainsAll([blue, blue, blue]).Should().BeFalse();
+        set.ContainsAll([new Tile(isJoker: true)]).Should().BeTrue();
+        set.ContainsAll([new Tile(13, TileColor.Black, isJoker: true)]).Should().BeTrue();
+        set.ContainsAll([new Tile(isJoker: true), new Tile(isJoker: true)]).Should().BeFalse();
+        set.ContainsAll([new Tile(1, TileColor.Black)]).Should().BeFalse();
+
+        set.Tiles.Should().HaveCount(3);
+        set.Jokers.Should().Be(1);
     }
 
     [Fact]

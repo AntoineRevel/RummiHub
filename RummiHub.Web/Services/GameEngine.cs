@@ -74,8 +74,29 @@ public sealed class GameEngine
     }
 
     /// <summary>
+    /// Told to the caller when a play names a tile, an extra copy, or a joker
+    /// the current player does not hold.
+    /// </summary>
+    public const string UnownedSelectionMessage = "You can only play tiles from your rack.";
+
+    /// <summary>
+    /// A human selection may be sent to the solver only when it is a sub-multiset of
+    /// the current player's rack. Returns <see cref="UnownedSelectionMessage"/> otherwise.
+    /// Does not mutate game state and does not call the solver.
+    /// </summary>
+    public string? SelectionOwnershipError(IReadOnlyList<Tile>? selectedTiles)
+    {
+        if (selectedTiles is not null && CurrentPlayer.Rack.ContainsAll(selectedTiles))
+            return null;
+
+        return UnownedSelectionMessage;
+    }
+
+    /// <summary>
     /// Validates a human player's tile selection by sending it through the solver.
     /// Returns the SolveResponse. Caller checks that all selected tiles were used.
+    /// A selection that is not a sub-multiset of the current rack is rejected here,
+    /// before any solve request is sent.
     /// </summary>
     public async Task<SolveResponse> ValidateHumanPlay(
         List<Tile> selectedTiles,
@@ -83,6 +104,17 @@ public sealed class GameEngine
         SolveResultSubscriber resultSubscriber,
         CancellationToken ct)
     {
+        var ownershipError = SelectionOwnershipError(selectedTiles);
+        if (ownershipError is not null)
+        {
+            return new SolveResponse
+            {
+                RequestId = "unowned-selection",
+                Found = false,
+                Error = ownershipError
+            };
+        }
+
         return await SubmitAndWaitForResult(
             httpClient, resultSubscriber, BuildValidateRequest(selectedTiles), ct);
     }
@@ -106,19 +138,31 @@ public sealed class GameEngine
 
     /// <summary>
     /// Applies a successful solve result: updates board, removes played tiles from rack, checks win.
+    /// A result that plays tiles the current player does not hold is refused and leaves
+    /// the rack, the board, and <see cref="GamePlayer.HasPlayed"/> unchanged.
     /// </summary>
     public void ApplySolveResult(SolveResponse result)
     {
         if (!result.Found || result.NewBoard == null) return;
 
         var player = CurrentPlayer;
+        var played = TilesPlayed(result);
 
-        // Remove played tiles from rack
-        foreach (var tile in result.TilesToPlay)
-            player.Rack.Remove(tile);
+        // Prove the rack can lose every played tile before publishing any change.
+        // Removal runs on a copy so a failure cannot leave a half-updated rack.
+        if (!player.Rack.ContainsAll(played))
+            throw new InvalidOperationException(
+                "Cannot apply a move that plays tiles absent from the current player's rack.");
 
-        for (var i = 0; i < result.JokersToPlay; i++)
-            player.Rack.Remove(new Tile(isJoker: true));
+        var updatedRack = new Set(player.Rack);
+        foreach (var tile in played)
+        {
+            if (!updatedRack.Remove(tile))
+                throw new InvalidOperationException(
+                    "Tile vanished while applying a move the rack was checked to contain.");
+        }
+
+        player.Rack = updatedRack;
 
         // Track tiles to play for UI highlighting
         player.TilesToPlay = [..result.TilesToPlay];
@@ -159,6 +203,20 @@ public sealed class GameEngine
     {
         PlayerIndex = (PlayerIndex + 1) % Players.Count;
         if (PlayerIndex == 0) Turn++;
+    }
+
+    /// <summary>
+    /// Tiles <see cref="ApplySolveResult"/> must take off the rack: the reported hand
+    /// tiles, plus one joker per <see cref="SolveResponse.JokersToPlay"/>.
+    /// </summary>
+    private static List<Tile> TilesPlayed(SolveResponse result)
+    {
+        var jokersToPlay = Math.Max(result.JokersToPlay, 0);
+        var played = new List<Tile>(result.TilesToPlay.Count + jokersToPlay);
+        played.AddRange(result.TilesToPlay);
+        for (var i = 0; i < jokersToPlay; i++)
+            played.Add(new Tile(isJoker: true));
+        return played;
     }
 
     private static async Task<SolveResponse> SubmitAndWaitForResult(

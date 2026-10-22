@@ -59,17 +59,55 @@ public class Set
                 Tiles.Add(tile);
     }
 
-    public void Remove(Tile tile)
+    /// <summary>
+    /// Removes one occurrence of <paramref name="tile"/>.
+    /// Returns <c>false</c> and leaves the set unchanged when that tile is absent
+    /// (a joker is absent when <see cref="Jokers"/> is already zero).
+    /// </summary>
+    public bool Remove(Tile tile)
     {
         if (tile.IsJoker)
         {
-            if (Jokers > 0)
-                Jokers--;
+            if (Jokers <= 0)
+                return false;
+
+            Jokers--;
+            return true;
         }
-        else
+
+        return Tiles.Remove(tile);
+    }
+
+    /// <summary>
+    /// True when <paramref name="tiles"/> is a sub-multiset of this set.
+    /// Duplicate copies are counted. Every joker — whatever value or colour it
+    /// still carries — consumes one entry of <see cref="Jokers"/>, never a numbered tile.
+    /// </summary>
+    public bool ContainsAll(IEnumerable<Tile> tiles)
+    {
+        ArgumentNullException.ThrowIfNull(tiles);
+
+        var neededJokers = 0;
+        var needed = new List<Tile>();
+        foreach (var tile in tiles)
         {
-            Tiles.Remove(tile);
+            if (tile.IsJoker)
+                neededJokers++;
+            else
+                needed.Add(tile);
         }
+
+        if (neededJokers > Jokers)
+            return false;
+
+        var available = new List<Tile>(Tiles);
+        foreach (var tile in needed)
+        {
+            if (!available.Remove(tile))
+                return false;
+        }
+
+        return true;
     }
 
     private void NormalizeAfterMutation()
