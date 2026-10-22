@@ -1,3 +1,3 @@
-# Répertoire d'exécution des déploiements (verrous, branche de test).
+# Répertoire d'exécution des déploiements (verrou Docker partagé prod/test).
 # Recréé au boot, propriétaire ubuntu : les scripts n'ont pas besoin de sudo pour y écrire.
 d /run/rummihub 0755 ubuntu ubuntu -
