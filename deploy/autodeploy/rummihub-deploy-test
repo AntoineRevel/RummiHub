@@ -1,14 +1,26 @@
 #!/bin/sh
-# Déploie origin/test sur le site de test et affiche le journal jusqu'à la fin ; sort en
-# erreur si le déploiement échoue. Appelé par la commande forcée SSH (« deploy-test »),
-# se lance aussi à la main sur le VPS. Le travail tourne dans rummihub-deploy-test.service :
-# une connexion coupée ne l'interrompt pas.
+# Déploie un commit sur le site de test et affiche le journal jusqu'à la fin ; sort en
+# erreur si le déploiement échoue. Appelé par la commande forcée SSH (« deploy-test <SHA> »),
+# se lance aussi à la main sur le VPS : rummihub-deploy-test <SHA complet>.
+# Le commit est le nom d'instance de rummihub-deploy-test@.service : 40 caractères
+# hexadécimaux, rien à échapper. Le service tourne encore si la connexion SSH tombe.
 
-journalctl -u rummihub-deploy-test.service -f -n 0 -o cat &
+sha=${1-}
+case "$sha" in
+  *[!0-9a-f]*) sha= ;;
+esac
+if [ "${#sha}" -ne 40 ]; then
+  echo "Commit refusé : SHA complet attendu (40 caractères hexadécimaux)." >&2
+  exit 1
+fi
+
+unit="rummihub-deploy-test@${sha}.service"
+
+journalctl -u "$unit" -f -n 0 -o cat &
 follow=$!
 sleep 1
 
-sudo -n systemctl start rummihub-deploy-test.service
+sudo -n systemctl start "$unit"
 status=$?
 
 sleep 1

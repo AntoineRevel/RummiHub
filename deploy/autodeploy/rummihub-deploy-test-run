@@ -1,8 +1,9 @@
 #!/bin/sh
-# Corps de rummihub-deploy-test.service : détache le clone de test sur origin/test,
-# puis reconstruit la pile rummihub-test.
+# Corps de rummihub-deploy-test@.service. L'argument est le SHA complet du commit
+# (%i), revalidé ici. Détache le clone de test sur ce commit, puis reconstruit la
+# pile rummihub-test.
 #
-# Une branche test qui modifie deploy/ est refusée. La pile est lancée avec les
+# Un commit qui modifie deploy/ est refusé. La pile est lancée avec les
 # fichiers Compose de la branche : un Compose modifié (volume /, docker.sock,
 # privileged…) donnerait root sur le VPS de production. Le code applicatif et le
 # Dockerfile, eux, restent dans les conteneurs.
@@ -13,6 +14,15 @@
 set -eu
 
 root=/home/ubuntu/apps/RummiHub-test
+sha=${1-}
+
+case "$sha" in
+  *[!0-9a-f]*) sha= ;;
+esac
+if [ "${#sha}" -ne 40 ]; then
+  echo "Instance refusée : SHA complet attendu." >&2
+  exit 1
+fi
 
 if [ ! -f "$root/deploy/.env.test" ]; then
   echo "Fichier $root/deploy/.env.test manquant (deploy/README.md, « Site de test »)." >&2
@@ -33,17 +43,18 @@ if ! flock -w 1500 9; then
 fi
 
 cd "$root"
-git fetch origin test master
+# GitHub sert un commit par son SHA. Échoue s'il n'existe pas.
+git fetch origin master "$sha"
 
-# Trois points : seulement ce que test a changé depuis qu'elle a quitté master. Une
+# Trois points : seulement ce que le commit a changé depuis qu'il a quitté master. Une
 # branche partie d'un master plus ancien garde le deploy/ de ce master-là.
-if ! git diff --quiet origin/master...origin/test -- deploy; then
-  echo "Refus : la branche test modifie deploy/ par rapport à master." >&2
-  git diff --stat origin/master...origin/test -- deploy >&2 || true
+if ! git diff --quiet "origin/master...$sha" -- deploy; then
+  echo "Refus : ce commit modifie deploy/ par rapport à master." >&2
+  git diff --stat "origin/master...$sha" -- deploy >&2 || true
   exit 1
 fi
 
-git checkout --force --detach origin/test
+git checkout --force --detach "$sha"
 git clean -ffd
 echo "rummihub-deploy-test: $(git log -1 --format='%h %s')"
 

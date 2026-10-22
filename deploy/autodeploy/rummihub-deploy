@@ -5,7 +5,7 @@
 # SSH place la commande demandée par le client dans SSH_ORIGINAL_COMMAND et exécute
 # ce fichier à la place. Contrat, à ne pas élargir :
 #   - commande vide (ou lancement à la main) : déploiement de origin/master ;
-#   - « deploy-test » : site de test (origin/test), via rummihub-deploy-test ;
+#   - « deploy-test <SHA> » : site de test, via rummihub-deploy-test (qui valide le SHA) ;
 #   - tout le reste est refusé. La clé ne donne pas de shell.
 #
 # Le travail tourne dans systemd : une connexion coupée ne l'interrompt pas.
@@ -17,8 +17,8 @@ cmd=${SSH_ORIGINAL_COMMAND-}
 case "$cmd" in
   "")
     ;;
-  deploy-test)
-    exec /usr/local/bin/rummihub-deploy-test
+  "deploy-test "*)
+    exec /usr/local/bin/rummihub-deploy-test "${cmd#"deploy-test "}"
     ;;
   *)
     echo "Commande refusée." >&2
