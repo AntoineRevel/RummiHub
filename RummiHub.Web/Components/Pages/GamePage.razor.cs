@@ -43,6 +43,23 @@ public partial class GamePage : IAsyncDisposable
     private List<int>? _lastModifiedSetIndices;
     private int _lastHighlightMs;
 
+    // The JS module kept the last board story (my review, an AI move, the winning move).
+    // Flipped after animate(); the button is in the layout either way, so enabling it
+    // does not shift the board under a running animation.
+    private bool _canReplay;
+
+    // While a replay is on screen the DOM must stay on that board: the next move (an AI's,
+    // usually) is queued and applied once the replay has landed, then one at a time so each
+    // still plays out. A win has no next move — the queue stays empty.
+    private readonly List<HeldMove> _heldMoves = [];
+    private Timer? _replayHoldTimer;
+    private Timer? _heldDrainTimer;
+    private bool _drainingHeld;
+    private bool _releaseHeldAfterRender;
+    private int _replayHoldGeneration;
+
+    private bool HoldingMoves => _replayHoldTimer is not null || _drainingHeld;
+
     // My play's new rack, which the server sends BEFORE the board: held back until the board
     // arrives so the whole move renders as ONE transition — the played tiles leave the play
     // zone as they land on the board, and the copies left in the rack never blink out.
@@ -224,7 +241,15 @@ public partial class GamePage : IAsyncDisposable
             // after every render. It animates only tiles that actually moved, and says how
             // long the board keeps moving.
             if (_tileAnimations is not null)
+            {
                 boardBusyMs = await _tileAnimations.InvokeAsync<int?>("animate") ?? 0;
+                var canReplay = await _tileAnimations.InvokeAsync<bool>("canReplay");
+                if (canReplay != _canReplay)
+                {
+                    _canReplay = canReplay;
+                    StateHasChanged();
+                }
+            }
         }
         catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
         {
@@ -233,6 +258,14 @@ public partial class GamePage : IAsyncDisposable
 
         if (turnAwaitingBoard is not null && ReferenceEquals(turnAwaitingBoard, _turnAwaitingBoard))
             ScheduleTurnReveal(boardBusyMs);
+
+        // The move just released from the replay queue is on screen. The next one waits
+        // until this board stops moving, so neither animation is skipped.
+        if (_releaseHeldAfterRender && _replayHoldTimer is null)
+        {
+            _releaseHeldAfterRender = false;
+            ScheduleHeldDrain(boardBusyMs);
+        }
     }
 
     private void RegisterHubEvents()
@@ -250,65 +283,41 @@ public partial class GamePage : IAsyncDisposable
 
         Handle<GameStateDto>(HubEvents.GameStateUpdated, state =>
         {
-            _errorPlay = null;
-            _isLoading = false;
-            // Cleared here rather than on RackUpdated so the selected tiles are still
-            // on-screen one render earlier — their positions are what the played tiles
-            // fly from when the new board arrives in this same update.
-            ClearSelection();
-            ApplyRackAwaitingBoard();
-
-            // The highlight always arrives AFTER its own state update, so a state that changes
-            // the board while one is showing means the next move landed: clear it. A state
-            // that leaves the board as is (a draw, a turn confirmation) keeps the last move
-            // lit until its timer runs out, so it can still be read. The suggestion is
-            // per-turn; a new one arrives with the next OptimalReady.
-            if (_gameState is null || !BoardPacing.SameBoard(_gameState.Board, state.Board))
+            // A replay is showing this board. Keep it there; the move applies when it lands.
+            if (HoldingMoves)
             {
-                _highlightIndices = null;
-                _modifiedSetIndices = null;
-                _lastHighlightIndices = null;
-                _lastModifiedSetIndices = null;
-                StopHighlightTimer();
+                _heldMoves.Add(new HeldMove { State = state });
+                return;
             }
-            _optimalSuggestion = null;
 
-            // A newer state supersedes a turn still waiting for the board.
-            RevealTurn();
-
-            if (_gameState is not null && !IsMyTurn)
-            {
-                // Someone else's move: the board plays it out first (tile counts and the pool
-                // follow it), and the turn passes on screen once it has landed — see
-                // OnAfterRenderAsync. My own moves apply at once: the turn must leave me.
-                _gameState = _gameState with
-                {
-                    Board = state.Board,
-                    Players = state.Players,
-                    TilePoolCount = state.TilePoolCount
-                };
-                _turnAwaitingBoard = state;
-            }
-            else
-            {
-                ApplyTurn(state);
-            }
+            ApplyIncomingState(state);
         });
 
         Handle3<List<int>, int, List<int>>(HubEvents.HighlightTilesUpdated, (indices, displayMs, modifiedSets) =>
         {
-            // Reading-order indices of the tiles that entered the board (server-computed),
-            // so the freshly-played copy lights up — never an identical twin already there.
-            // Modified-set indices outline every combination the move touched. The server
-            // sizes displayMs to the board animation plus a reading window; the highlight
-            // then fades on its own instead of lingering until the next move.
-            _highlightIndices = indices is { Count: > 0 } ? [..indices] : null;
-            _modifiedSetIndices = modifiedSets is { Count: > 0 } ? [..modifiedSets] : null;
-            // Remembered so a "replay animation" can bring the highlight back too.
-            _lastHighlightIndices = _highlightIndices?.ToList();
-            _lastModifiedSetIndices = _modifiedSetIndices?.ToList();
-            _lastHighlightMs = displayMs;
-            SetupHighlightTimer(displayMs);
+            if (HoldingMoves)
+            {
+                // The highlight follows its state. With nothing queued it belongs to the
+                // move on screen (it arrived while we were already replaying it).
+                if (_heldMoves.Count == 0)
+                {
+                    ApplyIncomingHighlight(indices, displayMs, modifiedSets);
+                    return;
+                }
+
+                if (!_heldMoves[^1].Highlighted)
+                {
+                    var move = _heldMoves[^1];
+                    move.Highlighted = true;
+                    move.Indices = indices is { Count: > 0 } ? [..indices] : null;
+                    move.DisplayMs = displayMs;
+                    move.ModifiedSets = modifiedSets is { Count: > 0 } ? [..modifiedSets] : null;
+                }
+
+                return;
+            }
+
+            ApplyIncomingHighlight(indices, displayMs, modifiedSets);
         });
 
         Handle<List<Tile>>(HubEvents.OptimalPlay, tiles =>
@@ -359,6 +368,69 @@ public partial class GamePage : IAsyncDisposable
             _isLoading = false;
             ApplyRackAwaitingBoard();
         });
+    }
+
+    private void ApplyIncomingState(GameStateDto state)
+    {
+        _errorPlay = null;
+        _isLoading = false;
+        // Cleared here rather than on RackUpdated so the selected tiles are still
+        // on-screen one render earlier — their positions are what the played tiles
+        // fly from when the new board arrives in this same update.
+        ClearSelection();
+        ApplyRackAwaitingBoard();
+
+        // The highlight always arrives AFTER its own state update, so a state that changes
+        // the board while one is showing means the next move landed: clear it. A state
+        // that leaves the board as is (a draw, a turn confirmation) keeps the last move
+        // lit until its timer runs out, so it can still be read. The suggestion is
+        // per-turn; a new one arrives with the next OptimalReady.
+        if (_gameState is null || !BoardPacing.SameBoard(_gameState.Board, state.Board))
+        {
+            _highlightIndices = null;
+            _modifiedSetIndices = null;
+            _lastHighlightIndices = null;
+            _lastModifiedSetIndices = null;
+            StopHighlightTimer();
+        }
+        _optimalSuggestion = null;
+
+        // A newer state supersedes a turn still waiting for the board.
+        RevealTurn();
+
+        if (_gameState is not null && !IsMyTurn)
+        {
+            // Someone else's move: the board plays it out first (tile counts and the pool
+            // follow it), and the turn passes on screen once it has landed — see
+            // OnAfterRenderAsync. My own moves apply at once: the turn must leave me.
+            _gameState = _gameState with
+            {
+                Board = state.Board,
+                Players = state.Players,
+                TilePoolCount = state.TilePoolCount
+            };
+            _turnAwaitingBoard = state;
+        }
+        else
+        {
+            ApplyTurn(state);
+        }
+    }
+
+    private void ApplyIncomingHighlight(List<int>? indices, int displayMs, List<int>? modifiedSets)
+    {
+        // Reading-order indices of the tiles that entered the board (server-computed),
+        // so the freshly-played copy lights up — never an identical twin already there.
+        // Modified-set indices outline every combination the move touched. The server
+        // sizes displayMs to the board animation plus a reading window; the highlight
+        // then fades on its own instead of lingering until the next move.
+        _highlightIndices = indices is { Count: > 0 } ? [..indices] : null;
+        _modifiedSetIndices = modifiedSets is { Count: > 0 } ? [..modifiedSets] : null;
+        // Remembered so a "replay animation" can bring the highlight back too.
+        _lastHighlightIndices = _highlightIndices?.ToList();
+        _lastModifiedSetIndices = _modifiedSetIndices?.ToList();
+        _lastHighlightMs = displayMs;
+        SetupHighlightTimer(displayMs);
     }
 
     private void ApplyRackAwaitingBoard()
@@ -483,8 +555,21 @@ public partial class GamePage : IAsyncDisposable
 
         try
         {
-            var replayed = await _tileAnimations.InvokeAsync<bool>("replayLast");
-            if (replayed && (_lastHighlightIndices is { Count: > 0 } || _lastModifiedSetIndices is { Count: > 0 }))
+            var replayMs = await _tileAnimations.InvokeAsync<int>("replayLast");
+            if (replayMs <= 0)
+            {
+                if (_canReplay)
+                {
+                    _canReplay = false;
+                    StateHasChanged();
+                }
+                return;
+            }
+
+            // Keep the next move off this board until the story has landed again.
+            ArmReplayHold(replayMs);
+
+            if (_lastHighlightIndices is { Count: > 0 } || _lastModifiedSetIndices is { Count: > 0 })
             {
                 _highlightIndices = _lastHighlightIndices is { Count: > 0 } ? [.._lastHighlightIndices] : null;
                 _modifiedSetIndices = _lastModifiedSetIndices is { Count: > 0 } ? [.._lastModifiedSetIndices] : null;
@@ -496,6 +581,91 @@ public partial class GamePage : IAsyncDisposable
         {
             // Best-effort, like the rest of the animation layer.
         }
+    }
+
+    /// <summary>
+    /// Freezes the board for <paramref name="replayMs"/> so an incoming move — the next AI
+    /// turn, usually — cannot replace the story being replayed. Queued moves play afterwards.
+    /// </summary>
+    private void ArmReplayHold(int replayMs)
+    {
+        StopHeldDrainTimer();
+        _releaseHeldAfterRender = false;
+        _drainingHeld = false;
+        var generation = ++_replayHoldGeneration;
+
+        _replayHoldTimer?.Stop();
+        _replayHoldTimer?.Dispose();
+        _replayHoldTimer = new Timer(replayMs) { AutoReset = false };
+        _replayHoldTimer.Elapsed += (_, _) => InvokeAsync(() =>
+        {
+            // A second click started a newer replay; this tick belongs to the old one.
+            if (generation != _replayHoldGeneration) return;
+            ReleaseReplayHold();
+        });
+        _replayHoldTimer.Start();
+    }
+
+    private void ReleaseReplayHold()
+    {
+        _replayHoldTimer?.Stop();
+        _replayHoldTimer?.Dispose();
+        _replayHoldTimer = null;
+
+        if (_heldMoves.Count == 0) return;
+
+        _drainingHeld = true;
+        ApplyNextHeld();
+        StateHasChanged();
+    }
+
+    private void ApplyNextHeld()
+    {
+        if (_heldMoves.Count == 0)
+        {
+            _drainingHeld = false;
+            _releaseHeldAfterRender = false;
+            return;
+        }
+
+        var move = _heldMoves[0];
+        _heldMoves.RemoveAt(0);
+        ApplyIncomingState(move.State);
+        if (move.Highlighted)
+            ApplyIncomingHighlight(move.Indices, move.DisplayMs, move.ModifiedSets);
+
+        _drainingHeld = _heldMoves.Count > 0;
+        _releaseHeldAfterRender = _heldMoves.Count > 0;
+    }
+
+    /// <summary>Applies the next move parked during a replay, once the board is idle.</summary>
+    private void ScheduleHeldDrain(int boardBusyMs)
+    {
+        StopHeldDrainTimer();
+        if (_heldMoves.Count == 0 || _replayHoldTimer is not null) return;
+
+        if (boardBusyMs <= 0)
+        {
+            ApplyNextHeld();
+            StateHasChanged();
+            return;
+        }
+
+        _heldDrainTimer = new Timer(boardBusyMs) { AutoReset = false };
+        _heldDrainTimer.Elapsed += (_, _) => InvokeAsync(() =>
+        {
+            if (_replayHoldTimer is not null) return;
+            ApplyNextHeld();
+            StateHasChanged();
+        });
+        _heldDrainTimer.Start();
+    }
+
+    private void StopHeldDrainTimer()
+    {
+        _heldDrainTimer?.Stop();
+        _heldDrainTimer?.Dispose();
+        _heldDrainTimer = null;
     }
 
     private async Task OnDrawTile()
@@ -673,11 +843,23 @@ public partial class GamePage : IAsyncDisposable
         _toastTimer.Start();
     }
 
+    /// <summary>A move that arrived while a replay was on screen, applied once it lands.</summary>
+    private sealed class HeldMove
+    {
+        public required GameStateDto State { get; init; }
+        public bool Highlighted { get; set; }
+        public List<int>? Indices { get; set; }
+        public int DisplayMs { get; set; }
+        public List<int>? ModifiedSets { get; set; }
+    }
+
     public async ValueTask DisposeAsync()
     {
         _toastTimer?.Dispose();
         _highlightTimer?.Dispose();
         _turnRevealTimer?.Dispose();
+        _replayHoldTimer?.Dispose();
+        _heldDrainTimer?.Dispose();
 
         if (_hubConnection is not null)
             await _hubConnection.DisposeAsync();

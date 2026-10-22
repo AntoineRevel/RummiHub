@@ -109,9 +109,20 @@ else
             <div class="game-over">
                 <div class="trophy">🏆</div>
                 <h2>@_gameState.WinnerName won the game!</h2>
-                <button class="btn-back-lobby" @onclick="@(() => Navigation.NavigateTo("/lobby"))">
-                    Back to lobby
-                </button>
+                <div class="game-over-actions">
+                    <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)"
+                            title="Replay the winning move">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2">
+                            <polyline points="1 4 1 10 7 10"/>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                        Replay animation
+                    </button>
+                    <button class="btn-back-lobby" @onclick="@(() => Navigation.NavigateTo("/lobby"))">
+                        Back to lobby
+                    </button>
+                </div>
             </div>
         }
         else
@@ -152,6 +163,21 @@ else
                 {
                     <span class="dot-pulse" aria-hidden="true"></span>
                     <span class="turn-banner-text">Waiting for @CurrentPlayerName…</span>
+                }
+                @* Review mode already offers this next to "Next player". Everywhere else —
+                   while an AI plays, and once that move has landed — the last board story
+                   stays replayable from here. *@
+                @if (!AwaitingMyConfirmation)
+                {
+                    <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)"
+                            title="Replay the last move">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2">
+                            <polyline points="1 4 1 10 7 10"/>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                        Replay animation
+                    </button>
                 }
             </div>
         }
@@ -302,7 +328,7 @@ else
                 <div class="human-actions-buttons">
                     @if (AwaitingMyConfirmation)
                     {
-                        <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@_isLoading">
+                        <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                  stroke-width="2">
                                 <polyline points="1 4 1 10 7 10"/>
@@ -672,6 +698,29 @@ else
         color: #4caf50;
         font-size: 1.6rem;
         margin: 0 0 14px 0;
+    }
+
+    .game-over-actions {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    /* Same control as the review bar, but it must not stretch the banner or shift the board. */
+    .turn-banner .btn-replay,
+    .game-over .btn-replay {
+        flex: none;
+        min-width: 0;
+    }
+
+    .turn-banner .btn-replay {
+        padding: 6px 12px;
+        font-size: 0.85rem;
+        gap: 6px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(126, 87, 194, 0.25);
     }
 
     .btn-back-lobby {
