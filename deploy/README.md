@@ -197,10 +197,10 @@ rummihub-deploy
 
 ### Lancer un déploiement
 
-*Actions → Déploiement du site de test → Run workflow*. Le champ `branch` (par défaut `master`) est la branche construite. Choisir *Use workflow from* `master` : c’est le fichier de workflow de cette branche-là qui s’exécute. Les tests (`dotnet test`) tournent d’abord ; le SSH n’a lieu qu’ensuite. Un déploiement à la fois, jamais annulé au milieu.
+*Actions → Déploiement du site de test → Run workflow*, puis choisir la branche dans *Use workflow from*. Il n’y a pas d’autre champ : cette branche (`github.ref_name`) est celle qui est testée, puis envoyée au VPS. Elle doit contenir `.github/workflows/deploy-test.yml` — c’est le cas de toute branche créée depuis `master` après la PR #39. Une étiquette est refusée. Les tests (`dotnet test`) tournent d’abord ; le SSH n’a lieu qu’ensuite. Un déploiement à la fois, jamais annulé au milieu.
 
 ```bash
-gh workflow run deploy-test.yml -R AntoineRevel/RummiHub -f branch=ma-branche
+gh workflow run deploy-test.yml -R AntoineRevel/RummiHub --ref ma-branche
 ```
 
 À la main, sur le VPS : `rummihub-deploy-test ma-branche`. Le nom doit matcher `^[A-Za-z0-9._/-]{1,100}$`, sans `..` et sans `-` initial, et exister sur `origin`. Sinon le script s’arrête avant `systemctl`. Il transmet la branche au service comme nom d’instance hexadécimal (`rummihub-deploy-test@<hex>.service`) : un `/` n’est pas perdu, et deux lancements ne s’écrasent pas la branche. Le verrou Docker les fait ensuite s’enchaîner.
