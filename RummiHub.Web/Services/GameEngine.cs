@@ -148,21 +148,14 @@ public sealed class GameEngine
         var player = CurrentPlayer;
         var played = TilesPlayed(result);
 
-        // Prove the rack can lose every played tile before publishing any change.
-        // Removal runs on a copy so a failure cannot leave a half-updated rack.
+        // Refuse the move before any change when the rack cannot lose every played tile;
+        // once it can, each removal below is guaranteed to succeed.
         if (!player.Rack.ContainsAll(played))
             throw new InvalidOperationException(
                 "Cannot apply a move that plays tiles absent from the current player's rack.");
 
-        var updatedRack = new Set(player.Rack);
         foreach (var tile in played)
-        {
-            if (!updatedRack.Remove(tile))
-                throw new InvalidOperationException(
-                    "Tile vanished while applying a move the rack was checked to contain.");
-        }
-
-        player.Rack = updatedRack;
+            player.Rack.Remove(tile);
 
         // Track tiles to play for UI highlighting
         player.TilesToPlay = [..result.TilesToPlay];

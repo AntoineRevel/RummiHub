@@ -302,16 +302,8 @@ public partial class GameHub(
                 return;
             }
 
-            // A selection that is not a sub-multiset of this rack (foreign tile, extra
-            // copy, or extra joker) is rejected before the solver and before any mutation.
-            var ownershipError = game.Engine.SelectionOwnershipError(selectedTiles);
-            if (ownershipError is not null)
-            {
-                await Clients.Caller.SendAsync(HubEvents.InvalidPlay, ownershipError);
-                return;
-            }
-
-            // Validate via the distributed solver
+            // Validate via the distributed solver. A selection not taken from this rack is
+            // refused before any request, its error relayed by the not-found branch below.
             var client = httpClientFactory.CreateClient("apiservice");
             var result = await game.Engine.ValidateHumanPlay(
                 selectedTiles, client, solveResultSubscriber, Context.ConnectionAborted);
