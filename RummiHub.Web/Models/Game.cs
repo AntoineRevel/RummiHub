@@ -19,9 +19,17 @@ public sealed record PendingTurnConfirmation(int Turn, int PlayerIndex);
 public class Game
 {
     private readonly Lock _playersLock = new();
+    private readonly Dictionary<int, Queue<DateTimeOffset>> _playAttempts = [];
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string? DistributionSeed { get; set; }
+
+    /// <summary>
+    /// The seed, once the game is over. During play it stays on the server: a seed rebuilds
+    /// the whole deal, every rack and the draw order included.
+    /// </summary>
+    public string? RevealedDistributionSeed => Engine is { IsGameOver: true } ? DistributionSeed : null;
+
     private List<Player> Players { get; } = [];
     public bool IsStarted { get; set; }
     public string HostConnectionId { get; init; } = string.Empty;
@@ -49,6 +57,27 @@ public class Game
     /// Read/written only inside <see cref="ActionLock"/>.
     /// </summary>
     public PendingTurnConfirmation? PendingTurnConfirmation { get; set; }
+
+    /// <summary>
+    /// Records a play attempt by the seat at <paramref name="playerIndex"/>, or returns false
+    /// when that seat already made <see cref="GameLimits.PlayAttemptsPerWindow"/> attempts within
+    /// <see cref="GameLimits.PlayAttemptWindow"/>. Each attempt costs a solver round trip, and the
+    /// solver serves every table. Called only inside <see cref="ActionLock"/>.
+    /// </summary>
+    public bool TryStartPlayAttempt(int playerIndex, DateTimeOffset now)
+    {
+        if (!_playAttempts.TryGetValue(playerIndex, out var attempts))
+            _playAttempts[playerIndex] = attempts = new Queue<DateTimeOffset>();
+
+        while (attempts.Count > 0 && now - attempts.Peek() >= GameLimits.PlayAttemptWindow)
+            attempts.Dequeue();
+
+        if (attempts.Count >= GameLimits.PlayAttemptsPerWindow)
+            return false;
+
+        attempts.Enqueue(now);
+        return true;
+    }
 
     /// <summary>
     /// The board exactly as last shown to clients (after cosmetic alignment). The next board is
@@ -99,11 +128,19 @@ public class Game
         }
     }
 
-    public void AddPlayer(Player player)
+    /// <summary>
+    /// Adds a seat while the table is under <see cref="GameLimits.MaxPlayers"/>.
+    /// The check and the insert share the player lock.
+    /// </summary>
+    public bool AddPlayer(Player player)
     {
         lock (_playersLock)
         {
+            if (Players.Count >= GameLimits.MaxPlayers)
+                return false;
+
             Players.Add(player);
+            return true;
         }
     }
 
@@ -140,16 +177,21 @@ public class Game
     }
 
     /// <summary>
-    /// Updates a player's connection ID (used when navigating from lobby to game page).
-    /// Returns true if the player was found and updated.
+    /// Attaches <paramref name="newConnectionId"/> to the human seat named
+    /// <paramref name="playerName"/> when <paramref name="seatToken"/> matches the secret
+    /// issued to that seat. A wrong secret leaves the current connection in place.
     /// </summary>
-    public bool UpdatePlayerConnection(string playerName, string newConnectionId)
+    public bool UpdatePlayerConnection(string playerName, string? seatToken, string newConnectionId)
     {
         lock (_playersLock)
         {
             var player = Players.FirstOrDefault(p =>
                 p.Name.Equals(playerName, StringComparison.OrdinalIgnoreCase));
-            if (player == null) return false;
+            if (player == null || player.IsAuto)
+                return false;
+            if (!SeatSecrets.Matches(player.SeatToken, seatToken))
+                return false;
+
             player.ConnectionId = newConnectionId;
             return true;
         }

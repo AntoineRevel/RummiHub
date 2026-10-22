@@ -35,6 +35,8 @@ public partial class GamePage : IAsyncDisposable
     private HelperMode _helperMode = HelperMode.Hint;
     private bool _seedSaved;
     private bool _loadingAutoContinue;
+    private string? _seatToken;
+    private bool _hubStartRequested;
     private List<int>? _lastHighlightIndices;
     private int _lastHighlightMs;
 
@@ -98,11 +100,48 @@ public partial class GamePage : IAsyncDisposable
 
     private bool ShowHint => _helperMode == HelperMode.Hint && _optimalPlayTiles is { Count: > 0 };
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         if (string.IsNullOrWhiteSpace(GameId) || string.IsNullOrWhiteSpace(PlayerName))
-        {
             Navigation.NavigateTo("/lobby");
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Opens the hub once the browser can hand back the seat secret saved by the lobby.
+    /// A refresh of this tab still has the secret; the game URL alone does not.
+    /// </summary>
+    private async Task EnsureHubAsync()
+    {
+        if (_hubStartRequested || string.IsNullOrWhiteSpace(GameId) || string.IsNullOrWhiteSpace(PlayerName))
+            return;
+
+        _hubStartRequested = true;
+
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/seat-token.js");
+            try
+            {
+                _seatToken = await module.InvokeAsync<string?>("load", GameId);
+            }
+            finally
+            {
+                await module.DisposeAsync();
+            }
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException)
+        {
+            _error = "Could not read the seat secret from this browser.";
+            StateHasChanged();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(_seatToken))
+        {
+            _error = "This browser tab has no seat secret for this game. Join from the lobby in this same tab.";
+            StateHasChanged();
             return;
         }
 
@@ -113,6 +152,7 @@ public partial class GamePage : IAsyncDisposable
         if (baseAddress is null)
         {
             _error = "Could not determine server address.";
+            StateHasChanged();
             return;
         }
 
@@ -129,21 +169,38 @@ public partial class GamePage : IAsyncDisposable
             .Build();
 
         RegisterHubEvents();
+        _hubConnection.Reconnected += async _ =>
+        {
+            try
+            {
+                await _hubConnection.SendAsync(HubEvents.JoinGameSession, GameId, PlayerName, _seatToken);
+            }
+            catch (Exception ex)
+            {
+                _error = $"Could not reconnect to the game: {ex.Message}";
+                await InvokeAsync(StateHasChanged);
+            }
+        };
 
         try
         {
             await _hubConnection.StartAsync();
             _isConnected = true;
-            await _hubConnection.SendAsync(HubEvents.JoinGameSession, GameId, PlayerName);
+            await _hubConnection.SendAsync(HubEvents.JoinGameSession, GameId, PlayerName, _seatToken);
         }
         catch (Exception ex)
         {
             _error = $"Could not connect: {ex.Message}";
         }
+
+        StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+            await EnsureHubAsync();
+
         // Captured before awaiting JS: a state arriving meanwhile is drawn by the next render,
         // which schedules its own reveal from the board it actually shows.
         var turnAwaitingBoard = _turnAwaitingBoard;

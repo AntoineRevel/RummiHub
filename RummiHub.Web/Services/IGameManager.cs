@@ -20,7 +20,18 @@ public interface IGameManager
     /// </summary>
     bool AddSeed(string seed);
 
+    /// <summary>
+    /// True when <paramref name="seed"/> is a safe token already known to the server
+    /// (configured replay list or a seed saved from a game this process dealt).
+    /// </summary>
+    bool IsKnownDistributionSeed(string? seed);
+
     Game? GetGame(string gameId);
+
+    /// <summary>
+    /// Adds a human seat. Returns null when the game is missing, already started, or already
+    /// has <see cref="GameLimits.MaxPlayers"/> seats.
+    /// </summary>
     Player? AddPlayer(string gameId, string playerName, string connectionId);
     bool RemovePlayer(string connectionId);
     Game? FindGameByConnection(string connectionId);
@@ -31,7 +42,8 @@ public interface IGameManager
     bool InitializeEngine(string gameId);
 
     /// <summary>
-    /// Updates a player's connection ID (for lobby → game page navigation).
+    /// Attaches a new connection to an existing human seat. Requires the seat secret issued
+    /// when that player created or joined the game.
     /// </summary>
-    bool UpdatePlayerConnection(string gameId, string playerName, string newConnectionId);
+    bool UpdatePlayerConnection(string gameId, string playerName, string? seatToken, string newConnectionId);
 }

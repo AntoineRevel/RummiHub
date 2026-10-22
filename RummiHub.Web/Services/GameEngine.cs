@@ -1,6 +1,10 @@
+using System.Buffers.Binary;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
+using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
@@ -28,6 +32,11 @@ public sealed class GameEngine
         string? distributionSeed = null,
         IReadOnlyList<bool>? autoPlayers = null)
     {
+        ArgumentNullException.ThrowIfNull(playerNames);
+        if (playerNames.Count is < 1 or > GameLimits.MaxPlayers)
+            throw new ArgumentOutOfRangeException(nameof(playerNames),
+                $"Expected between 1 and {GameLimits.MaxPlayers} players.");
+
         Id = Guid.NewGuid();
         Turn = 0;
         PlayerIndex = 0;
@@ -37,10 +46,17 @@ public sealed class GameEngine
         _tilePool.Clear();
 
         var tiles = GenerateTiles();
-        var rng = distributionSeed is not null
-            ? new Random(GetStableHash(distributionSeed))
-            : new Random();
-        Shuffle(tiles, rng);
+        // A seed deals deterministically so a saved seed replays the same game. A seed the
+        // server generated drives a SHA-256 stream: recovering it from a dealt rack means
+        // searching all 256 bits, not System.Random's 32-bit seed. Older replay ids (the
+        // configured list) keep the System.Random deal they were saved with. With no seed,
+        // the shuffle draws from a CSPRNG.
+        if (distributionSeed is null)
+            ShuffleSecure(tiles);
+        else if (DistributionSeeds.IsGenerated(distributionSeed))
+            ShuffleFromSeed(tiles, distributionSeed);
+        else
+            Shuffle(tiles, new Random(GetStableHash(distributionSeed)));
         DistributeTiles(tiles, playerNames, autoPlayers);
     }
 
@@ -263,9 +279,63 @@ public sealed class GameEngine
         }
     }
 
+    private static void ShuffleSecure(Tile[] tiles)
+    {
+        for (var i = tiles.Length - 1; i > 0; i--)
+        {
+            var j = RandomNumberGenerator.GetInt32(i + 1);
+            (tiles[i], tiles[j]) = (tiles[j], tiles[i]);
+        }
+    }
+
+    /// <summary>
+    /// Fisher–Yates driven by SHA-256(seed ‖ block counter), read little-endian so a seed
+    /// deals the same on every machine.
+    /// </summary>
+    private static void ShuffleFromSeed(Tile[] tiles, string seed)
+    {
+        var seedBytes = Encoding.UTF8.GetBytes(seed);
+        var input = new byte[seedBytes.Length + sizeof(int)];
+        seedBytes.CopyTo(input, 0);
+        var block = Array.Empty<byte>();
+        var offset = 0;
+        var counter = 0;
+
+        uint NextUInt32()
+        {
+            if (offset == block.Length)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(input.AsSpan(seedBytes.Length), counter++);
+                block = SHA256.HashData(input);
+                offset = 0;
+            }
+
+            var value = BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(offset));
+            offset += sizeof(uint);
+            return value;
+        }
+
+        for (var i = tiles.Length - 1; i > 0; i--)
+        {
+            // Rejection sampling keeps j uniform over [0, i].
+            var bound = (uint)(i + 1);
+            var limit = uint.MaxValue - uint.MaxValue % bound;
+            uint r;
+            do r = NextUInt32(); while (r >= limit);
+
+            var j = (int)(r % bound);
+            (tiles[i], tiles[j]) = (tiles[j], tiles[i]);
+        }
+    }
+
     private void DistributeTiles(Tile[] tiles, List<string> playerNames, IReadOnlyList<bool>? autoPlayers)
     {
         const int tilesPerPlayer = 14;
+
+        var totalDistributed = playerNames.Count * tilesPerPlayer;
+        if (totalDistributed > tiles.Length)
+            throw new InvalidOperationException(
+                $"Not enough tiles to deal {playerNames.Count} players.");
 
         for (var i = 0; i < playerNames.Count; i++)
         {
@@ -281,7 +351,6 @@ public sealed class GameEngine
             });
         }
 
-        var totalDistributed = playerNames.Count * tilesPerPlayer;
         for (var i = totalDistributed; i < tiles.Length; i++)
             _tilePool.Enqueue(tiles[i]);
     }

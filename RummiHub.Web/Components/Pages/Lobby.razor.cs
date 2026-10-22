@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.JSInterop;
 using RummiHub.Web.Hubs;
 
 namespace RummiHub.Web.Components.Pages;
@@ -79,6 +80,13 @@ public partial class Lobby
             InvokeAsync(StateHasChanged);
         });
 
+        _hubConnection.On<string, string>(HubEvents.SeatIssued, (gameId, token) =>
+            InvokeAsync(async () =>
+            {
+                await RememberSeatTokenAsync(gameId, token);
+                StateHasChanged();
+            }));
+
         _hubConnection.On<string, IEnumerable<string>>(HubEvents.GameCreated, (gameId, players) =>
         {
             _gameId = gameId;
@@ -123,6 +131,30 @@ public partial class Lobby
         catch (Exception ex)
         {
             _error = $"Could not connect to server: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Keeps the seat secret in this browser tab so the game page can reclaim the seat
+    /// after navigation and after a refresh. The secret is not put on the game URL.
+    /// </summary>
+    private async Task RememberSeatTokenAsync(string gameId, string token)
+    {
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/seat-token.js");
+            try
+            {
+                await module.InvokeVoidAsync("save", gameId, token);
+            }
+            finally
+            {
+                await module.DisposeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not store the seat secret in this browser: {ex.Message}";
         }
     }
 

@@ -9,8 +9,11 @@
 {
     <div class="game-container">
         <div class="loading-state">
-            <div class="spinner"></div>
-            <p>Connecting to game...</p>
+            @if (string.IsNullOrEmpty(_error))
+            {
+                <div class="spinner"></div>
+                <p>Connecting to game...</p>
+            }
         </div>
     </div>
 }
@@ -43,30 +46,34 @@ else
                     </svg>
                     @_gameState.TilePoolCount in pool
                 </span>
-                <span class="meta-chip seed-chip" title="Distribution seed">
-                    Seed:&nbsp;<strong>@_gameState.DistributionSeed</strong>
-                    <button type="button"
-                            class="seed-replay-btn @(_seedSaved ? "saved" : "")"
-                            title="Save this seed to the lobby so you can replay the same game"
-                            disabled="@_seedSaved"
-                            @onclick="OnSaveSeed">
-                        @if (_seedSaved)
-                        {
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            <span>Saved</span>
-                        }
-                        else
-                        {
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="12" y1="5" x2="12" y2="19"/>
-                                <line x1="5" y1="12" x2="19" y2="12"/>
-                            </svg>
-                            <span>Save seed</span>
-                        }
-                    </button>
-                </span>
+                @* The server sends the seed only at game over: it rebuilds every rack. *@
+                @if (!string.IsNullOrEmpty(_gameState.DistributionSeed))
+                {
+                    <span class="meta-chip seed-chip" title="Distribution seed">
+                        Seed:&nbsp;<strong>@_gameState.DistributionSeed</strong>
+                        <button type="button"
+                                class="seed-replay-btn @(_seedSaved ? "saved" : "")"
+                                title="Save this seed to the lobby so you can replay the same game"
+                                disabled="@_seedSaved"
+                                @onclick="OnSaveSeed">
+                            @if (_seedSaved)
+                            {
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                                <span>Saved</span>
+                            }
+                            else
+                            {
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="12" y1="5" x2="12" y2="19"/>
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                                <span>Save seed</span>
+                            }
+                        </button>
+                    </span>
+                }
             </div>
             <div class="game-id" title="Game code">#@_gameState.GameId</div>
         </header>
