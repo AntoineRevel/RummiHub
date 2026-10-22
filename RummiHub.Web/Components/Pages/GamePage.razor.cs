@@ -8,6 +8,7 @@ using RummiHub.Core.Models;
 using RummiHub.Web.Hubs;
 using RummiHub.Web.Models;
 using RummiHub.Web.Rendering;
+using RummiHub.Web.Services;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Timer = System.Timers.Timer;
@@ -145,9 +146,8 @@ public partial class GamePage : IAsyncDisposable
             return;
         }
 
-        var addresses = Server.Features.Get<IServerAddressesFeature>()?.Addresses;
-        var baseAddress = addresses?.FirstOrDefault(a => a.StartsWith("http://"))
-                          ?? addresses?.FirstOrDefault();
+        var baseAddress = InProcessHubAddress.TryGetBaseAddress(
+            Server.Features.Get<IServerAddressesFeature>()?.Addresses);
 
         if (baseAddress is null)
         {

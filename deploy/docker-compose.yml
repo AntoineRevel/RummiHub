@@ -1,0 +1,170 @@
+# RummiHub sur un seul VPS. Lancer depuis ce dossier : docker compose up -d --build
+# Seul Caddy publie 80 et 443. L'API, Redis et les workers restent sur le réseau internal.
+
+name: rummihub
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-dotnet-env: &dotnet-env
+  ASPNETCORE_ENVIRONMENT: Production
+  DOTNET_ENVIRONMENT: Production
+  ConnectionStrings__cache: cache:6379,abortConnect=false
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      webfrontend:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?Définir DOMAIN dans deploy/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?Définir ACME_EMAIL dans deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  webfrontend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PROJECT: RummiHub.Web/RummiHub.Web.csproj
+        ASSEMBLY: RummiHub.Web.dll
+    image: rummihub-webfrontend:local
+    restart: unless-stopped
+    logging: *logging
+    # Une seule réplique : parties et secrets de siège sont en mémoire.
+    environment:
+      <<: *dotnet-env
+      SolverApi__Key: ${SOLVER_API_KEY:?Définir SOLVER_API_KEY dans deploy/.env}
+      ApiService__BaseAddress: http://apiservice:8080
+      services__apiservice__http__0: http://apiservice:8080
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      DataProtection__KeysPath: /var/rummihub/keys
+    volumes:
+      - dataprotection_keys:/var/rummihub/keys
+    networks:
+      - internal
+    depends_on:
+      cache:
+        condition: service_healthy
+      apiservice:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health | grep -qx 200"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1280M
+
+  apiservice:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PROJECT: RummiHub.ApiService/RummiHub.ApiService.csproj
+        ASSEMBLY: RummiHub.ApiService.dll
+    image: rummihub-apiservice:local
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      <<: *dotnet-env
+      SolverApi__Key: ${SOLVER_API_KEY:?Définir SOLVER_API_KEY dans deploy/.env}
+    networks:
+      - internal
+    depends_on:
+      cache:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health | grep -qx 200"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  solver-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PROJECT: RummiHub.Solver.Worker/RummiHub.Solver.Worker.csproj
+        ASSEMBLY: RummiHub.Solver.Worker.dll
+    image: rummihub-solver-worker:local
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      <<: *dotnet-env
+    networks:
+      - internal
+    depends_on:
+      cache:
+        condition: service_healthy
+    stop_grace_period: 30s
+    # Même nombre que AppHost : WithReplicas(2). Le groupe Redis « solvers » se partage le travail.
+    # 1,5 CPU chacun : sur un VPS 4 vCPU, le repli GraphSolver (BFS parallèle) ne peut pas
+    # prendre tous les cœurs et laisse au moins un CPU à webfrontend, apiservice, Redis et Caddy.
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1536M
+
+  cache:
+    image: redis/redis-stack-server:7.4.0-v8
+    restart: unless-stopped
+    logging: *logging
+    # L'image charge RedisJSON (JSON.GET / JSON.SET). Pas de port publié.
+    environment:
+      REDIS_ARGS: --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+networks:
+  edge:
+  internal:
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  redis_data:
+  dataprotection_keys:
