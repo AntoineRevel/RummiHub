@@ -302,7 +302,8 @@ public partial class GameHub(
                 return;
             }
 
-            // Validate via the distributed solver
+            // Validate via the distributed solver. A selection not taken from this rack is
+            // refused before any request, its error relayed by the not-found branch below.
             var client = httpClientFactory.CreateClient("apiservice");
             var result = await game.Engine.ValidateHumanPlay(
                 selectedTiles, client, solveResultSubscriber, Context.ConnectionAborted);
