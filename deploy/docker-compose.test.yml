@@ -22,6 +22,10 @@ services:
 
   webfrontend:
     image: rummihub-webfrontend:test
+    # Bandeau « Site de test · branche · commit » en bas à gauche (MainLayout).
+    # TEST_COMMIT est posé par rummihub-deploy-test-run ; vide, pas de bandeau.
+    environment:
+      TestSite__Commit: ${TEST_COMMIT:-}
     mem_limit: 512M
     memswap_limit: 512M
     networks:

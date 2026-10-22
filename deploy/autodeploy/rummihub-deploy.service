@@ -17,6 +17,9 @@ Environment="GIT_SSH_COMMAND=ssh -o ConnectTimeout=20 -o BatchMode=yes"
 Environment=GIT_TERMINAL_PROMPT=0
 ExecStart=/usr/bin/git fetch origin master
 ExecStart=/usr/bin/git merge --ff-only origin/master
+# Avertit (dans Actions aussi) si une copie installée ne correspond plus au dépôt. Lancé
+# depuis le dépôt, pas installé : il ne dérive jamais. Ne fait jamais échouer le déploiement.
+ExecStart=/home/ubuntu/apps/RummiHub/deploy/autodeploy/rummihub-check-installed
 # Le build tourne pendant que l'ancienne version reste en ligne ; seuls les services
 # modifiés sont recréés. Un échec laisse l'ancienne version en place.
 # rummihub-compose-prod crée le réseau rummihub-edge si besoin, puis prend le verrou

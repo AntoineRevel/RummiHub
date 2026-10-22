@@ -60,6 +60,18 @@ git checkout --force --detach "$sha"
 git clean -ffd
 echo "rummihub-deploy-test: $(git log -1 --format='%h %s')"
 
+# Bandeau du site de test (TestSite__Commit, docker-compose.test.yml) : la branche
+# dont ce commit est la pointe (une autre que master si possible), puis le commit.
+# Affichage seulement ; sans branche trouvée, le commit seul.
+branch=$(git ls-remote --heads origin | awk -v sha="$sha" '
+  $1 == sha { b = substr($2, 12); if (b != "master") { print b; found = 1; exit } m = b }
+  END { if (!found && m != "") print m }')
+TEST_COMMIT=$(git log -1 --format='%h %s')
+if [ -n "$branch" ]; then
+  TEST_COMMIT="$branch · $TEST_COMMIT"
+fi
+export TEST_COMMIT
+
 # Point de départ des deux heures avant l'arrêt automatique (rummihub-test-autostop).
 touch /run/rummihub/test-deployed
 
