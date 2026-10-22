@@ -35,8 +35,9 @@ public partial class GameHub(
     }
 
     /// <summary>
-    /// Saves the current game's distribution seed to the lobby seed list so the caller can
-    /// easily replay the same game later. Triggered from the in-game header.
+    /// Saves the game's distribution seed to the lobby seed list so the caller can easily
+    /// replay the same game later. Triggered from the in-game header once the game is over:
+    /// the seed rebuilds the whole deal, so it is not published while the game runs.
     /// </summary>
     public async Task SaveSeed(string gameId)
     {
@@ -49,7 +50,7 @@ public partial class GameHub(
             if (game == null || !game.HasConnection(Context.ConnectionId))
                 return;
 
-            var seed = game.DistributionSeed;
+            var seed = game.RevealedDistributionSeed;
             if (string.IsNullOrWhiteSpace(seed))
                 return;
 
@@ -339,6 +340,13 @@ public partial class GameHub(
                 return;
             }
 
+            // Each attempt is a solver round trip, and the solver serves every table.
+            if (!game.TryStartPlayAttempt(playerIndex.Value, DateTimeOffset.UtcNow))
+            {
+                await Clients.Caller.SendAsync(HubEvents.InvalidPlay, GameLimits.TooManyPlayAttemptsMessage);
+                return;
+            }
+
             // Validate via the distributed solver. A selection not taken from this rack is
             // refused before any request, its error relayed by the not-found branch below.
             var client = httpClientFactory.CreateClient("apiservice");
@@ -541,8 +549,9 @@ public partial class GameHub(
         return new GameStateDto
         {
             GameId = game.Id,
-            DistributionSeed = game.DistributionSeed,
-            // Seat secrets stay off this DTO: every player in the group receives it.
+            // Every player in the group receives this DTO: seat secrets stay off it, and the
+            // seed (which rebuilds every rack and the draw order) only appears at game over.
+            DistributionSeed = game.RevealedDistributionSeed,
             Players = engine.Players.Select(p => new PlayerInfoDto
             {
                 Name = p.Name,

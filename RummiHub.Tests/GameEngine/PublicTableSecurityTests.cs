@@ -2,6 +2,8 @@ using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using RummiHub.Core.Contracts;
+using RummiHub.Core.Models;
 using RummiHub.Web.Models;
 using RummiHub.Web.Services;
 
@@ -166,5 +168,98 @@ public class PublicTableSecurityTests
         manager.InitializeEngine(game.Id).Should().BeTrue();
         game.Engine!.Players.Should().HaveCount(4);
         game.Engine.Players.Sum(p => p.Rack.Tiles.Count + p.Rack.Jokers).Should().Be(56);
+    }
+
+    [Fact]
+    public void GeneratedSeed_ReplaysTheSameDeal()
+    {
+        var seed = DistributionSeeds.Create();
+        DistributionSeeds.IsGenerated(seed).Should().BeTrue();
+
+        var first = new GameEngine();
+        var second = new GameEngine();
+        first.Initialize(["Alice", "Bob", "Cara"], seed);
+        second.Initialize(["Alice", "Bob", "Cara"], seed);
+
+        DealOf(second).Should().Equal(DealOf(first));
+    }
+
+    [Fact]
+    public void ConfiguredSeed_KeepsTheDealItWasSavedWith()
+    {
+        DistributionSeeds.IsGenerated("15e005a3").Should().BeFalse();
+
+        var engine = new GameEngine();
+        engine.Initialize(["Alice", "Bob"], "15e005a3");
+
+        string.Join(", ", engine.Players[0].Rack.GetAllTilesIncludingJokers()).Should().Be(
+            "Mango 12, Blue 13, Red 9, Blue 13, Red 8, Black 2, Blue 12, Mango 12, Mango 3, " +
+            "Black 6, Black 9, Mango 4, Black 11, Red 9");
+        string.Join(", ", Enumerable.Range(0, 5).Select(_ => engine.DrawTile())).Should().Be(
+            "Mango 5, Red 10, Black 8, Mango 10, Black 4");
+    }
+
+    [Theory]
+    [InlineData("15e005a3")]
+    [InlineData("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg")]
+    public void IsGenerated_RejectsOtherShapes(string seed)
+    {
+        DistributionSeeds.IsGenerated(seed).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Seed_StaysHiddenUntilTheGameIsOver()
+    {
+        var seed = DistributionSeeds.Create();
+        var engine = new GameEngine();
+        engine.Initialize(["Alice", "Bob"], seed);
+        var game = new Game { DistributionSeed = seed, Engine = engine };
+
+        game.RevealedDistributionSeed.Should().BeNull();
+
+        // Alice goes out with her last three tiles.
+        var lastTiles = new List<Tile> { new(11, TileColor.Blue), new(11, TileColor.Red), new(11, TileColor.Black) };
+        engine.CurrentPlayer.Rack = new Set(lastTiles);
+        var board = new Solution { IsValid = true };
+        board.AddGroup(new ValidSet(lastTiles.ToArray()));
+        engine.ApplySolveResult(new SolveResponse
+        {
+            RequestId = "last-move",
+            Found = true,
+            Score = 33,
+            NewBoard = board,
+            TilesToPlay = lastTiles
+        });
+
+        engine.IsGameOver.Should().BeTrue();
+        game.RevealedDistributionSeed.Should().Be(seed);
+    }
+
+    [Fact]
+    public void PlayAttempts_AreThrottledPerSeat()
+    {
+        var game = new Game();
+        var start = DateTimeOffset.UnixEpoch;
+
+        for (var i = 0; i < GameLimits.PlayAttemptsPerWindow; i++)
+            game.TryStartPlayAttempt(0, start.AddMilliseconds(i)).Should().BeTrue();
+
+        game.TryStartPlayAttempt(0, start.AddSeconds(1)).Should().BeFalse();
+        // Another seat at the same table keeps its own budget.
+        game.TryStartPlayAttempt(1, start.AddSeconds(1)).Should().BeTrue();
+        // Once the window has passed, the first seat may try again.
+        game.TryStartPlayAttempt(0, start + GameLimits.PlayAttemptWindow).Should().BeTrue();
+    }
+
+    private static List<string> DealOf(GameEngine engine)
+    {
+        var deal = engine.Players
+            .Select(p => string.Join(",", p.Rack.GetAllTilesIncludingJokers()))
+            .ToList();
+        while (engine.TilePoolCount > 0)
+            deal.Add(engine.DrawTile().ToString());
+        return deal;
     }
 }

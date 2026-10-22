@@ -19,9 +19,17 @@ public sealed record PendingTurnConfirmation(int Turn, int PlayerIndex);
 public class Game
 {
     private readonly Lock _playersLock = new();
+    private readonly Dictionary<int, Queue<DateTimeOffset>> _playAttempts = [];
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string? DistributionSeed { get; set; }
+
+    /// <summary>
+    /// The seed, once the game is over. During play it stays on the server: a seed rebuilds
+    /// the whole deal, every rack and the draw order included.
+    /// </summary>
+    public string? RevealedDistributionSeed => Engine is { IsGameOver: true } ? DistributionSeed : null;
+
     private List<Player> Players { get; } = [];
     public bool IsStarted { get; set; }
     public string HostConnectionId { get; init; } = string.Empty;
@@ -49,6 +57,27 @@ public class Game
     /// Read/written only inside <see cref="ActionLock"/>.
     /// </summary>
     public PendingTurnConfirmation? PendingTurnConfirmation { get; set; }
+
+    /// <summary>
+    /// Records a play attempt by the seat at <paramref name="playerIndex"/>, or returns false
+    /// when that seat already made <see cref="GameLimits.PlayAttemptsPerWindow"/> attempts within
+    /// <see cref="GameLimits.PlayAttemptWindow"/>. Each attempt costs a solver round trip, and the
+    /// solver serves every table. Called only inside <see cref="ActionLock"/>.
+    /// </summary>
+    public bool TryStartPlayAttempt(int playerIndex, DateTimeOffset now)
+    {
+        if (!_playAttempts.TryGetValue(playerIndex, out var attempts))
+            _playAttempts[playerIndex] = attempts = new Queue<DateTimeOffset>();
+
+        while (attempts.Count > 0 && now - attempts.Peek() >= GameLimits.PlayAttemptWindow)
+            attempts.Dequeue();
+
+        if (attempts.Count >= GameLimits.PlayAttemptsPerWindow)
+            return false;
+
+        attempts.Enqueue(now);
+        return true;
+    }
 
     /// <summary>
     /// The board exactly as last shown to clients (after cosmetic alignment). The next board is

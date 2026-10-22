@@ -1,7 +1,5 @@
 using System.Text.Json;
-using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.RateLimiting;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using StackExchange.Redis;
@@ -25,18 +23,8 @@ if (string.IsNullOrEmpty(solverKey) && !builder.Environment.IsDevelopment())
 
 builder.Services.Configure<SolverApiOptions>(builder.Configuration.GetSection(SolverApiOptions.SectionName));
 
-var permitLimit = solverOptions.PermitLimit > 0 ? solverOptions.PermitLimit : SolverApiOptions.DefaultPermitLimit;
-var windowSeconds = solverOptions.WindowSeconds > 0 ? solverOptions.WindowSeconds : SolverApiOptions.DefaultWindowSeconds;
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddFixedWindowLimiter("solve", limiter =>
-    {
-        limiter.PermitLimit = permitLimit;
-        limiter.Window = TimeSpan.FromSeconds(windowSeconds);
-        limiter.QueueLimit = 0;
-    });
-});
+// No global rate limit here: the web frontend is the only caller, so a shared cap would let
+// one player's flood fail every table's solves. Play attempts are throttled per seat in GameHub.
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -75,8 +63,6 @@ app.Use(async (context, next) =>
 
     await next(context);
 });
-
-app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {
@@ -141,7 +127,7 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
         request.RequestId,
         Status = cached.IsNull ? "processing" : "completed"
     });
-}).RequireRateLimiting("solve").AddEndpointFilter(AuthorizeSolve);
+}).AddEndpointFilter(AuthorizeSolve);
 
 // GET /solve/{contentHash} : reads result from cache. Same auth as POST; the id must be
 // the 16-char hex hash the API itself issues.
@@ -158,7 +144,7 @@ app.MapGet("/solve/{contentHash}", async (string contentHash, IConnectionMultipl
 
     var response = JsonSerializer.Deserialize<SolveResponse>(json.ToString()!, RummiJsonOptions.Default);
     return Results.Ok(response);
-}).RequireRateLimiting("solve").AddEndpointFilter(AuthorizeSolve);
+}).AddEndpointFilter(AuthorizeSolve);
 
 app.MapDefaultEndpoints();
 

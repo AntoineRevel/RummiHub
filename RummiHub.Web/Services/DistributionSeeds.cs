@@ -19,6 +19,14 @@ public static partial class DistributionSeeds
     public static string Create() =>
         Convert.ToHexString(RandomNumberGenerator.GetBytes(EntropyBytes)).ToLowerInvariant();
 
+    /// <summary>
+    /// True for the shape <see cref="Create"/> produces (64 lowercase hex characters). Such a
+    /// seed is dealt from its full 256 bits; older replay ids keep their System.Random deal.
+    /// </summary>
+    public static bool IsGenerated(string? seed) =>
+        seed is { Length: EntropyBytes * 2 }
+        && seed.All(static c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+
     public static bool IsSafe(string? seed)
     {
         if (string.IsNullOrWhiteSpace(seed) || seed.Length > MaxLength)

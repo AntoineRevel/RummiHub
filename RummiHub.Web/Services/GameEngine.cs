@@ -1,5 +1,7 @@
+using System.Buffers.Binary;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Web.Models;
@@ -44,13 +46,17 @@ public sealed class GameEngine
         _tilePool.Clear();
 
         var tiles = GenerateTiles();
-        // A caller-supplied seed stays deterministic so configured replays keep their deal.
-        // The seed itself is chosen by the server (or taken from the server list). With no
-        // seed, the shuffle draws from a CSPRNG rather than System.Random.
-        if (distributionSeed is not null)
-            Shuffle(tiles, new Random(GetStableHash(distributionSeed)));
-        else
+        // A seed deals deterministically so a saved seed replays the same game. A seed the
+        // server generated drives a SHA-256 stream: recovering it from a dealt rack means
+        // searching all 256 bits, not System.Random's 32-bit seed. Older replay ids (the
+        // configured list) keep the System.Random deal they were saved with. With no seed,
+        // the shuffle draws from a CSPRNG.
+        if (distributionSeed is null)
             ShuffleSecure(tiles);
+        else if (DistributionSeeds.IsGenerated(distributionSeed))
+            ShuffleFromSeed(tiles, distributionSeed);
+        else
+            Shuffle(tiles, new Random(GetStableHash(distributionSeed)));
         DistributeTiles(tiles, playerNames, autoPlayers);
     }
 
@@ -278,6 +284,46 @@ public sealed class GameEngine
         for (var i = tiles.Length - 1; i > 0; i--)
         {
             var j = RandomNumberGenerator.GetInt32(i + 1);
+            (tiles[i], tiles[j]) = (tiles[j], tiles[i]);
+        }
+    }
+
+    /// <summary>
+    /// Fisher–Yates driven by SHA-256(seed ‖ block counter), read little-endian so a seed
+    /// deals the same on every machine.
+    /// </summary>
+    private static void ShuffleFromSeed(Tile[] tiles, string seed)
+    {
+        var seedBytes = Encoding.UTF8.GetBytes(seed);
+        var input = new byte[seedBytes.Length + sizeof(int)];
+        seedBytes.CopyTo(input, 0);
+        var block = Array.Empty<byte>();
+        var offset = 0;
+        var counter = 0;
+
+        uint NextUInt32()
+        {
+            if (offset == block.Length)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(input.AsSpan(seedBytes.Length), counter++);
+                block = SHA256.HashData(input);
+                offset = 0;
+            }
+
+            var value = BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(offset));
+            offset += sizeof(uint);
+            return value;
+        }
+
+        for (var i = tiles.Length - 1; i > 0; i--)
+        {
+            // Rejection sampling keeps j uniform over [0, i].
+            var bound = (uint)(i + 1);
+            var limit = uint.MaxValue - uint.MaxValue % bound;
+            uint r;
+            do r = NextUInt32(); while (r >= limit);
+
+            var j = (int)(r % bound);
             (tiles[i], tiles[j]) = (tiles[j], tiles[i]);
         }
     }

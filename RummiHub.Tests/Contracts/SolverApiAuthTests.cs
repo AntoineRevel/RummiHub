@@ -40,7 +40,5 @@ public class SolverApiAuthTests
     public void MaxRequestBody_IsWellUnderTheFrameworkDefault()
     {
         SolverApiAuth.MaxRequestBodyBytes.Should().Be(32 * 1024);
-        SolverApiOptions.DefaultPermitLimit.Should().BeGreaterThan(0);
-        SolverApiOptions.DefaultWindowSeconds.Should().BeGreaterThan(0);
     }
 }

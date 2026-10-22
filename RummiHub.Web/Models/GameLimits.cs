@@ -8,4 +8,12 @@ public static class GameLimits
 
     public static string TooManyPlayersMessage =>
         $"A game can have at most {MaxPlayers} players.";
+
+    /// <summary>Solver-backed play attempts one seat may make per <see cref="PlayAttemptWindow"/>.</summary>
+    public const int PlayAttemptsPerWindow = 10;
+
+    public static readonly TimeSpan PlayAttemptWindow = TimeSpan.FromSeconds(10);
+
+    public const string TooManyPlayAttemptsMessage =
+        "Too many attempts — wait a few seconds before trying again.";
 }
