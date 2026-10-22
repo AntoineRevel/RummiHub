@@ -10,6 +10,8 @@
 #
 # Le clone est jetable, sauf deploy/.env et deploy/.env.test (gitignorés, donc
 # gardés par git clean sans -x). Pas de Caddy ici : le routage est dans le Caddy de prod.
+# La pile s'arrête seule deux heures plus tard (rummihub-test-autostop.timer) ; un
+# nouveau déploiement la relance.
 
 set -eu
 
@@ -57,6 +59,9 @@ fi
 git checkout --force --detach "$sha"
 git clean -ffd
 echo "rummihub-deploy-test: $(git log -1 --format='%h %s')"
+
+# Point de départ des deux heures avant l'arrêt automatique (rummihub-test-autostop).
+touch /run/rummihub/test-deployed
 
 docker compose \
   --project-directory "$root/deploy" \

@@ -1,0 +1,14 @@
+# Arrête la pile de test (projet rummihub-test) deux heures après son dernier
+# déploiement. Démarré toutes les 5 minutes par rummihub-test-autostop.timer.
+# Installation : deploy/README.md, « Site de test ».
+
+[Unit]
+Description=RummiHub : arrêt du site de test 2 h après son déploiement
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/usr/local/bin/rummihub-test-autostop
+SyslogIdentifier=rummihub-test-autostop

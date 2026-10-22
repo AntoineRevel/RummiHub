@@ -1,0 +1,12 @@
+# Toutes les 5 minutes : le site de test s'arrête entre 2 h et 2 h 05 après son
+# dernier déploiement. Installation : deploy/README.md, « Site de test ».
+
+[Unit]
+Description=RummiHub : vérification de l'âge du site de test
+
+[Timer]
+OnCalendar=*:0/5
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
