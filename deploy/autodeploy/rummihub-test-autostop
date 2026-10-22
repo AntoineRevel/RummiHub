@@ -1,0 +1,56 @@
+#!/bin/sh
+# Arrête la pile de test deux heures après son dernier déploiement, pour rendre le
+# CPU et la mémoire à la production. Lancé toutes les 5 minutes par
+# rummihub-test-autostop.timer.
+#
+# rummihub-deploy-test-run touche /run/rummihub/test-deployed juste avant
+# `docker compose up`. Un nouveau déploiement relance donc la pile pour deux heures ;
+# `touch` à la main prolonge celle en cours. /run est vidé au boot : après un
+# redémarrage du VPS, la pile de test (restart: unless-stopped) repart, et ce script
+# l'arrête au passage suivant.
+#
+# `stop` et non `down` : les conteneurs restent, unless-stopped ne les relance pas au
+# boot, et le prochain `up` repart sans les recréer si rien n'a changé. Caddy répond
+# 502 sur test.<DOMAIN> ; la production ne bouge pas.
+
+set -eu
+
+root=/home/ubuntu/apps/RummiHub-test
+stamp=/run/rummihub/test-deployed
+max_age=$((2 * 60 * 60))
+
+# Rien ne tourne : rien à faire.
+if [ -z "$(docker ps -q --filter label=com.docker.compose.project=rummihub-test)" ]; then
+  exit 0
+fi
+
+if [ ! -d /run/rummihub ]; then
+  echo "Répertoire /run/rummihub absent. Installer deploy/autodeploy/rummihub.tmpfiles." >&2
+  exit 1
+fi
+
+# Un déploiement (prod ou test) tient le verrou : on repasse dans 5 minutes. S'il
+# s'agit du site de test, il aura remis le compteur à zéro.
+exec 9>/run/rummihub/compose.lock
+if ! flock -n 9; then
+  exit 0
+fi
+
+# Lu sous le verrou : un déploiement de test qui vient de finir a touché le fichier.
+if [ -f "$stamp" ]; then
+  age=$(($(date +%s) - $(stat -c %Y "$stamp")))
+  if [ "$age" -lt "$max_age" ]; then
+    exit 0
+  fi
+  echo "Dernier déploiement il y a $((age / 60)) min : arrêt du site de test."
+else
+  echo "Date du dernier déploiement inconnue (VPS redémarré ?) : arrêt du site de test."
+fi
+
+docker compose \
+  --project-directory "$root/deploy" \
+  --project-name rummihub-test \
+  --env-file "$root/deploy/.env.test" \
+  -f "$root/deploy/docker-compose.yml" \
+  -f "$root/deploy/docker-compose.test.yml" \
+  stop

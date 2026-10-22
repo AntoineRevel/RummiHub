@@ -1,6 +1,6 @@
 # Déployer RummiHub (un VPS, Docker Compose)
 
-Site public : `https://rummisolve.com`. `https://www.rummisolve.com` redirige vers l’apex. Le site de test `https://test.rummisolve.com` est une seconde pile, sans Caddy ni port publié ; voir « Site de test ».
+Site public : `https://rummisolve.com`. `https://www.rummisolve.com` redirige vers l’apex. Le site de test `https://test.rummisolve.com` est une seconde pile, sans Caddy ni port publié, arrêtée deux heures après chaque déploiement ; voir « Site de test ».
 
 Cinq processus, comme l’AppHost Aspire (sans le tableau de bord ni Redis Insight) :
 
@@ -72,12 +72,15 @@ Depuis la racine du dépôt. Le chemin du dépôt et l’utilisateur `ubuntu` so
 ```bash
 sudo install -m 644 deploy/autodeploy/rummihub-deploy.service /etc/systemd/system/
 sudo install -m 644 deploy/autodeploy/rummihub-deploy-test@.service /etc/systemd/system/
+sudo install -m 644 deploy/autodeploy/rummihub-test-autostop.service \
+  deploy/autodeploy/rummihub-test-autostop.timer /etc/systemd/system/
 sudo install -m 644 deploy/autodeploy/rummihub.tmpfiles /etc/tmpfiles.d/rummihub.conf
 sudo install -m 755 deploy/autodeploy/rummihub-deploy \
   deploy/autodeploy/rummihub-deploy-test \
   deploy/autodeploy/rummihub-deploy-test-run \
   deploy/autodeploy/rummihub-ensure-edge-network \
   deploy/autodeploy/rummihub-compose-prod \
+  deploy/autodeploy/rummihub-test-autostop \
   /usr/local/bin/
 echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy.service' \
   | sudo tee /etc/sudoers.d/rummihub-deploy && sudo chmod 440 /etc/sudoers.d/rummihub-deploy
@@ -85,6 +88,7 @@ echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test@
   | sudo tee /etc/sudoers.d/rummihub-deploy-test && sudo chmod 440 /etc/sudoers.d/rummihub-deploy-test
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/rummihub.conf
 sudo systemctl daemon-reload
+sudo systemctl enable --now rummihub-test-autostop.timer
 ```
 
 Ces fichiers ne suivent pas le dépôt une fois copiés : refaire les `install` après une modification.
@@ -121,8 +125,9 @@ Puis `shred -u /tmp/gha_deploy /tmp/gha_deploy.pub`.
 | Images | `:local` | `:test` |
 | Secret | `deploy/.env` | `deploy/.env.test` (autre `SOLVER_API_KEY`) |
 | Réseau applicatif | `internal`, sans Internet | le sien, sans Internet |
+| Durée de vie | permanente | arrêtée 2 h après le dernier déploiement |
 
-Seul lien : le réseau Docker **externe et interne** `rummihub-edge`. Le Caddy de production y est attaché et proxifie `test.<DOMAIN>` vers l’alias `webfrontend-test`. Le réseau n’a pas de passerelle : la pile de test ne s’en sert pas pour sortir, ni pour atteindre Redis ou l’API de production (autres réseaux). Si le conteneur de test est arrêté ou en cours de recréation, ce nom répond `502` avec « Site de test indisponible. » Le site public continue. L’en-tête `X-Robots-Tag: noindex, nofollow` est posé sur les réponses, y compris ce 502.
+Seul lien : le réseau Docker **externe et interne** `rummihub-edge`. Le Caddy de production y est attaché et proxifie `test.<DOMAIN>` vers l’alias `webfrontend-test`. Le réseau n’a pas de passerelle : la pile de test ne s’en sert pas pour sortir, ni pour atteindre Redis ou l’API de production (autres réseaux). Si le conteneur de test est arrêté (arrêt automatique compris) ou en cours de recréation, ce nom répond `502` avec « Site de test indisponible. » Le site public continue. L’en-tête `X-Robots-Tag: noindex, nofollow` est posé sur les réponses, y compris ce 502.
 
 Un déploiement de test ne recrée aucun conteneur `rummihub`. Il ne recharge pas Caddy : le nom `webfrontend-test` est résolu toutes les 5 secondes. Le build est en revanche sérialisé avec celui de la prod (verrou `/run/rummihub/compose.lock`), pour ne pas lancer deux publications .NET en même temps sur 8 Go de RAM.
 
@@ -157,17 +162,21 @@ docker network inspect rummihub-edge >/dev/null 2>&1 \
 
 sudo install -m 644 deploy/autodeploy/rummihub-deploy.service /etc/systemd/system/
 sudo install -m 644 deploy/autodeploy/rummihub-deploy-test@.service /etc/systemd/system/
+sudo install -m 644 deploy/autodeploy/rummihub-test-autostop.service \
+  deploy/autodeploy/rummihub-test-autostop.timer /etc/systemd/system/
 sudo install -m 644 deploy/autodeploy/rummihub.tmpfiles /etc/tmpfiles.d/rummihub.conf
 sudo install -m 755 deploy/autodeploy/rummihub-deploy \
   deploy/autodeploy/rummihub-deploy-test \
   deploy/autodeploy/rummihub-deploy-test-run \
   deploy/autodeploy/rummihub-ensure-edge-network \
   deploy/autodeploy/rummihub-compose-prod \
+  deploy/autodeploy/rummihub-test-autostop \
   /usr/local/bin/
 echo 'ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start rummihub-deploy-test@*.service' \
   | sudo tee /etc/sudoers.d/rummihub-deploy-test && sudo chmod 440 /etc/sudoers.d/rummihub-deploy-test
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/rummihub.conf
 sudo systemctl daemon-reload
+sudo systemctl enable --now rummihub-test-autostop.timer
 ```
 
 La ligne `authorized_keys` (`restrict,command="/usr/local/bin/rummihub-deploy"`) et les secrets `DEPLOY_SSH_HOST`, `DEPLOY_SSH_KEY`, `DEPLOY_SSH_KNOWN_HOSTS` restent ceux de la production. Le sudoers de prod (`systemctl start rummihub-deploy.service`) aussi.
@@ -208,7 +217,17 @@ Les deux font la même chose : `dotnet test` sur la branche, puis le SSH `deploy
 
 **`deploy/` doit être celui de `master`.** Si le commit modifie `deploy/` depuis son point de départ sur `master` (`git diff origin/master...<SHA> -- deploy`), le déploiement est refusé avant le checkout. La pile de test tourne avec les fichiers Compose du commit : un Compose modifié (volume `/`, `docker.sock`, `privileged`…) donnerait root sur le VPS de production. Le code applicatif et le `Dockerfile` peuvent changer librement. Pour essayer une modification de `deploy/`, la merger d’abord.
 
-Arrêter le site de test sans toucher à la production :
+### Arrêter le site de test
+
+La pile de test s’arrête seule **deux heures après son dernier déploiement**, pour rendre le CPU et la mémoire à la production. `rummihub-test-autostop.timer` lance `rummihub-test-autostop` toutes les 5 minutes. Chaque déploiement de test touche `/run/rummihub/test-deployed` juste avant `docker compose up` ; si ce fichier a plus de 2 h, ou s’il manque, le script fait `docker compose … stop` sur `rummihub-test`. L’arrêt tombe donc entre 2 h et 2 h 05. Pendant un déploiement (prod ou test), le verrou `compose.lock` est pris : le script passe son tour.
+
+- Relancer pour deux heures : relancer le déploiement (*Re-run jobs*, ou *Run workflow* sur la même branche). `up` redémarre les conteneurs arrêtés ; avec le cache Docker, le build d’un commit déjà déployé est court.
+- Prolonger une pile qui tourne : `touch /run/rummihub/test-deployed` sur le VPS.
+- Au boot, `/run` est vide. Une pile de test qui tournait repart (`restart: unless-stopped`) et s’arrête au passage suivant du timer ; une pile arrêtée reste arrêtée.
+- À l’installation du timer, le fichier n’existe pas encore : la pile en cours s’arrête dans les 5 minutes. `touch /run/rummihub/test-deployed` avant `enable --now` lui laisse deux heures.
+- Journal : `journalctl -u rummihub-test-autostop`.
+
+À la main, sans toucher à la production :
 
 ```bash
 cd /home/ubuntu/apps/RummiHub-test/deploy
