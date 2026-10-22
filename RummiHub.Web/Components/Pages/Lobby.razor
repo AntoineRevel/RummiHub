@@ -100,13 +100,22 @@
                 }
             </div>
 
-            <a href="/lobby?code=@Uri.EscapeDataString(_gameId!)" class="invite-link" target="_blank">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-                Invite link
-            </a>
+            <button type="button" class="invite-link @(_inviteCopied ? "copied" : null)" @onclick="CopyInviteLink">
+                @if (_inviteCopied)
+                {
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span>Copied!</span>
+                }
+                else
+                {
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                    <span>Copy invite link</span>
+                }
+            </button>
 
             <div class="players-list">
                 <h3>Players (@_players.Count)</h3>
@@ -340,17 +349,28 @@
         gap: 6px;
         padding: 8px 16px;
         font-size: 0.88rem;
+        font-family: inherit;
         color: #1976d2;
         background: #e3f2fd;
         border: 1px solid #90caf9;
         border-radius: 20px;
-        text-decoration: none;
+        cursor: pointer;
         align-self: flex-start;
-        transition: background 0.2s;
+        transition: background 0.2s, color 0.2s, border-color 0.2s;
     }
 
     .invite-link:hover {
         background: #bbdefb;
+    }
+
+    .invite-link.copied {
+        color: #2e7d32;
+        background: #e8f5e9;
+        border-color: #a5d6a7;
+    }
+
+    .invite-link.copied:hover {
+        background: #c8e6c9;
     }
 
     .players-list {

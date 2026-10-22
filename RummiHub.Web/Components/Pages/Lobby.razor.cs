@@ -26,6 +26,8 @@ public partial class Lobby
     private string _selectedGameId = string.Empty;
     private ElementReference _nameInput;
     private bool _hasFocused;
+    private bool _inviteCopied;
+    private CancellationTokenSource? _inviteCopiedResetCts;
 
     private static readonly string[] DefaultNames =
     [
@@ -50,8 +52,47 @@ public partial class Lobby
 
     public async ValueTask DisposeAsync()
     {
+        _inviteCopiedResetCts?.Cancel();
+        _inviteCopiedResetCts?.Dispose();
         if (_hubConnection is not null)
             await _hubConnection.DisposeAsync();
+    }
+
+    private async Task CopyInviteLink()
+    {
+        if (string.IsNullOrEmpty(_gameId)) return;
+
+        var url = Navigation.ToAbsoluteUri($"/lobby?code={Uri.EscapeDataString(_gameId)}").ToString();
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            _inviteCopied = true;
+            StateHasChanged();
+
+            _inviteCopiedResetCts?.Cancel();
+            _inviteCopiedResetCts?.Dispose();
+            _inviteCopiedResetCts = new CancellationTokenSource();
+            var token = _inviteCopiedResetCts.Token;
+            _ = ResetInviteCopiedAsync(token);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not copy invite link: {ex.Message}";
+        }
+    }
+
+    private async Task ResetInviteCopiedAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(2000, token);
+            _inviteCopied = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer copy reset the timer.
+        }
     }
 
     protected override async Task OnInitializedAsync()
