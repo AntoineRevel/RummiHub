@@ -1,4 +1,6 @@
-# Tests sur chaque PR. Sur master : tests, puis déploiement sur le VPS.
+# Tests sur chaque PR : le check requis « test » (branche à jour) est imposé
+# par la protection de master, donc le déploiement ne les relance pas.
+# Sur master (push ou lancement manuel) : déploiement direct sur le VPS.
 # Le job deploy se connecte en SSH avec une clé dont la seule commande possible est
 # rummihub-deploy (deploy/README.md, « Déploiement automatique »).
 name: Tests et déploiement
@@ -14,6 +16,7 @@ permissions:
 
 jobs:
   test:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,7 +27,6 @@ jobs:
       - run: dotnet test RummiHub.slnx
 
   deploy:
-    needs: test
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 40

@@ -55,7 +55,7 @@ Les volumes (certificats, AOF Redis, clés Data Protection) sont conservés. Un 
 
 ## Déploiement automatique
 
-Le workflow `.github/workflows/deploy.yml` lance les tests sur chaque PR. Sur `master`, une fois les tests passés, il se connecte en SSH au VPS avec une clé qui ne peut exécuter qu’une commande : `rummihub-deploy`. Celle-ci démarre `rummihub-deploy.service`, qui :
+Le workflow `.github/workflows/deploy.yml` lance les tests sur chaque PR. La protection de `master` exige le check `test` et une branche à jour : le code qui arrive sur `master` a déjà passé les tests sur la PR. Le déploiement part donc directement après le merge (push sur `master`, ou *Run workflow*), sans les relancer. Il se connecte en SSH au VPS avec une clé qui ne peut exécuter qu’une commande : `rummihub-deploy`. Celle-ci démarre `rummihub-deploy.service`, qui :
 
 1. avance le dépôt sur `origin/master` (`git merge --ff-only`, avec la clé de déploiement en lecture seule) ;
 2. lance `docker compose up -d --build --wait` : le build tourne pendant que l’ancienne version reste en ligne, seuls les services modifiés sont recréés, puis Compose attend les healthchecks ;
