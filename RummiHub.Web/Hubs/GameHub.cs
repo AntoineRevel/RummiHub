@@ -382,12 +382,13 @@ public partial class GameHub(
                     else
                         await PauseForReviewAsync(game, playerIndex.Value);
 
-                    // Highlight, for everyone at the table, the tiles that entered and the sets
-                    // the move changed. Indices are on the aligned board just broadcast, so
-                    // when the played tile has an identical twin already resting there, the
-                    // new copy lights up. Sent after the state so clients map indices onto
-                    // it. Shown for the animation plus a reading window, then cleared.
-                    await BroadcastMoveHighlightAsync(game, boardBefore);
+                    // Highlight, for everyone at the table, the tiles played from the rack and
+                    // the sets the move changed. Indices are on the aligned board just
+                    // broadcast, so when the played tile has an identical twin already resting
+                    // there, the new copy lights up. Sent after the state so clients map
+                    // indices onto it. Shown for the animation plus a reading window, then
+                    // cleared.
+                    await BroadcastMoveHighlightAsync(game, boardBefore, OptimalTiles(result));
                 }
                 else
                 {
@@ -781,7 +782,7 @@ public partial class GameHub(
             // an AI, the chain continues automatically.
             await AdvanceTurnAndNotifyAsync(game);
             if (hasMove)
-                await BroadcastMoveHighlightAsync(game, boardBefore);
+                await BroadcastMoveHighlightAsync(game, boardBefore, OptimalTiles(result));
         }
         catch (Exception ex)
         {
@@ -848,16 +849,17 @@ public partial class GameHub(
     }
 
     /// <summary>
-    /// Tells every seat which tiles just landed and which sets the move changed, so an AI
-    /// turn is as readable as a human one. Indices refer to the board just broadcast.
+    /// Tells every seat which tiles came out of the mover's rack and which sets the move
+    /// changed, so an AI turn is as readable as a human one. Indices refer to the board just
+    /// broadcast.
     /// </summary>
-    private async Task BroadcastMoveHighlightAsync(Game game, Solution? boardBefore)
+    private async Task BroadcastMoveHighlightAsync(Game game, Solution? boardBefore, List<Tile> played)
     {
         if (boardBefore is null || game.LastBroadcastBoard is not { } next) return;
 
         await hubContext.Clients.Group(game.Id).SendAsync(
             HubEvents.HighlightTilesUpdated,
-            BoardPacing.EnteredIndices(boardBefore, next),
+            BoardPacing.PlayedIndices(boardBefore, next, played),
             game.PendingAnimationMs + HighlightLingerMs,
             BoardPacing.ModifiedSetIndices(boardBefore, next));
     }

@@ -26,7 +26,7 @@ public static class BoardPacing
     public const int FlightMs = 620;
 
     /// <summary>Act 1 — interval between two placed tiles taking off.</summary>
-    public const int StaggerMs = 160;
+    public const int StaggerMs = 140;
 
     /// <summary>Act 2 — the board making room under the placed tiles, in one glide.</summary>
     public const int RoomMs = 560;
@@ -35,7 +35,7 @@ public static class BoardPacing
     public const int DropMs = 360;
 
     /// <summary>Act 3 — interval between two drops.</summary>
-    public const int DropStaggerMs = 90;
+    public const int DropStaggerMs = 70;
 
     /// <summary>Slack absorbing client jitter.</summary>
     private const int BufferMs = 200;
@@ -135,6 +135,34 @@ public static class BoardPacing
         }
 
         return entered;
+    }
+
+    /// <summary>
+    /// The <see cref="EnteredIndices"/> that hold a <paramref name="played"/> tile: what came
+    /// out of the mover's rack, without the board tiles that merely changed set (those show
+    /// through <see cref="ModifiedSetIndices"/>). Where a played tile and an identical board
+    /// tile both changed set, either copy may light up — they look the same.
+    /// </summary>
+    public static List<int> PlayedIndices(Solution previous, Solution next, IEnumerable<Tile> played)
+    {
+        var remaining = new Dictionary<int, int>();
+        foreach (var tile in played)
+        {
+            var key = TileKey(tile);
+            remaining[key] = remaining.GetValueOrDefault(key) + 1;
+        }
+
+        var tiles = ReadingOrder(next).SelectMany(set => set.Tiles).ToArray();
+        var result = new List<int>();
+        foreach (var index in EnteredIndices(previous, next))
+        {
+            var key = TileKey(tiles[index]);
+            if (!remaining.TryGetValue(key, out var count) || count == 0) continue;
+            remaining[key] = count - 1;
+            result.Add(index);
+        }
+
+        return result;
     }
 
     /// <summary>

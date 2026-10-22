@@ -131,6 +131,35 @@ public class BoardPacingTests
     }
 
     [Fact]
+    public void PlayedIndices_Manipulation_FlagsOnlyTheRackTiles()
+    {
+        // 5-Blue and 5-Black join the 5-Red taken off the front of the Red run: the 5-Red
+        // changed set but came from the board, so only the two played 5s light up.
+        var redRunLong = Set(
+            T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red), T(8, TileColor.Red));
+        var redRunShort = Set(T(6, TileColor.Red), T(7, TileColor.Red), T(8, TileColor.Red));
+        var previous = new Solution { Runs = [redRunLong] };
+        var next = new Solution { Runs = [redRunShort], Groups = [FivesGroup] };
+
+        BoardPacing.EnteredIndices(previous, next).Should().Equal(3, 4, 5);
+        BoardPacing.PlayedIndices(previous, next, [T(5, TileColor.Blue), T(5, TileColor.Black)])
+            .Should().Equal(4, 5);
+    }
+
+    [Fact]
+    public void PlayedIndices_Joker_IsFlagged()
+    {
+        var previous = new Solution { Runs = [BlueRun] };
+        var next = new Solution
+        {
+            Runs = [BlueRun, Set(T(5, TileColor.Red), new Tile(isJoker: true), T(7, TileColor.Red))]
+        };
+        Tile[] played = [T(5, TileColor.Red), new Tile(isJoker: true), T(7, TileColor.Red)];
+
+        BoardPacing.PlayedIndices(previous, next, played).Should().Equal(3, 4, 5);
+    }
+
+    [Fact]
     public void DurationForPlacedTiles_NothingPlaced_IsZero()
     {
         BoardPacing.DurationForPlacedTiles(0).Should().Be(0);

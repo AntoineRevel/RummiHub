@@ -44,10 +44,10 @@ const tempo = {
     moveMs: 350,       // a hand tile gliding between the rack and the play zone
     popMs: 300,        // a newcomer with no origin on screen popping in
     flightMs: 620,     // act 1: one placed tile's flight
-    staggerMs: 160,    // act 1: between two take-offs
+    staggerMs: 140,    // act 1: between two take-offs
     roomMs: 560,       // act 2: the board making room, in one glide
     dropMs: 360,       // act 3: one hovering tile dropping into its slot
-    dropStaggerMs: 90, // act 3: between two drops
+    dropStaggerMs: 70, // act 3: between two drops
 };
 
 const MIN_DELTA = 4;    // px — cross-scope flights below this just display
