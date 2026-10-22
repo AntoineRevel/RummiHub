@@ -127,10 +127,13 @@ services:
         condition: service_healthy
     stop_grace_period: 30s
     # Même nombre que AppHost : WithReplicas(2). Le groupe Redis « solvers » se partage le travail.
+    # 1,5 CPU chacun : sur un VPS 4 vCPU, le repli GraphSolver (BFS parallèle) ne peut pas
+    # prendre tous les cœurs et laisse au moins un CPU à webfrontend, apiservice, Redis et Caddy.
     deploy:
       replicas: 2
       resources:
         limits:
+          cpus: "1.5"
           memory: 1536M
 
   cache:

@@ -14,16 +14,19 @@ Cinq processus, comme l’AppHost Aspire (sans le tableau de bord ni Redis Insig
 
 L’API, Redis et les workers n’ont aucun port publié. Le réseau `internal` n’a pas de sortie vers Internet. Les parties et les secrets de siège restent en mémoire dans `webfrontend` : ne pas augmenter le nombre de répliques.
 
+La page `/bench` (comparateur de solveurs) répond 404 en production et disparaît du menu : elle lance des calculs lourds dans `webfrontend` et écrit sur le disque. Pour l’activer malgré tout, poser `SolverBench__Enabled: "true"` sur `webfrontend` — à éviter sur un site public.
+
 ## Prérequis
 
 - Ubuntu 24.04, Docker et Docker Compose v2 (le plugin `docker compose`).
 - DNS : enregistrements A (et AAAA le cas échéant) de `rummisolve.com` **et** `www.rummisolve.com` vers le VPS, avant le premier `up` (Let's Encrypt).
+- Accès en lecture au dépôt (privé) : une clé de déploiement SSH en lecture seule, générée sur le VPS et ajoutée dans *Settings → Deploy keys*, avec un alias `github-rummihub` dans `~/.ssh/config` (`HostName github.com`, `IdentityFile` de cette clé, `IdentitiesOnly yes`).
 - `ufw` : ouvrir seulement 22, 80 et 443. Ne pas publier 6379 ni le port de l’API.
 
 ## Premier déploiement
 
 ```bash
-git clone https://github.com/AntoineRevel/RummiHub.git
+git clone git@github-rummihub:AntoineRevel/RummiHub.git
 cd RummiHub/deploy
 cp .env.example .env
 openssl rand -hex 32

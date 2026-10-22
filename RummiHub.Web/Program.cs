@@ -61,6 +61,8 @@ builder.Services.AddSignalR()
 builder.Services.Configure<GameOptions>(builder.Configuration.GetSection("GameOptions"));
 builder.Services.Configure<SolverApiOptions>(builder.Configuration.GetSection(SolverApiOptions.SectionName));
 builder.Services.AddSingleton<ISeedStore, AppSettingsSeedStore>();
+var benchAccess = SolverBenchAccess.From(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton(benchAccess);
 builder.Services.AddSingleton<IGameManager, GameManager>();
 
 builder.Services.AddTransient<SolverApiKeyHandler>();
@@ -92,6 +94,22 @@ if (!app.Environment.IsDevelopment())
 // in-process SignalR client (plain HTTP to loopback) at a TLS port nothing listens on.
 if (!trustForwardedHeaders)
     app.UseHttpsRedirection();
+
+// The router is static, so reaching /bench always goes through an HTTP request: a 404 here
+// means the Bench component is never created and no benchmark can be started.
+if (!benchAccess.Enabled)
+{
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments(SolverBenchAccess.PagePath))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await next(context);
+    });
+}
 
 app.UseAntiforgery();
 

@@ -111,8 +111,9 @@ public static class Extensions
 
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
-        // Liveness only (the "self" check). Docker Compose probes /health in Production.
-        // The response is the word Healthy — no dependency details.
+        // /health runs every registered check (the "self" check plus the Redis client's);
+        // /alive only the "live" ones. Docker Compose probes /health in Production.
+        // The response is the status word only (Healthy / Unhealthy) — no dependency details.
         app.MapHealthChecks(HealthEndpointPath);
 
         app.MapHealthChecks(AlivenessEndpointPath, new HealthCheckOptions
