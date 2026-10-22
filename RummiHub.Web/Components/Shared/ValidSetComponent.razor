@@ -1,5 +1,5 @@
 @using RummiHub.Core.Models
-<div class="valid-set-container" data-anim-set>
+<div class="valid-set-container @(IsModified ? "modified" : "")" data-anim-set>
     <div class="valid-tiles">
         @{
             var tileIndex = StartIndex;
@@ -16,6 +16,9 @@
     [Parameter] public required ValidSet ValidSet { get; set; }
     [Parameter] public int StartIndex { get; set; }
     [Parameter] public HashSet<int>? HighlightIndices { get; set; }
+
+    /// <summary>The move added, removed, or rebuilt tiles in this set.</summary>
+    [Parameter] public bool IsModified { get; set; }
 }
 
 <style>
@@ -24,6 +27,14 @@
         white-space: nowrap;
         padding: 5px;
         border-radius: 5px;
+    }
+
+    /* Same gold as the played-tile glow, washed over the whole set so a changed
+       combination reads at a glance without competing with the new tiles. */
+    .valid-set-container.modified {
+        background: rgba(255, 179, 0, 0.16);
+        box-shadow: inset 0 0 0 2px rgba(255, 179, 0, 0.55);
+        border-radius: 8px;
     }
 
     .valid-tiles {

@@ -3,14 +3,16 @@
     @foreach (var setWithIndex in GetRunsWithIndices())
     {
         <ValidSetComponent ValidSet="setWithIndex.Set" StartIndex="setWithIndex.StartIndex"
-                           HighlightIndices="HighlightIndices"/>
+                           HighlightIndices="HighlightIndices"
+                           IsModified="IsSetModified(setWithIndex.SetOrdinal)"/>
     }
 </div>
 <div class="solution-container">
     @foreach (var setWithIndex in GetGroupsWithIndices())
     {
         <ValidSetComponent ValidSet="setWithIndex.Set" StartIndex="setWithIndex.StartIndex"
-                           HighlightIndices="HighlightIndices"/>
+                           HighlightIndices="HighlightIndices"
+                           IsModified="IsSetModified(setWithIndex.SetOrdinal)"/>
     }
 </div>
 
@@ -24,29 +26,41 @@
     /// </summary>
     [Parameter] public HashSet<int>? HighlightIndices { get; set; }
 
-    private List<(ValidSet Set, int StartIndex)> GetRunsWithIndices()
+    /// <summary>
+    /// Reading-order indices of sets the move changed (see BoardPacing.ModifiedSetIndices).
+    /// </summary>
+    [Parameter] public HashSet<int>? ModifiedSetIndices { get; set; }
+
+    private bool IsSetModified(int setOrdinal) =>
+        ModifiedSetIndices?.Contains(setOrdinal) == true;
+
+    private List<(ValidSet Set, int StartIndex, int SetOrdinal)> GetRunsWithIndices()
     {
-        var result = new List<(ValidSet, int)>();
+        var result = new List<(ValidSet, int, int)>();
         var currentIndex = 0;
+        var ordinal = 0;
 
         foreach (var set in Solution.Runs)
         {
-            result.Add((set, currentIndex));
+            result.Add((set, currentIndex, ordinal));
             currentIndex += set.Tiles.Length;
+            ordinal++;
         }
 
         return result;
     }
 
-    private List<(ValidSet Set, int StartIndex)> GetGroupsWithIndices()
+    private List<(ValidSet Set, int StartIndex, int SetOrdinal)> GetGroupsWithIndices()
     {
-        var result = new List<(ValidSet, int)>();
+        var result = new List<(ValidSet, int, int)>();
         var currentIndex = Solution.Runs.Sum(r => r.Tiles.Length);
+        var ordinal = Solution.Runs.Count;
 
         foreach (var set in Solution.Groups)
         {
-            result.Add((set, currentIndex));
+            result.Add((set, currentIndex, ordinal));
             currentIndex += set.Tiles.Length;
+            ordinal++;
         }
 
         return result;

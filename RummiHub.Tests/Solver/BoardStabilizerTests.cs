@@ -2,6 +2,7 @@ using FluentAssertions;
 using RummiHub.Core.Models;
 using RummiHub.Core.Solver;
 using RummiHub.Solver.Worker.Solver.Dynamic;
+using RummiHub.Solver.Worker.Solver.Graph;
 
 namespace RummiHub.Tests.Solver;
 
@@ -178,5 +179,150 @@ public class BoardStabilizerTests
 
         var noOp = SolverResult.FromSolution("test", board, tilesToPlay: []);
         BoardStabilizer.Stabilize(board, noOp).Should().BeSameAs(noOp);
+    }
+
+    [Fact]
+    public void Adding13ToAGroupOfThree_KeepsEveryOtherSetInPlace()
+    {
+        // The played 13 only completes the group. A from-scratch solver still hands back
+        // every set rebuilt and reordered; the stabilizer must put them back and append
+        // the new 13 without shuffling the three that were already there.
+        var thirteens = VSet(T(13, TileColor.Black), T(13, TileColor.Blue), T(13, TileColor.Red));
+        var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
+        var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
+        var eights = VSet(T(8, TileColor.Mango), T(8, TileColor.Red), T(8, TileColor.Black));
+        var board = new Solution { IsValid = true, Runs = [blue, red], Groups = [thirteens, eights] };
+
+        // Pointlessly reordered, and the group rebuilt in color order instead of
+        // keeping Black, Blue, Red and appending Mango.
+        var churned = new Solution { IsValid = true };
+        churned.AddRun(VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red)));
+        churned.AddRun(VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue)));
+        churned.AddGroup(VSet(T(8, TileColor.Mango), T(8, TileColor.Red), T(8, TileColor.Black)));
+        churned.AddGroup(VSet(
+            T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Black), T(13, TileColor.Mango)));
+        var solved = SolverResult.FromSolution("churn", churned, [T(13, TileColor.Mango)]);
+
+        var result = BoardStabilizer.Stabilize(board, solved);
+
+        result.BestSolution.Runs.Should().Equal(blue, red);
+        result.BestSolution.Groups.Should().HaveCount(2);
+        result.BestSolution.Groups[1].Should().BeSameAs(eights);
+        result.BestSolution.Groups[0].Tiles.Select(t => (t.Color, t.Value))
+            .Should().Equal(
+                (TileColor.Black, 13),
+                (TileColor.Blue, 13),
+                (TileColor.Red, 13),
+                (TileColor.Mango, 13));
+        result.TilesToPlay.Should().BeEquivalentTo([T(13, TileColor.Mango)]);
+        ShouldBeLegalOver(result, board, new Set([T(13, TileColor.Mango)]));
+    }
+
+    [Fact]
+    public void ExtendingARunInTheMiddle_AppendsAndLeavesNeighbors()
+    {
+        var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
+        var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
+        var mango = VSet(T(10, TileColor.Mango), T(11, TileColor.Mango), T(12, TileColor.Mango));
+        var board = new Solution { IsValid = true, Runs = [red, blue, mango] };
+        var rack = new Set([T(4, TileColor.Blue)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+
+        result.BestSolution.Runs[0].Should().BeSameAs(red);
+        result.BestSolution.Runs[2].Should().BeSameAs(mango);
+        result.BestSolution.Runs[1].Tiles.Select(t => t.Value).Should().Equal(1, 2, 3, 4);
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void ExtendingARunAtTheLowEnd_PrependsTheTile()
+    {
+        var run = VSet(T(5, TileColor.Blue), T(6, TileColor.Blue), T(7, TileColor.Blue));
+        var other = VSet(T(1, TileColor.Red), T(1, TileColor.Black), T(1, TileColor.Mango));
+        var board = new Solution { IsValid = true, Runs = [run], Groups = [other] };
+        var rack = new Set([T(4, TileColor.Blue)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+
+        result.BestSolution.Runs.Should().ContainSingle()
+            .Which.Tiles.Select(t => t.Value).Should().Equal(4, 5, 6, 7);
+        result.BestSolution.Groups.Should().ContainSingle().Which.Should().BeSameAs(other);
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void IndependentExtensions_TouchOnlyThoseSets()
+    {
+        var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
+        var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
+        var keep = VSet(T(2, TileColor.Mango), T(3, TileColor.Mango), T(4, TileColor.Mango));
+        var nines = VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Black));
+        var board = new Solution { IsValid = true, Runs = [blue, red, keep], Groups = [nines] };
+        var rack = new Set([T(4, TileColor.Blue), T(8, TileColor.Red), T(9, TileColor.Mango)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+
+        result.BestSolution.Runs[0].Tiles.Select(t => t.Value).Should().Equal(1, 2, 3, 4);
+        result.BestSolution.Runs[1].Tiles.Select(t => t.Value).Should().Equal(5, 6, 7, 8);
+        result.BestSolution.Runs[2].Should().BeSameAs(keep);
+        result.BestSolution.Groups.Should().ContainSingle().Which.Tiles.Select(t => t.Color)
+            .Should().Equal(TileColor.Blue, TileColor.Red, TileColor.Black, TileColor.Mango);
+        result.TilesToPlay.Should().BeEquivalentTo(rack.Tiles);
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void Manipulation_LeavesSetsTheMoveDoesNotNeed()
+    {
+        // 9-Mango and 10-Black cannot simply extend anything; placing them opens the joker
+        // and several neighbouring sets. The 3-4-5 black run, the twos and the fours are
+        // not part of that and must survive as the same instances.
+        var blackRun = VSet(T(3, TileColor.Black), T(4, TileColor.Black), T(5, TileColor.Black));
+        var blueRun = VSet(T(7, TileColor.Blue), T(8, TileColor.Blue), T(9, TileColor.Blue), T(10, TileColor.Blue));
+        var redRun = VSet(T(10, TileColor.Red), T(11, TileColor.Red), T(12, TileColor.Red));
+        var elevensA = VSet(T(11, TileColor.Blue), T(11, TileColor.Mango), T(11, TileColor.Black));
+        var twos = VSet(T(2, TileColor.Blue), T(2, TileColor.Red), T(2, TileColor.Black));
+        var fours = VSet(T(4, TileColor.Blue), T(4, TileColor.Red), T(4, TileColor.Mango), T(4, TileColor.Black));
+        var elevensB = VSet(T(11, TileColor.Blue), T(11, TileColor.Red), T(11, TileColor.Mango));
+        var twelves = VSet(T(12, TileColor.Blue), T(12, TileColor.Mango), T(12, TileColor.Black));
+        var thirteens = VSet(new Tile(13, TileColor.Blue, isJoker: true), T(13, TileColor.Red), T(13, TileColor.Black));
+        var board = new Solution
+        {
+            IsValid = true,
+            Runs = [blackRun, blueRun, redRun],
+            Groups = [elevensA, twos, fours, elevensB, twelves, thirteens]
+        };
+        var rack = new Set([T(9, TileColor.Mango), T(10, TileColor.Black)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+
+        result.TilesToPlay.Should().BeEquivalentTo(rack.Tiles);
+        result.BestSolution.Runs.Should().Contain(s => ReferenceEquals(s, blackRun));
+        result.BestSolution.Groups.Should().Contain(s => ReferenceEquals(s, twos));
+        result.BestSolution.Groups.Should().Contain(s => ReferenceEquals(s, fours));
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void GraphSolverArrangement_StillExtendsTheGroupInPlace()
+    {
+        var thirteens = VSet(T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Black));
+        var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
+        var red = VSet(T(4, TileColor.Red), T(5, TileColor.Red), T(6, TileColor.Red));
+        var board = new Solution { IsValid = true, Runs = [blue, red], Groups = [thirteens] };
+        var rack = new Set([T(13, TileColor.Mango)]);
+
+        var solved = GraphSolver.Create(board.ToSet(), rack).SearchSolution();
+        solved.Found.Should().BeTrue();
+        solved.TilesToPlay.Should().Contain(T(13, TileColor.Mango));
+
+        var result = BoardStabilizer.Stabilize(board, solved);
+
+        result.BestSolution.Runs.Should().Equal(blue, red);
+        result.BestSolution.Groups.Should().ContainSingle().Which.Tiles.Should().HaveCount(4);
+        result.BestSolution.Groups[0].Tiles.Take(3).Select(t => t.Color)
+            .Should().Equal(TileColor.Blue, TileColor.Red, TileColor.Black);
+        ShouldBeLegalOver(result, board, rack);
     }
 }

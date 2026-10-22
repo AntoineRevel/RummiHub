@@ -380,16 +380,12 @@ public partial class GameHub(
                     else
                         await PauseForReviewAsync(game, playerIndex.Value);
 
-                    // Highlight, privately, the tiles that ENTERED the board — by reading-order
-                    // index on the aligned board just broadcast, so when the played tile has an
-                    // identical twin already resting on the board, the new copy lights up, not
-                    // the old one. Sent after the state so the client maps indices onto it.
-                    // Shown for the animation's duration (played tiles land in its last act)
-                    // plus a reading window, then the client clears it on its own.
-                    if (boardBefore is not null)
-                        await Clients.Caller.SendAsync(HubEvents.HighlightTilesUpdated,
-                            BoardPacing.EnteredIndices(boardBefore, game.LastBroadcastBoard!),
-                            game.PendingAnimationMs + HighlightLingerMs);
+                    // Highlight, for everyone at the table, the tiles that entered and the sets
+                    // the move changed. Indices are on the aligned board just broadcast, so
+                    // when the played tile has an identical twin already resting there, the
+                    // new copy lights up. Sent after the state so clients map indices onto
+                    // it. Shown for the animation plus a reading window, then cleared.
+                    await BroadcastMoveHighlightAsync(game, boardBefore);
                 }
                 else
                 {
@@ -560,8 +556,8 @@ public partial class GameHub(
             }).ToList(),
             CurrentPlayerIndex = engine.PlayerIndex,
             Turn = engine.Turn,
-            // The aligned board kept in LastBroadcastBoard is what clients render and animate;
-            // engine.Board (unaligned) is only the solver's input for the next turn.
+            // LastBroadcastBoard is the post-move board seated so unchanged sets stay put.
+            // engine.Board mirrors it, which is what the next solve stabilizes against.
             Board = game.LastBroadcastBoard ?? engine.Board,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,
@@ -593,6 +589,7 @@ public partial class GameHub(
         var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
         game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
         game.LastBroadcastBoard = aligned;
+        engine.Board = aligned;
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);
@@ -615,6 +612,7 @@ public partial class GameHub(
         var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
         game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
         game.LastBroadcastBoard = aligned;
+        engine.Board = aligned;
         game.PendingTurnConfirmation = new PendingTurnConfirmation(engine.Turn, playerIndex);
 
         var state = BuildGameState(game);
@@ -764,6 +762,7 @@ public partial class GameHub(
             var hasMove = result is { Found: true }
                           && result.TilesToPlay.Count + result.JokersToPlay > 0;
 
+            var boardBefore = game.LastBroadcastBoard;
             if (hasMove)
                 engine.ApplySolveResult(result!);
             else if (engine.TilePoolCount > 0)
@@ -773,6 +772,8 @@ public partial class GameHub(
             // Advance the turn, broadcast, and arm the next solve. If that player is also
             // an AI, the chain continues automatically.
             await AdvanceTurnAndNotifyAsync(game);
+            if (hasMove)
+                await BroadcastMoveHighlightAsync(game, boardBefore);
         }
         catch (Exception ex)
         {
@@ -836,6 +837,21 @@ public partial class GameHub(
         }
 
         await Clients.Caller.SendAsync(HubEvents.OptimalPlay, tiles, ct);
+    }
+
+    /// <summary>
+    /// Tells every seat which tiles just landed and which sets the move changed, so an AI
+    /// turn is as readable as a human one. Indices refer to the board just broadcast.
+    /// </summary>
+    private async Task BroadcastMoveHighlightAsync(Game game, Solution? boardBefore)
+    {
+        if (boardBefore is null || game.LastBroadcastBoard is not { } next) return;
+
+        await hubContext.Clients.Group(game.Id).SendAsync(
+            HubEvents.HighlightTilesUpdated,
+            BoardPacing.EnteredIndices(boardBefore, next),
+            game.PendingAnimationMs + HighlightLingerMs,
+            BoardPacing.ModifiedSetIndices(boardBefore, next));
     }
 
     /// <summary>Flattens a solve result into the tile list it plays (jokers included).</summary>

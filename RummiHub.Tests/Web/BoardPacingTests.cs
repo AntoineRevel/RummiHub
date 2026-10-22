@@ -145,6 +145,45 @@ public class BoardPacingTests
     }
 
     [Fact]
+    public void ModifiedSetIndices_UnchangedBoard_IsEmpty()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+
+        BoardPacing.ModifiedSetIndices(previous, next).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ModifiedSetIndices_AppendedTile_MarksOnlyThatSet()
+    {
+        var previous = new Solution { Runs = [BlueRun, RedRun] };
+        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+
+        BoardPacing.ModifiedSetIndices(previous, next).Should().Equal(1);
+    }
+
+    [Fact]
+    public void ModifiedSetIndices_ExtendedGroup_CountsRunsFirst()
+    {
+        var extended = Set(
+            T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black), T(5, TileColor.Mango));
+        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [extended] };
+
+        // Two runs, then the group — only the group changed.
+        BoardPacing.ModifiedSetIndices(previous, next).Should().Equal(2);
+    }
+
+    [Fact]
+    public void ModifiedSetIndices_NewSet_IsMarked()
+    {
+        var previous = new Solution { Runs = [BlueRun] };
+        var next = new Solution { Runs = [BlueRun, RedRun] };
+
+        BoardPacing.ModifiedSetIndices(previous, next).Should().Equal(1);
+    }
+
+    [Fact]
     public void DurationForPlacedTiles_EachExtraTileAddsATakeOffAndADrop()
     {
         for (var placed = 1; placed < 40; placed++)

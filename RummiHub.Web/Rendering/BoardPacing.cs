@@ -102,6 +102,30 @@ public static class BoardPacing
         return entered;
     }
 
+    /// <summary>
+    /// Reading-order indices (runs, then groups) of sets whose tiles changed between the two
+    /// boards: a tile was added or removed, or the set is new. Sets that merely kept their
+    /// seat are absent, so the UI can outline what the move actually touched.
+    /// </summary>
+    public static List<int> ModifiedSetIndices(Solution previous, Solution next)
+    {
+        var prevSets = ReadingOrder(previous);
+        var nextSets = ReadingOrder(next);
+        var pairs = PairSets(prevSets, nextSets);
+
+        var modified = new List<int>();
+        for (var j = 0; j < nextSets.Count; j++)
+        {
+            var prevIndex = pairs[j].PrevIndex;
+            if (prevIndex < 0
+                || pairs[j].Shared != prevSets[prevIndex].Tiles.Length
+                || pairs[j].Shared != nextSets[j].Tiles.Length)
+                modified.Add(j);
+        }
+
+        return modified;
+    }
+
     // Tiles the client PLACES (acts 1 and 3): every tile of the next board its paired previous
     // set doesn't keep — tiles entering from the hand, plus board tiles changing set. Counted one
     // by one; the client flies tiles changing set together as one block, so this can only

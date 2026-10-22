@@ -159,7 +159,8 @@ else
         <!-- Board. Staged: each change plays as play → make room → place, so the board
              never moves before the tiles that cause it. -->
         <div class="solution-section" data-anim-scope="board" data-anim-staged data-anim-enter-from="mover">
-            <SolutionComponent Solution="_gameState.Board" HighlightIndices="_highlightIndices"/>
+            <SolutionComponent Solution="_gameState.Board" HighlightIndices="_highlightIndices"
+                              ModifiedSetIndices="_modifiedSetIndices"/>
         </div>
 
         <!-- Error play -->
