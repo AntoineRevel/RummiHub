@@ -204,14 +204,13 @@ rummihub-deploy
 
 ### Lancer un déploiement
 
-*Actions → Déploiement du site de test → Run workflow*, puis choisir la branche dans *Use workflow from*. En ligne de commande, au choix :
+*Actions → Déploiement du site de test → Run workflow*, puis choisir la branche dans *Use workflow from*. En ligne de commande :
 
 ```bash
 gh workflow run deploy-test.yml -R AntoineRevel/RummiHub --ref ma-branche
-git push --force origin ma-branche:test
 ```
 
-Les deux font la même chose : `dotnet test` sur la branche, puis le SSH `deploy-test <SHA>` avec le commit qui vient de passer les tests. Le bouton ne déplace pas la branche `test` : le site montre le dernier commit déployé, quelle que soit la façon. Pour relancer : *Re-run jobs*. La branche doit contenir `.github/workflows/deploy-test.yml` dans sa version actuelle (toute branche créée depuis `master` après ce changement, sinon merger `master` dedans). Une étiquette est refusée. Un déploiement à la fois, jamais annulé au milieu.
+Ça lance `dotnet test` sur cette branche, puis le SSH `deploy-test <SHA>` avec le commit qui vient de passer les tests. Le site montre ce commit. Il n’y a pas de branche `test`. Pour relancer : *Re-run jobs*, ou la même commande. La branche doit contenir `.github/workflows/deploy-test.yml` dans sa version actuelle (toute branche créée depuis `master` après ce changement, sinon merger `master` dedans). Une étiquette est refusée. Un déploiement à la fois, jamais annulé au milieu.
 
 À la main, sur le VPS : `rummihub-deploy-test <SHA complet>`, par exemple `rummihub-deploy-test "$(git ls-remote origin refs/heads/ma-branche | cut -f1)"` depuis un clone. Il démarre `rummihub-deploy-test@<SHA>.service`, qui fait `git fetch origin master <SHA>`, `git checkout --force --detach <SHA>`, puis `docker compose -p rummihub-test … up -d --build --wait --remove-orphans`. Journal : l’onglet *Actions*, ou `journalctl -u 'rummihub-deploy-test@*'`.
 
