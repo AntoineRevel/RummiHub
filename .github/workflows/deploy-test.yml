@@ -1,21 +1,15 @@
 # Déploiement manuel du site de test (https://test.rummisolve.com).
-# Lancer depuis la branche master (c'est ce fichier-ci qui s'exécute) et indiquer
-# dans « branch » la branche à construire. Les tests tournent ici : ce workflow
-# n'est pas exigé par la protection de master.
+# La branche est celle choisie dans « Use workflow from » (github.ref_name).
+# Ce fichier doit être sur cette branche : toute branche créée depuis master
+# après la PR #39. Une étiquette (github.ref_type != branch) est refusée.
+# Les tests tournent ici : ce workflow n'est pas exigé par la protection de master.
 # SSH réutilise la clé de production. La commande forcée n'accepte que
-# « deploy-test <branche> » (deploy/autodeploy/rummihub-deploy). Installer les
-# scripts sur le VPS avant le premier lancement : sinon l'ancien script ignore
-# la commande et redéploie la production.
+# « deploy-test <branche> » (deploy/autodeploy/rummihub-deploy). Le VPS
+# revalide le nom (rummihub-branch-ok) avant tout git.
 name: Déploiement du site de test
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: Branche à déployer (doit exister sur origin)
-        required: true
-        default: master
-        type: string
 
 permissions:
   contents: read
@@ -30,25 +24,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Valider le nom de branche
+      - name: Vérifier que la ref est une branche
         env:
-          BRANCH: ${{ inputs.branch }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -eu
-          # Mêmes règles que deploy/autodeploy/rummihub-branch-ok.
-          if [ -z "$BRANCH" ] || [ "${#BRANCH}" -gt 100 ]; then
-            echo "Branche refusée." >&2
+          if [ "$REF_TYPE" != "branch" ]; then
+            echo "Refus : dans « Use workflow from », choisir une branche, pas une étiquette (reçu : ${REF_TYPE}, « ${REF_NAME} »)." >&2
             exit 1
           fi
-          case "$BRANCH" in
-            -*|*..*|*[!A-Za-z0-9._/-]*)
-              echo "Branche refusée." >&2
-              exit 1
-              ;;
-          esac
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.branch }}
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
@@ -64,19 +50,14 @@ jobs:
           SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
-          BRANCH: ${{ inputs.branch }}
+          REF_TYPE: ${{ github.ref_type }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           set -eu
-          if [ -z "$BRANCH" ] || [ "${#BRANCH}" -gt 100 ]; then
-            echo "Branche refusée." >&2
+          if [ "$REF_TYPE" != "branch" ]; then
+            echo "Refus : dans « Use workflow from », choisir une branche, pas une étiquette (reçu : ${REF_TYPE}, « ${BRANCH} »)." >&2
             exit 1
           fi
-          case "$BRANCH" in
-            -*|*..*|*[!A-Za-z0-9._/-]*)
-              echo "Branche refusée." >&2
-              exit 1
-              ;;
-          esac
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
