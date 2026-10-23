@@ -24,7 +24,6 @@ public static class HubEvents
     public const string TileDrawn = nameof(TileDrawn);
     public const string InvalidPlay = nameof(InvalidPlay);
     public const string HighlightTilesUpdated = nameof(HighlightTilesUpdated);
-    public const string OptimalPlay = nameof(OptimalPlay);
     public const string OptimalReady = nameof(OptimalReady);
     public const string SeedSaved = nameof(SeedSaved);
 

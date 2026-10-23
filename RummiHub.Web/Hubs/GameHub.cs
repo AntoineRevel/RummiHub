@@ -367,13 +367,6 @@ public partial class GameHub(
                     var rack = GetRackTiles(game.Engine, playerIndex.Value);
                     await Clients.Caller.SendAsync(HubEvents.RackUpdated, rack);
 
-                    // Send the optimal play that was being computed in background since the
-                    // start of this turn (against the player's pre-action hand).
-                    var turnAtAction = game.Engine.Turn;
-                    var playerAtAction = playerIndex.Value;
-                    await SendOptimalPlayToCallerAsync(
-                        game, turnAtAction, playerAtAction, Context.ConnectionAborted);
-
                     // Advance the turn (or, in review mode, broadcast the new board and
                     // pause until the player confirms), and arm the next solve.
                     var boardBefore = game.LastBroadcastBoard;
@@ -456,13 +449,6 @@ public partial class GameHub(
             await Clients.Caller.SendAsync(HubEvents.TileDrawn, drawnTile);
             var rack = GetRackTiles(game.Engine, playerIndex.Value);
             await Clients.Caller.SendAsync(HubEvents.RackUpdated, rack);
-
-            // Send the optimal play that was being computed in background since the
-            // start of this turn (what the solver would have played from the pre-draw hand).
-            var turnAtAction = game.Engine.Turn;
-            var playerAtAction = playerIndex.Value;
-            await SendOptimalPlayToCallerAsync(
-                game, turnAtAction, playerAtAction, Context.ConnectionAborted);
 
             // Advance the turn, broadcast the new state, and arm the next solve.
             await AdvanceTurnAndNotifyAsync(game);
@@ -678,8 +664,8 @@ public partial class GameHub(
 
         game.PendingOptimalSolve = new PendingOptimalSolve(turn, playerIndex, task, cts);
 
-        // Fire-and-forget: notify the current player when the solve is done so they see
-        // a "hint ready" indicator before they act.
+        // Fire-and-forget: when the solve is done, hand the tiles to a human so a Hint
+        // click can select them, or play them if this seat is an AI.
         _ = NotifyOptimalReadyWhenDoneAsync(game, turn, playerIndex, task, cts.Token);
     }
 
@@ -706,7 +692,7 @@ public partial class GameHub(
         if (game.Engine is not { } engine) return;
         if (engine.IsGameOver || engine.Turn != turn || engine.PlayerIndex != playerIndex) return;
 
-        // AI seats play automatically; humans just get the "hint ready" indicator.
+        // AI seats play automatically; humans get the tiles for an on-demand Hint click.
         if (engine.CurrentPlayer.IsAuto)
         {
             await PerformAutoPlayAsync(game, turn, playerIndex, task, ct);
@@ -721,7 +707,7 @@ public partial class GameHub(
 
         try
         {
-            // The optimal tiles ride along so an "auto-pick" client can pre-select them.
+            // The optimal tiles ride along so a Hint click can select them.
             var result = task.IsCompletedSuccessfully ? task.Result : null;
             await hubContext.Clients.Client(connectionId)
                 .SendAsync(HubEvents.OptimalReady, OptimalTiles(result));
@@ -807,45 +793,6 @@ public partial class GameHub(
             LogOptimalSolveFailed(ex, gameId, turn, playerIndex);
             return new SolveResponse { RequestId = "failed", Found = false };
         }
-    }
-
-    /// <summary>
-    /// Awaits the in-flight optimal solve for the (turn, playerIndex) the caller just acted on,
-    /// then sends the optimal tile list privately. Falls back to an empty list on timeout/failure.
-    /// </summary>
-    private async Task SendOptimalPlayToCallerAsync(
-        Game game, int turnAtAction, int playerIndexAtAction, CancellationToken ct)
-    {
-        var pending = game.PendingOptimalSolve;
-        List<Tile> tiles;
-
-        if (pending is null
-            || pending.Turn != turnAtAction
-            || pending.PlayerIndex != playerIndexAtAction)
-        {
-            tiles = [];
-        }
-        else
-        {
-            try
-            {
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
-                var result = await pending.Task.WaitAsync(linked.Token);
-                tiles = OptimalTiles(result);
-            }
-            catch (OperationCanceledException)
-            {
-                tiles = [];
-            }
-            catch (Exception ex)
-            {
-                LogOptimalSolveFailed(ex, game.Id, turnAtAction, playerIndexAtAction);
-                tiles = [];
-            }
-        }
-
-        await Clients.Caller.SendAsync(HubEvents.OptimalPlay, tiles, ct);
     }
 
     /// <summary>

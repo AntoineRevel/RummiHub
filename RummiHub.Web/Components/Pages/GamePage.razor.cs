@@ -30,11 +30,12 @@ public partial class GamePage : IAsyncDisposable
     private HashSet<int>? _highlightIndices;
     private HashSet<int>? _modifiedSetIndices;
     private Timer? _highlightTimer;
-    private List<Tile>? _optimalPlayTiles;
-    private bool _optimalSeenFirstUpdate;
     private bool _optimalReady;
     private List<Tile>? _optimalSuggestion;
-    private HelperMode _helperMode = HelperMode.Hint;
+    /// <summary>The player asked for this turn's hint and it has not been applied yet.</summary>
+    private bool _hintRequested;
+    /// <summary>The asked-for hint has no tiles. Shown only while the play zone is empty.</summary>
+    private bool _hintNoMove;
     private bool _seedSaved;
     private bool _loadingAutoContinue;
     private string? _seatToken;
@@ -105,20 +106,11 @@ public partial class GamePage : IAsyncDisposable
 
     private List<Tile> SelectedTilesForPlay { get; } = [];
 
-    /// <summary>Solver assistance level — a per-player, client-side choice.</summary>
-    private enum HelperMode
-    {
-        /// <summary>No solver help at all (no spinner, no hint).</summary>
-        None,
+    /// <summary>Hint was asked and the background solve has not answered yet.</summary>
+    private bool HintPending => _hintRequested && !_optimalReady;
 
-        /// <summary>After acting, shows the optimal play you could have made (in the play zone).</summary>
-        Hint,
-
-        /// <summary>Pre-selects the solver's move as soon as it is ready — just press Play.</summary>
-        Auto
-    }
-
-    private bool ShowHint => _helperMode == HelperMode.Hint && _optimalPlayTiles is { Count: > 0 };
+    /// <summary>The hint came back empty, and the player has not picked tiles since.</summary>
+    private bool ShowDrawHint => _hintNoMove && !SelectedTilesForPlay.Any();
 
     protected override Task OnInitializedAsync()
     {
@@ -320,20 +312,12 @@ public partial class GamePage : IAsyncDisposable
             ApplyIncomingHighlight(indices, displayMs, modifiedSets);
         });
 
-        Handle<List<Tile>>(HubEvents.OptimalPlay, tiles =>
-        {
-            _optimalPlayTiles = tiles is { Count: > 0 } ? tiles : null;
-            _optimalSeenFirstUpdate = false;
-            // Player has just acted — the indicator is for next turn (someone else's).
-            _optimalReady = false;
-        });
-
         Handle<List<Tile>>(HubEvents.OptimalReady, tiles =>
         {
             _optimalReady = true;
             _optimalSuggestion = tiles is { Count: > 0 } ? tiles : null;
-            // No-op until my turn is on screen; ApplyTurn picks it up then.
-            ApplyAutoPick();
+            // No-op unless Hint was clicked, and until this turn is on screen.
+            ApplyRequestedHint();
         });
 
         Handle<string>(HubEvents.SeedSaved, _ => _seedSaved = true);
@@ -394,6 +378,9 @@ public partial class GamePage : IAsyncDisposable
             StopHighlightTimer();
         }
         _optimalSuggestion = null;
+        _optimalReady = false;
+        _hintRequested = false;
+        _hintNoMove = false;
 
         // A newer state supersedes a turn still waiting for the board.
         RevealTurn();
@@ -446,22 +433,6 @@ public partial class GamePage : IAsyncDisposable
     private void ApplyTurn(GameStateDto state)
     {
         _gameState = state;
-
-        // The hint shows after my own action: it stays through that action's state update
-        // and goes when the next one lands.
-        if (_optimalPlayTiles != null)
-        {
-            if (!_optimalSeenFirstUpdate)
-                _optimalSeenFirstUpdate = true;
-            else
-            {
-                _optimalPlayTiles = null;
-                _optimalSeenFirstUpdate = false;
-            }
-        }
-
-        // My turn may start here: auto-pick the suggestion that arrived meanwhile.
-        ApplyAutoPick();
     }
 
     private void RevealTurn()
@@ -730,21 +701,33 @@ public partial class GamePage : IAsyncDisposable
 
     // --- Tile selection logic ---
 
-    private void SetHelperMode(HelperMode mode)
+    /// <summary>
+    /// Asks for this turn's optimal tiles and selects them in the play zone.
+    /// A click before the solve answers waits for it; a later click replaces
+    /// whatever was picked by hand. An empty answer leaves a hand-made selection
+    /// alone and, when the zone is empty, says to draw.
+    /// </summary>
+    private void RequestHint()
     {
-        _helperMode = mode;
-        // Switching to Auto mid-turn applies the already-received suggestion right away.
-        ApplyAutoPick();
+        if (!CanAct || _isLoading) return;
+        _hintRequested = true;
+        _hintNoMove = false;
+        ApplyRequestedHint();
     }
 
-    /// <summary>
-    /// Auto-pick mode: pre-selects the solver's move so the player just presses Play.
-    /// Never overwrites tiles the player already picked by hand.
-    /// </summary>
-    private void ApplyAutoPick()
+    private void ApplyRequestedHint()
     {
-        if (_helperMode != HelperMode.Auto || !CanAct) return;
-        if (SelectedTilesForPlay.Count > 0 || _optimalSuggestion is not { Count: > 0 }) return;
+        if (!_hintRequested || !CanAct || !_optimalReady) return;
+
+        _hintRequested = false;
+        if (_optimalSuggestion is not { Count: > 0 })
+        {
+            _hintNoMove = true;
+            return;
+        }
+
+        _hintNoMove = false;
+        SelectedTilesForPlay.Clear();
         SelectedTilesForPlay.AddRange(_optimalSuggestion);
     }
 
