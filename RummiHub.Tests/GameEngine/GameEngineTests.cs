@@ -120,6 +120,17 @@ public class GameEngineTests
     }
 
     [Fact]
+    public void SolveRequests_NameTheGameTurnAndSeat()
+    {
+        var engine = new GameEngine { GameId = "f40b52ef" };
+        engine.Initialize(["Alice", "Bob"], "seed");
+        engine.AdvanceToNextPlayer();
+
+        engine.BuildSolveRequest().RequestId.Should().Be("game-f40b52ef-t0-p1");
+        engine.BuildValidateRequest([]).RequestId.Should().Be("validate-f40b52ef-t0-p1");
+    }
+
+    [Fact]
     public void AdvanceToNextPlayer_CyclesThroughPlayers()
     {
         var engine = CreateEngine(3);

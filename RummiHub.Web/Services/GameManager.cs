@@ -186,7 +186,7 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 
         var playerNames = players.Select(p => p.Name).ToList();
         var autoPlayers = players.Select(p => p.IsAuto).ToList();
-        var engine = new GameEngine();
+        var engine = new GameEngine { GameId = game.Id };
         engine.Initialize(playerNames, game.DistributionSeed, autoPlayers);
         game.Engine = engine;
 

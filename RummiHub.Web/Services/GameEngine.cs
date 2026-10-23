@@ -16,7 +16,12 @@ public sealed class GameEngine
 {
     private readonly Queue<Tile> _tilePool = new();
 
-    public Guid Id { get; private set; }
+    /// <summary>
+    /// The <see cref="Game.Id"/> this engine plays (the code in the game URL). Tags its solve
+    /// requests, so the worker logs and traces name the same game as the web ones.
+    /// </summary>
+    public string GameId { get; init; } = string.Empty;
+
     public List<GamePlayer> Players { get; } = [];
     public int Turn { get; private set; }
     public int PlayerIndex { get; private set; }
@@ -37,7 +42,6 @@ public sealed class GameEngine
             throw new ArgumentOutOfRangeException(nameof(playerNames),
                 $"Expected between 1 and {GameLimits.MaxPlayers} players.");
 
-        Id = Guid.NewGuid();
         Turn = 0;
         PlayerIndex = 0;
         IsGameOver = false;
@@ -81,7 +85,7 @@ public sealed class GameEngine
         var player = CurrentPlayer;
         return new SolveRequest
         {
-            RequestId = $"game-{Id.ToString()[..8]}-t{Turn}-p{PlayerIndex}",
+            RequestId = $"game-{GameId}-t{Turn}-p{PlayerIndex}",
             Hand = player.Rack.GetAllTilesIncludingJokers().ToList(),
             Board = Board,
             HasPlayed = player.HasPlayed,
@@ -144,7 +148,7 @@ public sealed class GameEngine
     {
         return new SolveRequest
         {
-            RequestId = $"validate-{Guid.NewGuid().ToString()[..8]}",
+            RequestId = $"validate-{GameId}-t{Turn}-p{PlayerIndex}",
             Hand = selectedTiles,
             Board = Board,
             HasPlayed = CurrentPlayer.HasPlayed,
