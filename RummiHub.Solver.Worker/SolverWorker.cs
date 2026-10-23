@@ -12,6 +12,9 @@ namespace RummiHub.Solver.Worker;
 
 public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> logger) : BackgroundService
 {
+    /// <summary>Source des spans de résolution, exportée par Program.cs.</summary>
+    public static readonly ActivitySource ActivitySource = new("RummiHub.Solver.Worker");
+
     private const string StreamKey = RedisKeys.SolveStream;
     private const string PriorityStreamKey = RedisKeys.SolvePriorityStream;
     private const string GroupName = RedisKeys.SolversGroup;
@@ -148,8 +151,11 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 
     private async Task ProcessEntry(IDatabase db, string streamKey, StreamEntry entry, CancellationToken ct)
     {
+        using var activity = StartProcessActivity(streamKey, entry);
+
         var contentHash = entry["contentHash"].ToString();
         var payload = entry["payload"];
+        activity?.SetTag("rummihub.content_hash", contentHash);
 
         // Entrée vide (ex. supprimée par le trim du stream) : ACK et on passe.
         if (payload.IsNullOrEmpty)
@@ -165,10 +171,15 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
             return;
         }
 
+        activity?.SetTag("rummihub.request_id", request.RequestId);
         logger.LogInformation("[{WorkerId}] Processing {ContentHash} (request {RequestId})",
             _workerId, contentHash, request.RequestId);
 
         var response = await Solve(request, ct);
+        activity?.SetTag("rummihub.found", response.Found);
+        if (response.Error is not null)
+            activity?.SetStatus(ActivityStatusCode.Error, response.Error);
+
         var resultJson = JsonSerializer.Serialize(response, RummiJsonOptions.Default);
 
         // 1. Stocke le résultat en JSON natif (1h TTL)
@@ -187,6 +198,22 @@ public class SolverWorker(IConnectionMultiplexer redis, ILogger<SolverWorker> lo
 
         logger.LogInformation("[{WorkerId}] {ContentHash} done. Found={Found}",
             _workerId, contentHash, response.Found);
+    }
+
+    /// <summary>
+    /// Démarre la span d'une entrée du stream, enfant de la requête POST /solve qui l'a
+    /// ajoutée (champ traceparent posé par l'API) : une résolution se lit en une seule trace,
+    /// du hub SignalR au worker, avec les commandes Redis et les logs du traitement. Sans
+    /// traceparent lisible, la span ouvre sa propre trace.
+    /// </summary>
+    internal static Activity? StartProcessActivity(string streamKey, StreamEntry entry)
+    {
+        ActivityContext.TryParse(entry["traceparent"], null, isRemote: true, out var parent);
+
+        var activity = ActivitySource.StartActivity($"process {streamKey}", ActivityKind.Consumer, parent);
+        activity?.SetTag("messaging.destination.name", streamKey);
+        activity?.SetTag("messaging.message.id", entry.Id.ToString());
+        return activity;
     }
 
     private async Task<SolveResponse> Solve(SolveRequest request, CancellationToken ct)
