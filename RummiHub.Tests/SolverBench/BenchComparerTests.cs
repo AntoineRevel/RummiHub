@@ -97,6 +97,15 @@ public class BenchComparerTests
     }
 
     [Fact]
+    public void Registry_ListsDynamicAndGraphOnly()
+    {
+        SolverRegistry.FirstPlay.Select(s => s.Name).Should().BeEquivalentTo("GraphFirstSolver", "DynamicSolver");
+        SolverRegistry.DuringGame.Select(s => s.Name).Should().BeEquivalentTo("GraphSolver", "DynamicSolver");
+        SolverRegistry.FirstPlay.Count(s => s.IsBaseline).Should().Be(1);
+        SolverRegistry.DuringGame.Count(s => s.IsBaseline).Should().Be(1);
+    }
+
+    [Fact]
     public void Compare_ProducesDeterministicVerdicts_AcrossRuns()
     {
         var corpus = Corpus();
@@ -104,7 +113,7 @@ public class BenchComparerTests
         {
             SolverRegistry.Baseline(BenchPhase.FirstPlay),
             SolverRegistry.Baseline(BenchPhase.DuringGame),
-            SolverRegistry.DuringGame.Single(s => s.Name == "IncrementalComplexSolver")
+            SolverRegistry.DuringGame.Single(s => s.Name == "GraphSolver")
         };
 
         var first = new BenchComparer(Fast).Compare(corpus, solvers, "run1");

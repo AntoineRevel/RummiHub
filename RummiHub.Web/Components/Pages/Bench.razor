@@ -9,8 +9,7 @@
     <header>
         <h1>Solver performance comparator</h1>
         <p>
-            Exact solvers return the same optimal move, so the criterion here is <strong>performance</strong>.
-            Every captured position is solved by all selected solvers; time / memory / CPU are measured and each
+            Compares <em>DynamicSolver</em> with the graph fallback. Time / memory / CPU are measured and each
             result is checked for legality (independently) and against the <em>DynamicSolver</em> optimum.
             Measurements are indicative (sequential, warmed up, median/p95) — not BenchmarkDotNet.
         </p>

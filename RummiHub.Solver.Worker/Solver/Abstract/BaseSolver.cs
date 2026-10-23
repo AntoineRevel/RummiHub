@@ -70,41 +70,6 @@ public abstract class BaseSolver(Tile[] tiles, int jokers)
         }
     }
 
-    protected void MarkTilesAsUsedOut(ValidSet set, int anchorIndex, out int playerSetScore)
-    {
-        playerSetScore = 0;
-        var anchorSkipped = false;
-        var searchFrom = anchorIndex + 1;
-
-        foreach (var tile in set.Tiles)
-        {
-            if (tile.IsJoker)
-            {
-                playerSetScore += tile.Value;
-                Jokers -= 1;
-                continue;
-            }
-
-            // The caller adds the anchor's own value. Count every other tile, including a
-            // joker placed in front of a run that can no longer grow past 13.
-            if (!anchorSkipped && tile.Equals(Tiles[anchorIndex]))
-            {
-                anchorSkipped = true;
-                continue;
-            }
-
-            playerSetScore += tile.Value;
-
-            for (; searchFrom < Tiles.Length; searchFrom++)
-            {
-                if (UsedTiles[searchFrom] || !Tiles[searchFrom].Equals(tile)) continue;
-
-                UsedTiles[searchFrom] = true;
-                break;
-            }
-        }
-    }
-
     protected IEnumerable<ValidSet> GetRuns(int tileIndex, CancellationToken cancellationToken = default)
     {
         var availableJokers = Jokers;

@@ -1,8 +1,9 @@
 # Solver performance comparator
 
 A self-contained benchmark for the Rummikub solvers. It answers one question objectively:
-**how do the solvers compare on performance?** The exact solvers return the same optimal move,
-so move *quality* is not the point — time, memory and CPU are.
+**how do DynamicSolver and the graph fallback compare on performance?** Time, memory and CPU
+are measured, and each move is checked for legality and for divergence from the
+dynamic-programming baseline.
 
 Everything runs in memory. There is no Redis, SignalR or Aspire dependency, and no external
 NuGet package was added.
