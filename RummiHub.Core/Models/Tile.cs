@@ -76,7 +76,14 @@ public sealed class TileJsonConverter : JsonConverter<Tile>
     {
         var dto = JsonSerializer.Deserialize<TileDto>(ref reader, options);
         if (dto is null) return default;
-        return dto.IsJoker ? new Tile(isJoker: true) : new Tile(dto.Value, dto.Color);
+        if (!dto.IsJoker) return new Tile(dto.Value, dto.Color);
+
+        // A board joker keeps the tile it stands for: the worker reuses untouched board sets
+        // as-is (BoardStabilizer), and SolutionValidator rejects a joker worth 0. A joker with
+        // nothing usable to stand for (a rack joker) stays a bare joker.
+        return dto.Value is >= 0 and <= 15 && Enum.IsDefined(dto.Color)
+            ? new Tile(dto.Value, dto.Color, isJoker: true)
+            : new Tile(isJoker: true);
     }
 
     public override void Write(Utf8JsonWriter writer, Tile value, JsonSerializerOptions options)
