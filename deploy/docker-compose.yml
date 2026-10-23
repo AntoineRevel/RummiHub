@@ -16,6 +16,8 @@ x-dotnet-env: &dotnet-env
   # Traces, métriques et journaux structurés vers le tableau de bord (OTLP gRPC).
   # Vide ou absent : ServiceDefaults n'exporte rien.
   OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
+  # Clé sans laquelle le tableau de bord refuse la télémétrie (Dashboard__Otlp).
+  OTEL_EXPORTER_OTLP_HEADERS: x-otlp-api-key=${OTLP_API_KEY:?Définir OTLP_API_KEY dans deploy/.env}
 
 services:
   caddy:
@@ -172,7 +174,8 @@ services:
   # Tableau de bord Aspire : traces, métriques et journaux structurés des trois
   # services .NET. Tout reste en mémoire et disparaît à chaque redémarrage.
   # Interface sur 127.0.0.1 seulement, à ouvrir par tunnel SSH (deploy/README.md,
-  # « Traces et métriques »). Le port OTLP n'est joignable que depuis internal.
+  # « Traces et métriques »). Le port OTLP n'est joignable que depuis internal
+  # et n'accepte que les envois qui portent OTLP_API_KEY.
   # Aucun service n'en dépend : arrêté ou absent, l'export échoue en silence.
   aspire-dashboard:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.1
@@ -182,6 +185,10 @@ services:
     # conteneur. Garde par défaut les 10 000 dernières traces et entrées de journal
     # par service.
     environment:
+      # Réception OTLP (gRPC 18889, HTTP 18890) : en-tête x-otlp-api-key exigé, posé
+      # par x-dotnet-env. Clé vide : le tableau de bord ne démarre pas, d'où le :?.
+      Dashboard__Otlp__AuthMode: ApiKey
+      Dashboard__Otlp__PrimaryApiKey: ${OTLP_API_KEY:?Définir OTLP_API_KEY dans deploy/.env}
       # API /api/telemetry (en-tête x-api-key), pour lire la télémétrie depuis le VPS.
       # Clé vide ou absente : l'API répond 401 à tout, l'interface reste accessible.
       # Facultative pour que .env.test n'ait pas à la définir.

@@ -2,7 +2,7 @@
 # rummisolve.localhost et www.rummisolve.localhost pointent vers 127.0.0.1.
 #
 #   cd deploy
-#   cp .env.example .env   # remplir SOLVER_API_KEY ; DOMAIN et ACME_EMAIL peuvent rester
+#   cp .env.example .env   # remplir SOLVER_API_KEY et OTLP_API_KEY ; DOMAIN et ACME_EMAIL peuvent rester
 #   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 #
 # Le certificat est interne à Caddy. Un navigateur affiche un avertissement ;
