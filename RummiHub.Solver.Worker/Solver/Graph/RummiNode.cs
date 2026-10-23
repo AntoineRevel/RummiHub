@@ -89,26 +89,35 @@ public class RummiNode : BaseSolver
         Children.Add(child);
     }
 
-    private void MarkTilesAsUsed(ValidSet set, int unusedIndex, ref int playerTilePlayed, ref int boardTileNotPlayed)
+    private void MarkTilesAsUsed(ValidSet set, int anchorIndex, ref int playerTilePlayed, ref int boardTileNotPlayed)
     {
-        unusedIndex++;
-        for (var tIndex = 1; tIndex < set.Tiles.Length; tIndex++)
+        var anchorSkipped = false;
+        var searchFrom = anchorIndex + 1;
+
+        foreach (var tile in set.Tiles)
         {
-            var tile = set.Tiles[tIndex];
             if (tile.IsJoker)
             {
                 Jokers -= 1;
                 continue;
             }
 
-            for (; unusedIndex < Tiles.Length; unusedIndex++)
+            // The caller already counted the tile this run grew from. A joker extending
+            // the low end sits in front of that anchor, so skip it wherever it lies.
+            if (!anchorSkipped && tile.Equals(Tiles[anchorIndex]))
             {
-                if (UsedTiles[unusedIndex] || !Tiles[unusedIndex].Equals(tile)) continue;
+                anchorSkipped = true;
+                continue;
+            }
 
-                if (_isPlayerTile[unusedIndex]) playerTilePlayed++;
+            for (; searchFrom < Tiles.Length; searchFrom++)
+            {
+                if (UsedTiles[searchFrom] || !Tiles[searchFrom].Equals(tile)) continue;
+
+                if (_isPlayerTile[searchFrom]) playerTilePlayed++;
                 else boardTileNotPlayed--;
 
-                UsedTiles[unusedIndex] = true;
+                UsedTiles[searchFrom] = true;
                 break;
             }
         }

@@ -14,8 +14,7 @@ public readonly struct Tile : IComparable<Tile>, IEquatable<Tile>
 
     public Tile(int value, TileColor color = TileColor.Blue, bool isJoker = false)
     {
-        if (value is < 0 or > 15)
-            throw new ArgumentOutOfRangeException(nameof(value), "Value must be between 0 and 15.");
+        ValidateValue(value, isJoker);
 
         if (!Enum.IsDefined(color))
             throw new ArgumentOutOfRangeException(nameof(color), "Invalid color.");
@@ -34,7 +33,26 @@ public readonly struct Tile : IComparable<Tile>, IEquatable<Tile>
 
     public Tile(byte b)
     {
+        var isJoker = ((b >> 6) & 0x01) == 1;
+        ValidateValue(b & 0x0F, isJoker);
         _data = b;
+    }
+
+    /// <summary>
+    /// A real tile is 1..13. A joker may be 0 (it stands for nothing yet) or 1..13
+    /// (the tile it represents). The four value bits can hold 14 and 15; those are not faces.
+    /// </summary>
+    private static void ValidateValue(int value, bool isJoker)
+    {
+        if (isJoker)
+        {
+            if (value is < 0 or > 13)
+                throw new ArgumentOutOfRangeException(nameof(value), "A joker value must be between 0 and 13.");
+            return;
+        }
+
+        if (value is < 1 or > 13)
+            throw new ArgumentOutOfRangeException(nameof(value), "Value must be between 1 and 13.");
     }
 
     public int Value => _data & 0x0F;
@@ -76,12 +94,18 @@ public sealed class TileJsonConverter : JsonConverter<Tile>
     {
         var dto = JsonSerializer.Deserialize<TileDto>(ref reader, options);
         if (dto is null) return default;
-        if (!dto.IsJoker) return new Tile(dto.Value, dto.Color);
+        if (!dto.IsJoker)
+        {
+            if (dto.Value is < 1 or > 13 || !Enum.IsDefined(dto.Color))
+                throw new JsonException("A tile must be a value from 1 to 13 in a known color, or a joker.");
+
+            return new Tile(dto.Value, dto.Color);
+        }
 
         // A board joker keeps the tile it stands for: the worker reuses untouched board sets
         // as-is (BoardStabilizer), and SolutionValidator rejects a joker worth 0. A joker with
         // nothing usable to stand for (a rack joker) stays a bare joker.
-        return dto.Value is >= 0 and <= 15 && Enum.IsDefined(dto.Color)
+        return dto.Value is >= 0 and <= 13 && Enum.IsDefined(dto.Color)
             ? new Tile(dto.Value, dto.Color, isJoker: true)
             : new Tile(isJoker: true);
     }

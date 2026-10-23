@@ -6,13 +6,14 @@ public abstract class ComplexSolver(Tile[] tiles, int jokers, bool[] isPlayerTil
 {
     protected readonly bool[] IsPlayerTile = isPlayerTile;
 
-    protected void MarkTilesAsUsedOut(ValidSet set, int unusedIndex, int boardJokers, out int playerSetScore)
+    protected void MarkTilesAsUsedOut(ValidSet set, int anchorIndex, int boardJokers, out int playerSetScore)
     {
         playerSetScore = 0;
-        unusedIndex++;
-        for (var tIndex = 1; tIndex < set.Tiles.Length; tIndex++)
+        var anchorSkipped = false;
+        var searchFrom = anchorIndex + 1;
+
+        foreach (var tile in set.Tiles)
         {
-            var tile = set.Tiles[tIndex];
             if (tile.IsJoker)
             {
                 Jokers -= 1;
@@ -21,13 +22,19 @@ public abstract class ComplexSolver(Tile[] tiles, int jokers, bool[] isPlayerTil
                 continue;
             }
 
-            for (; unusedIndex < Tiles.Length; unusedIndex++)
+            if (!anchorSkipped && tile.Equals(Tiles[anchorIndex]))
             {
-                if (UsedTiles[unusedIndex] || !Tiles[unusedIndex].Equals(tile)) continue;
+                anchorSkipped = true;
+                continue;
+            }
 
-                UsedTiles[unusedIndex] = true;
+            for (; searchFrom < Tiles.Length; searchFrom++)
+            {
+                if (UsedTiles[searchFrom] || !Tiles[searchFrom].Equals(tile)) continue;
 
-                if (IsPlayerTile[unusedIndex]) playerSetScore += tile.Value;
+                UsedTiles[searchFrom] = true;
+
+                if (IsPlayerTile[searchFrom]) playerSetScore += tile.Value;
 
                 break;
             }

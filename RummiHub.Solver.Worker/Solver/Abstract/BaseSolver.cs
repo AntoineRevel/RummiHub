@@ -8,33 +8,43 @@ public abstract class BaseSolver(Tile[] tiles, int jokers)
     protected readonly bool[] UsedTiles = new bool[tiles.Length];
     public int Jokers = jokers;
 
-    protected void MarkTilesAsUsed(ValidSet set, int unusedIndex)
+    protected void MarkTilesAsUsed(ValidSet set, int anchorIndex)
     {
-        unusedIndex++;
-        for (var tIndex = 1; tIndex < set.Tiles.Length; tIndex++)
+        var anchorSkipped = false;
+        var searchFrom = anchorIndex + 1;
+
+        foreach (var tile in set.Tiles)
         {
-            var tile = set.Tiles[tIndex];
             if (tile.IsJoker)
             {
                 Jokers -= 1;
                 continue;
             }
 
-            for (; unusedIndex < Tiles.Length; unusedIndex++)
+            // The caller already marked the tile the run was grown from. A joker may now
+            // sit in front of it, so that anchor is skipped wherever it appears.
+            if (!anchorSkipped && tile.Equals(Tiles[anchorIndex]))
             {
-                if (UsedTiles[unusedIndex] || !Tiles[unusedIndex].Equals(tile)) continue;
+                anchorSkipped = true;
+                continue;
+            }
 
-                UsedTiles[unusedIndex] = true;
+            for (; searchFrom < Tiles.Length; searchFrom++)
+            {
+                if (UsedTiles[searchFrom] || !Tiles[searchFrom].Equals(tile)) continue;
+
+                UsedTiles[searchFrom] = true;
                 break;
             }
         }
     }
 
-    protected void MarkTilesAsUnused(ValidSet set, int unusedIndex)
+    protected void MarkTilesAsUnused(ValidSet set, int anchorIndex)
     {
+        var anchorSkipped = false;
         var lastIndex = Tiles.Length - 1;
 
-        for (var tIndex = set.Tiles.Length - 1; tIndex > 0; tIndex--)
+        for (var tIndex = set.Tiles.Length - 1; tIndex >= 0; tIndex--)
         {
             var tile = set.Tiles[tIndex];
 
@@ -44,7 +54,13 @@ public abstract class BaseSolver(Tile[] tiles, int jokers)
                 continue;
             }
 
-            for (; lastIndex > unusedIndex; lastIndex--)
+            if (!anchorSkipped && tile.Equals(Tiles[anchorIndex]))
+            {
+                anchorSkipped = true;
+                continue;
+            }
+
+            for (; lastIndex > anchorIndex; lastIndex--)
             {
                 if (!UsedTiles[lastIndex] || !Tiles[lastIndex].Equals(tile)) continue;
 
@@ -54,26 +70,36 @@ public abstract class BaseSolver(Tile[] tiles, int jokers)
         }
     }
 
-    protected void MarkTilesAsUsedOut(ValidSet set, int unusedIndex, out int playerSetScore)
+    protected void MarkTilesAsUsedOut(ValidSet set, int anchorIndex, out int playerSetScore)
     {
         playerSetScore = 0;
-        unusedIndex++;
-        for (var tIndex = 1; tIndex < set.Tiles.Length; tIndex++)
-        {
-            var tile = set.Tiles[tIndex];
-            playerSetScore += tile.Value;
+        var anchorSkipped = false;
+        var searchFrom = anchorIndex + 1;
 
+        foreach (var tile in set.Tiles)
+        {
             if (tile.IsJoker)
             {
+                playerSetScore += tile.Value;
                 Jokers -= 1;
                 continue;
             }
 
-            for (; unusedIndex < Tiles.Length; unusedIndex++)
+            // The caller adds the anchor's own value. Count every other tile, including a
+            // joker placed in front of a run that can no longer grow past 13.
+            if (!anchorSkipped && tile.Equals(Tiles[anchorIndex]))
             {
-                if (UsedTiles[unusedIndex] || !Tiles[unusedIndex].Equals(tile)) continue;
+                anchorSkipped = true;
+                continue;
+            }
 
-                UsedTiles[unusedIndex] = true;
+            playerSetScore += tile.Value;
+
+            for (; searchFrom < Tiles.Length; searchFrom++)
+            {
+                if (UsedTiles[searchFrom] || !Tiles[searchFrom].Equals(tile)) continue;
+
+                UsedTiles[searchFrom] = true;
                 break;
             }
         }
@@ -112,7 +138,20 @@ public abstract class BaseSolver(Tile[] tiles, int jokers)
 
             if (availableJokers <= 0) yield break;
 
-            currentRun.Add(new Tile(currentRun[^1].Value + 1, color, true));
+            // A joker stands for 1..13 only. Once the high end is 13, spare jokers extend
+            // the low end instead (12-13 becomes joker-11, 12, 13) and stop at 1.
+            var high = currentRun[^1].Value + 1;
+            if (high <= 13)
+            {
+                currentRun.Add(new Tile(high, color, true));
+            }
+            else
+            {
+                var low = currentRun[0].Value - 1;
+                if (low < 1) yield break;
+
+                currentRun.Insert(0, new Tile(low, color, true));
+            }
 
             availableJokers--;
 

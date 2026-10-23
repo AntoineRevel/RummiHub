@@ -23,11 +23,38 @@ public class TileTests
 
     [Theory]
     [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(14)]
+    [InlineData(15)]
     [InlineData(16)]
     [InlineData(100)]
     public void Constructor_ThrowsOnValueOutOfRange(int value)
     {
         var act = () => new Tile(value, TileColor.Blue);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(13)]
+    public void Constructor_JokerMayStandForZeroThrough13(int value)
+    {
+        var tile = new Tile(value, TileColor.Red, isJoker: true);
+
+        tile.IsJoker.Should().BeTrue();
+        tile.Value.Should().Be(value);
+        tile.Color.Should().Be(TileColor.Red);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(14)]
+    [InlineData(15)]
+    public void Constructor_RejectsJokerValuesOutsideZeroThrough13(int value)
+    {
+        var act = () => new Tile(value, TileColor.Blue, isJoker: true);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -159,5 +186,26 @@ public class TileTests
         deserialized.IsJoker.Should().BeTrue();
         deserialized.Value.Should().Be(13);
         deserialized.Color.Should().Be(TileColor.Mango);
+    }
+
+    [Fact]
+    public void JsonSerialization_JokerAbove13_DoesNotKeepThatFace()
+    {
+        const string json = """{"value":14,"color":"Blue","isJoker":true}""";
+
+        var tile = JsonSerializer.Deserialize<Tile>(json, RummiJsonOptions.Default);
+
+        tile.IsJoker.Should().BeTrue();
+        tile.Value.Should().Be(0);
+    }
+
+    [Fact]
+    public void JsonSerialization_NonJokerOutside1To13_Throws()
+    {
+        const string json = """{"value":14,"color":"Blue","isJoker":false}""";
+
+        var act = () => JsonSerializer.Deserialize<Tile>(json, RummiJsonOptions.Default);
+
+        act.Should().Throw<JsonException>();
     }
 }

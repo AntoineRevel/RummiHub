@@ -69,13 +69,11 @@ public class SolveRequestValidatorTests
         SolveRequestValidator.TryValidate(Request(hand), out _).Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(14)]
-    [InlineData(15)]
-    public void TryValidate_RejectsTileValuesOutside1To13(int value)
+    [Fact]
+    public void TryValidate_RejectsADefaultTile()
     {
-        var hand = new List<Tile> { new(value, TileColor.Blue) };
+        // default(Tile) is the one non-joker with value 0 that the constructor still allows.
+        var hand = new List<Tile> { default };
 
         SolveRequestValidator.TryValidate(Request(hand), out var error).Should().BeFalse();
         error.Should().Contain("1 to 13");
