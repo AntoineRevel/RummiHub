@@ -1,4 +1,6 @@
+using System.Text.Json;
 using FluentAssertions;
+using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Core.Solver;
 using RummiHub.Solver.Worker.Solver.Dynamic;
@@ -323,6 +325,32 @@ public class BoardStabilizerTests
         result.BestSolution.Groups.Should().ContainSingle().Which.Tiles.Should().HaveCount(4);
         result.BestSolution.Groups[0].Tiles.Take(3).Select(t => t.Color)
             .Should().Equal(TileColor.Blue, TileColor.Red, TileColor.Black);
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void BoardReceivedOverJson_WithAJoker_StillStaysInPlace()
+    {
+        // Production game bb044f42, turn 13: 9M and 10M only extend the mango run. The
+        // worker gets the board as JSON; if the joker lost the tile it stands for there, every
+        // arrangement reusing the board's sets failed validation and the solver's sorted table
+        // came back instead: the second ones-group, laid out of colour order, got reshuffled.
+        var mango = VSet(T(6, TileColor.Mango), T(7, TileColor.Mango), T(8, TileColor.Mango));
+        var ones = VSet(T(1, TileColor.Blue), T(1, TileColor.Mango), T(1, TileColor.Black), T(1, TileColor.Red));
+        var thirteens = VSet(T(13, TileColor.Blue), new Tile(13, TileColor.Red, isJoker: true), T(13, TileColor.Black));
+        var sent = new Solution { IsValid = true, Runs = [mango], Groups = [ones, thirteens] };
+        var board = JsonSerializer.Deserialize<Solution>(
+            JsonSerializer.Serialize(sent, RummiJsonOptions.Default), RummiJsonOptions.Default)!;
+        var rack = new Set([T(10, TileColor.Mango), T(9, TileColor.Mango)]);
+
+        var solved = SolveFor(board, rack);
+        solved.TilesToPlay.Should().HaveCount(2);
+
+        var result = BoardStabilizer.Stabilize(board, solved);
+
+        result.BestSolution.Groups.Should().Equal(board.Groups);
+        result.BestSolution.Runs.Should().ContainSingle().Which.Tiles.Select(t => t.Value)
+            .Should().Equal(6, 7, 8, 9, 10);
         ShouldBeLegalOver(result, board, rack);
     }
 }

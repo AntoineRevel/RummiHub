@@ -148,4 +148,16 @@ public class TileTests
 
         deserialized.IsJoker.Should().BeTrue();
     }
+
+    [Fact]
+    public void JsonSerialization_BoardJoker_KeepsTheTileItStandsFor()
+    {
+        var original = new Tile(13, TileColor.Mango, isJoker: true);
+        var json = JsonSerializer.Serialize(original, RummiJsonOptions.Default);
+        var deserialized = JsonSerializer.Deserialize<Tile>(json, RummiJsonOptions.Default);
+
+        deserialized.IsJoker.Should().BeTrue();
+        deserialized.Value.Should().Be(13);
+        deserialized.Color.Should().Be(TileColor.Mango);
+    }
 }

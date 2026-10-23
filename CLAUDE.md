@@ -63,7 +63,7 @@ The solver is fully asynchronous and distributed across services:
 
 ### Domain Model (RummiHub.Core)
 
-- **`Tile`** — bit-packed `byte`: bits 0–3 = value (1–13), bits 4–5 = `TileColor` enum (Blue/Red/Black/Mango), bit 6 = `IsJoker`. Serialized as `{value, color, isJoker}` JSON via `TileJsonConverter`.
+- **`Tile`** — bit-packed `byte`: bits 0–3 = value (1–13), bits 4–5 = `TileColor` enum (Blue/Red/Black/Mango), bit 6 = `IsJoker`. Serialized as `{value, color, isJoker}` JSON via `TileJsonConverter`; a joker keeps the value and color it stands for across the round-trip (the worker reuses board sets as-is, and `SolutionValidator` rejects a joker worth 0).
 - **`Set`** — mutable tile collection. **`Tiles` never contains jokers** — jokers are tracked separately via `Jokers: int`. Use `GetAllTilesIncludingJokers()` when you need the full list.
 - **`ValidSet`** — an array of tiles that forms a valid run or group. **May contain joker tiles** in the array (unlike `Set`).
 - **`Solution`** — the board state: `Runs: List<ValidSet>` + `Groups: List<ValidSet>`. `ToSet()` flattens it to a `Set` for solvers. `AddSolution()` merges another solution into this one.
