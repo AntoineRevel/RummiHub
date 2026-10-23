@@ -33,7 +33,7 @@ cp .env.example .env
 openssl rand -hex 32
 ```
 
-Coller la valeur dans `SOLVER_API_KEY` (64 caractères hex, sans `$` ni espace). Renseigner `DOMAIN` (`rummisolve.com`) et `ACME_EMAIL`. Puis :
+Coller la valeur dans `SOLVER_API_KEY` (64 caractères hex, sans `$` ni espace), puis une autre dans `OTLP_API_KEY`. Renseigner `DOMAIN` (`rummisolve.com`) et `ACME_EMAIL`. Puis :
 
 ```bash
 docker compose up -d --build
@@ -194,7 +194,7 @@ cp .env.test.example .env.test
 openssl rand -hex 32
 ```
 
-Coller la valeur dans `SOLVER_API_KEY` de `.env.test`. Ce n’est pas la clé de la production. `DOMAIN` et `ACME_EMAIL` sont là pour l’interpolation du compose de base ; le Caddy de test ne démarre pas. Ne pas lancer `docker compose up` sans `-f docker-compose.test.yml` dans ce clone : le fichier de base publierait 80 et 443.
+Coller la valeur dans `SOLVER_API_KEY` de `.env.test`. Ce n’est pas la clé de la production. `DOMAIN`, `ACME_EMAIL` et `OTLP_API_KEY` (valeur quelconque) sont là pour l’interpolation du compose de base ; ni le Caddy ni le tableau de bord ne démarrent sur la pile de test. Ne pas lancer `docker compose up` sans `-f docker-compose.test.yml` dans ce clone : le fichier de base publierait 80 et 443.
 
 Le clone de test est jetable (`git checkout --force` et `git clean -ffd` à chaque déploiement). `.env` et `.env.test` sont gitignorés, donc gardés par le `clean` ; le reste des fichiers non suivis est supprimé.
 
@@ -253,7 +253,7 @@ Les fichiers de log Docker sont bornés (10 Mo × 3) et disparaissent quand Comp
 
 ### Traces et métriques
 
-`webfrontend`, `apiservice` et les deux `solver-worker` envoient leurs traces, métriques et journaux structurés au tableau de bord Aspire (`aspire-dashboard`, OTLP gRPC sur le port 18889 du réseau `internal`). C’est le même tableau de bord que celui d’`aspire run`, sans la page des ressources ni les journaux console. Tout reste en mémoire : un redémarrage du conteneur efface l’historique. Il garde les 10 000 dernières traces et entrées de journal par service.
+`webfrontend`, `apiservice` et les deux `solver-worker` envoient leurs traces, métriques et journaux structurés au tableau de bord Aspire (`aspire-dashboard`, OTLP gRPC sur le port 18889 du réseau `internal`). Il n’accepte que les envois qui portent la clé `OTLP_API_KEY` de `.env` (en-tête `x-otlp-api-key`, posé par Compose sur les trois services). C’est le même tableau de bord que celui d’`aspire run`, sans la page des ressources ni les journaux console. Tout reste en mémoire : un redémarrage du conteneur efface l’historique. Il garde les 10 000 dernières traces et entrées de journal par service.
 
 L’interface n’écoute que sur `127.0.0.1:18888` du VPS. Depuis sa machine :
 
@@ -304,6 +304,7 @@ Les deux connexions doivent être refusées. Depuis une autre machine, `curl --m
 | `DOMAIN` | Apex du certificat et du site. |
 | `ACME_EMAIL` | Contact Let's Encrypt. |
 | `DASHBOARD_API_KEY` | Facultative. Clé de l’API de télémétrie du tableau de bord (`openssl rand -hex 32`). Vide : API fermée. |
+| `OTLP_API_KEY` | Obligatoire. Clé que le tableau de bord exige pour recevoir la télémétrie (`openssl rand -hex 32`). Compose la pose sur le tableau de bord et, en en-tête `x-otlp-api-key`, sur `webfrontend`, `apiservice` et `solver-worker`. Absente : Compose refuse de démarrer, rien n’est recréé. |
 
 Aucun mot de passe Redis : le port n’est pas publié. Les graines de rejeu durables sont `GameOptions:PredefinedIds` dans `RummiHub.Web/appsettings.json` (inclus dans l’image). Le bouton « sauver la graine » n’écrit pas le fichier en production.
 
@@ -313,7 +314,7 @@ Aucun mot de passe Redis : le port n’est pas publié. Les graines de rejeu dur
 
 ```bash
 cd deploy
-cp .env.example .env   # SOLVER_API_KEY via openssl rand -hex 32
+cp .env.example .env   # SOLVER_API_KEY et OTLP_API_KEY via openssl rand -hex 32
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 

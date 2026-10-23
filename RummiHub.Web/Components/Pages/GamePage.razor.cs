@@ -314,10 +314,15 @@ public partial class GamePage : IAsyncDisposable
 
         Handle<List<Tile>>(HubEvents.OptimalReady, tiles =>
         {
-            _optimalReady = true;
-            _optimalSuggestion = tiles is { Count: > 0 } ? tiles : null;
-            // No-op unless Hint was clicked, and until this turn is on screen.
-            ApplyRequestedHint();
+            // The suggestion follows its state. If that state is still parked behind a
+            // replay, it waits with it: applied now, the state landing would wipe it.
+            if (HoldingMoves && _heldMoves.Count > 0)
+            {
+                _heldMoves[^1].Optimal = tiles ?? [];
+                return;
+            }
+
+            ApplyOptimal(tiles);
         });
 
         Handle<string>(HubEvents.SeedSaved, _ => _seedSaved = true);
@@ -604,6 +609,8 @@ public partial class GamePage : IAsyncDisposable
         ApplyIncomingState(move.State);
         if (move.Highlighted)
             ApplyIncomingHighlight(move.Indices, move.DisplayMs, move.ModifiedSets);
+        if (move.Optimal is not null)
+            ApplyOptimal(move.Optimal);
 
         _drainingHeld = _heldMoves.Count > 0;
         _releaseHeldAfterRender = _heldMoves.Count > 0;
@@ -712,6 +719,14 @@ public partial class GamePage : IAsyncDisposable
         if (!CanAct || _isLoading) return;
         _hintRequested = true;
         _hintNoMove = false;
+        ApplyRequestedHint();
+    }
+
+    private void ApplyOptimal(List<Tile>? tiles)
+    {
+        _optimalReady = true;
+        _optimalSuggestion = tiles is { Count: > 0 } ? tiles : null;
+        // No-op unless Hint was clicked, and until this turn is on screen.
         ApplyRequestedHint();
     }
 
@@ -834,6 +849,8 @@ public partial class GamePage : IAsyncDisposable
         public List<int>? Indices { get; set; }
         public int DisplayMs { get; set; }
         public List<int>? ModifiedSets { get; set; }
+        /// <summary>This turn's OptimalReady tiles (empty: no move); null until it arrives.</summary>
+        public List<Tile>? Optimal { get; set; }
     }
 
     public async ValueTask DisposeAsync()

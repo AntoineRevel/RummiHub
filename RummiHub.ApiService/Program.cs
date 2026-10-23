@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
 using RummiHub.Core.Contracts;
@@ -112,7 +113,10 @@ app.MapPost("/solve", async (SolveRequest request, IConnectionMultiplexer redis)
             var payload = JsonSerializer.Serialize(request, RummiJsonOptions.Default);
             await db.StreamAddAsync(streamKey, [
                 new NameValueEntry("contentHash", contentHash),
-                new NameValueEntry("payload", payload)
+                new NameValueEntry("payload", payload),
+                // W3C trace context of this request: the worker parents its solve span on it,
+                // so one trace runs from the hub call to the solver.
+                new NameValueEntry("traceparent", Activity.Current?.Id)
             ], maxLength: 1000, useApproximateMaxLength: true);
 
             // 4. Wake up waiting workers
