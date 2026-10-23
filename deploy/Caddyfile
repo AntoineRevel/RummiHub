@@ -5,7 +5,10 @@
 
 {$DOMAIN} {
 	encode gzip
-	reverse_proxy webfrontend:8080 {
+	# Nom du conteneur, pas « webfrontend » : sur le réseau rummihub-edge, Docker donne
+	# aussi ce nom de service au webfrontend du site de test, et Caddy y envoyait alors
+	# le site public. rummihub-webfrontend-1 n'existe que dans le projet de production.
+	reverse_proxy rummihub-webfrontend-1:8080 {
 		# Blazor Server / SignalR : pas de tampon, en-têtes de proxy explicites.
 		flush_interval -1
 		header_up X-Forwarded-For {remote_host}
