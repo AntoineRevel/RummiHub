@@ -129,6 +129,8 @@ Puis `shred -u /tmp/gha_deploy /tmp/gha_deploy.pub`.
 
 Seul lien : le réseau Docker **externe et interne** `rummihub-edge`. Le Caddy de production y est attaché et proxifie `test.<DOMAIN>` vers l’alias `webfrontend-test`. Le réseau n’a pas de passerelle : la pile de test ne s’en sert pas pour sortir, ni pour atteindre Redis ou l’API de production (autres réseaux). Si le conteneur de test est arrêté (arrêt automatique compris) ou en cours de recréation, ce nom répond `502` avec « Site de test indisponible. » Le site public continue. L’en-tête `X-Robots-Tag: noindex, nofollow` est posé sur les réponses, y compris ce 502.
 
+Le Caddy de production vise le site public par le nom du conteneur, `rummihub-webfrontend-1`, et non par `webfrontend` : sur `rummihub-edge`, Docker donne aussi le nom de service `webfrontend` au webfrontend de test, et Caddy envoyait alors tout le site public vers la pile de test. Ne jamais viser un nom de service depuis Caddy pour la production.
+
 Un déploiement de test ne recrée aucun conteneur `rummihub`. Il ne recharge pas Caddy : le nom `webfrontend-test` est résolu toutes les 5 secondes. Le build est en revanche sérialisé avec celui de la prod (verrou `/run/rummihub/compose.lock`), pour ne pas lancer deux publications .NET en même temps sur 8 Go de RAM.
 
 ### Ce qui demande un redéploiement de la production
