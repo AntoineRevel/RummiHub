@@ -91,7 +91,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now rummihub-test-autostop.timer
 ```
 
-Ces fichiers ne suivent pas le dépôt une fois copiés : refaire les `install` après une modification.
+Ces fichiers ne suivent pas le dépôt une fois copiés : refaire les `install` après une modification. Le déploiement de prod le signale : juste après la mise à jour du dépôt, `rummihub-check-installed` (lancé depuis le dépôt, jamais installé) compare chaque copie installée à `deploy/autodeploy/`. Une différence apparaît en avertissement jaune dans le résumé du run *Actions*, avec les commandes `sudo install` à coller sur le VPS. Le déploiement continue. Les sudoers ne sont pas vérifiés. À la main : `deploy/autodeploy/rummihub-check-installed`.
 
 Clé SSH de GitHub Actions, générée sur le VPS. Elle ne donne pas de shell. Sans commande distante, elle ne fait que redéployer `master`. La seule autre commande acceptée est `deploy-test <SHA>` (commit complet, 40 caractères hexadécimaux), qui met à jour le site de test (section suivante) et ne touche pas à la pile de production. Même clé, mêmes secrets : pas de `DEPLOY_TEST_SSH_KEY`. La ligne `authorized_keys` ne change pas.
 
@@ -213,6 +213,8 @@ gh workflow run deploy-test.yml -R AntoineRevel/RummiHub --ref ma-branche
 Ça lance `dotnet test` sur cette branche, puis le SSH `deploy-test <SHA>` avec le commit qui vient de passer les tests. Le site montre ce commit. Il n’y a pas de branche `test`. Pour relancer : *Re-run jobs*, ou la même commande. La branche doit contenir `.github/workflows/deploy-test.yml` dans sa version actuelle (toute branche créée depuis `master` après ce changement, sinon merger `master` dedans). Une étiquette est refusée. Un déploiement à la fois, jamais annulé au milieu.
 
 À la main, sur le VPS : `rummihub-deploy-test <SHA complet>`, par exemple `rummihub-deploy-test "$(git ls-remote origin refs/heads/ma-branche | cut -f1)"` depuis un clone. Il démarre `rummihub-deploy-test@<SHA>.service`, qui fait `git fetch origin master <SHA>`, `git checkout --force --detach <SHA>`, puis `docker compose -p rummihub-test … up -d --build --wait --remove-orphans`. Journal : l’onglet *Actions*, ou `journalctl -u 'rummihub-deploy-test@*'`.
+
+Un bandeau rose en bas à gauche du site de test indique ce qui tourne : « Site de test · branche · commit ». `rummihub-deploy-test-run` le passe au webfrontend (`TestSite__Commit`) ; la branche est celle dont le commit est la pointe sur `origin`, absente si elle a avancé depuis. La production n'a pas cette variable, donc pas de bandeau.
 
 **`deploy/` doit être celui de `master`.** Si le commit modifie `deploy/` depuis son point de départ sur `master` (`git diff origin/master...<SHA> -- deploy`), le déploiement est refusé avant le checkout. La pile de test tourne avec les fichiers Compose du commit : un Compose modifié (volume `/`, `docker.sock`, `privileged`…) donnerait root sur le VPS de production. Le code applicatif et le `Dockerfile` peuvent changer librement. Pour essayer une modification de `deploy/`, la merger d’abord.
 

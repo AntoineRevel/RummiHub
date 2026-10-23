@@ -1,0 +1,58 @@
+#!/bin/sh
+# Compare les copies installées sur le VPS (/usr/local/bin, /etc/systemd/system,
+# /etc/tmpfiles.d) aux fichiers de deploy/autodeploy/ de ce clone. Une copie
+# différente ou absente sort en avertissement GitHub Actions (::warning::, visible
+# dans le résumé du déploiement), suivi des commandes à coller sur le VPS. Ne bloque
+# jamais le déploiement : sort toujours en 0.
+#
+# Lancé par rummihub-deploy.service depuis le clone de production, juste après sa
+# mise à jour, et jamais installé : il compare donc toujours avec la dernière version.
+# Les sudoers ne sont pas vérifiés (illisibles sans root).
+
+set -u
+
+dir=$(cd "$(dirname "$0")" && pwd)
+cmds=
+reload=
+
+for src in "$dir"/*; do
+  name=${src##*/}
+  case "$name" in
+    rummihub-check-installed)
+      continue
+      ;;
+    *.service|*.timer)
+      dst=/etc/systemd/system/$name
+      cmd="sudo install -m 644 deploy/autodeploy/$name /etc/systemd/system/"
+      ;;
+    rummihub.tmpfiles)
+      dst=/etc/tmpfiles.d/rummihub.conf
+      cmd="sudo install -m 644 deploy/autodeploy/$name $dst"
+      ;;
+    rummihub-*)
+      dst=/usr/local/bin/$name
+      cmd="sudo install -m 755 deploy/autodeploy/$name /usr/local/bin/"
+      ;;
+    *)
+      continue
+      ;;
+  esac
+  if ! cmp -s "$src" "$dst"; then
+    echo "::warning title=Scripts du VPS à réinstaller::$dst ne correspond pas à deploy/autodeploy/$name"
+    cmds="$cmds$cmd
+"
+    case "$name" in
+      *.service|*.timer) reload=1 ;;
+    esac
+  fi
+done
+
+if [ -n "$cmds" ]; then
+  echo "À lancer sur le VPS, depuis /home/ubuntu/apps/RummiHub :"
+  printf '%s' "$cmds"
+  if [ -n "$reload" ]; then
+    echo "sudo systemctl daemon-reload"
+  fi
+fi
+
+exit 0

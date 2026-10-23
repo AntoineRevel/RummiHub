@@ -13,6 +13,11 @@
 **/Dockerfile*
 **/.dockerignore
 **/.env
+.gitignore
+.mcp.json
+.devcontainer
+aspire.config.json
+*.slnx
 .github
 deploy
 RummiHub.Tests
