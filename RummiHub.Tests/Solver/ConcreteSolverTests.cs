@@ -1,12 +1,9 @@
 using FluentAssertions;
 using RummiHub.Core.Models;
 using RummiHub.Core.Solver;
-using RummiHub.Solver.Worker.Solver.Combinations;
-using RummiHub.Solver.Worker.Solver.Combinations.First;
 using RummiHub.Solver.Worker.Solver.Dynamic;
 using RummiHub.Solver.Worker.Solver.Graph;
 using RummiHub.Solver.Worker.Solver.Graph.First;
-using RummiHub.Solver.Worker.Solver.Incremental;
 using RummiHub.Solver.Worker.Strategies;
 
 namespace RummiHub.Tests.Solver;
@@ -18,23 +15,21 @@ file static class Sets
 }
 
 // ── First-play solvers ────────────────────────────────────────────────────────
-// GraphFirstSolver, IncrementalFirstBaseSolver and CombinationsFirstSolver share
-// one contract: given a rack (no board), find a play scoring ≥ ISolver.MinScore (30).
+// GraphFirstSolver and DynamicSolver share one contract: given a rack (no board),
+// find a play scoring ≥ ISolver.MinScore (30).
 
 public class FirstPlaySolverTests
 {
     private static ISolver Create(string name, Set rack) => name switch
     {
         "GraphFirstSolver" => GraphFirstSolver.Create(rack),
-        "IncrementalFirstBaseSolver" => IncrementalFirstBaseSolver.Create(rack),
-        "CombinationsFirstSolver" => CombinationsFirstSolver.Create(rack),
         "DynamicSolver" => DynamicSolver.CreateFirst(rack),
         _ => throw new ArgumentOutOfRangeException(nameof(name))
     };
 
     public static TheoryData<string> Solvers => new()
     {
-        "GraphFirstSolver", "IncrementalFirstBaseSolver", "CombinationsFirstSolver", "DynamicSolver"
+        "GraphFirstSolver", "DynamicSolver"
     };
 
     [Theory]
@@ -116,8 +111,7 @@ public class FirstPlaySolverTests
 }
 
 // ── During-game solvers ───────────────────────────────────────────────────────
-// GraphSolver, IncrementalComplexSolver, CombinationsSolver and
-// ParallelCombinationsSolver share one contract: given a board and a rack, find a
+// GraphSolver and DynamicSolver share one contract: given a board and a rack, find a
 // rearrangement that uses ALL board tiles and plays at least one rack tile.
 
 public class DuringGameSolverTests
@@ -125,16 +119,13 @@ public class DuringGameSolverTests
     private static ISolver Create(string name, Set board, Set rack) => name switch
     {
         "GraphSolver" => GraphSolver.Create(board, rack),
-        "IncrementalComplexSolver" => IncrementalComplexSolver.Create(board, rack),
-        "CombinationsSolver" => CombinationsSolver.Create(board, rack),
-        "ParallelCombinationsSolver" => ParallelCombinationsSolver.Create(board, rack),
         "DynamicSolver" => DynamicSolver.Create(board, rack),
         _ => throw new ArgumentOutOfRangeException(nameof(name))
     };
 
     public static TheoryData<string> Solvers => new()
     {
-        "GraphSolver", "IncrementalComplexSolver", "CombinationsSolver", "ParallelCombinationsSolver", "DynamicSolver"
+        "GraphSolver", "DynamicSolver"
     };
 
     private static Set BoardRun() =>
@@ -190,8 +181,7 @@ public class DuringGameSolverTests
 }
 
 // ── Strategies ─────────────────────────────────────────────────────────────────
-// The two IStrategy implementations are the production entry points wired into
-// SolverWorker (GraphStrategy is the active default).
+// DynamicStrategy is the production entry point. GraphStrategy is its fallback.
 
 public class StrategyTests
 {
@@ -229,31 +219,6 @@ public class StrategyTests
     public async Task GraphStrategy_DuringGameExtend_IsFound()
         => (await new GraphStrategy().GetSolverResult(BoardRun(), ExtendingTile(), hasPlayed: true))
             .Found.Should().BeTrue();
-
-    [Fact]
-    public async Task ParallelStrategy_FirstPlayValid_IsFound()
-        => (await new ParallelStrategy().GetSolverResult(Sets.Empty(), ValidFirstPlay(), hasPlayed: false))
-            .Found.Should().BeTrue();
-
-    [Fact]
-    public async Task ParallelStrategy_FirstPlayBelowMinScore_IsNotFound()
-        => (await new ParallelStrategy().GetSolverResult(Sets.Empty(), BelowMinScore(), hasPlayed: false))
-            .Found.Should().BeFalse();
-
-    [Fact]
-    public async Task ParallelStrategy_DuringGameExtend_IsFound()
-        => (await new ParallelStrategy().GetSolverResult(BoardRun(), ExtendingTile(), hasPlayed: true))
-            .Found.Should().BeTrue();
-
-    [Fact]
-    public async Task BothStrategies_AgreeOnWhetherSolutionExists()
-    {
-        // Different algorithms, same contract: they must agree on Found for identical input.
-        var graph = await new GraphStrategy().GetSolverResult(BoardRun(), ExtendingTile(), hasPlayed: true);
-        var parallel = await new ParallelStrategy().GetSolverResult(BoardRun(), ExtendingTile(), hasPlayed: true);
-
-        graph.Found.Should().Be(parallel.Found);
-    }
 
     [Fact]
     public async Task DynamicStrategy_FirstPlayValid_IsFound()

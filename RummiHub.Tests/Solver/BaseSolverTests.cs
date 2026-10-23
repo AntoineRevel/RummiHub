@@ -151,6 +151,79 @@ public class BaseSolverTests
     }
 
     [Fact]
+    public void GetRuns_JokerAfter13_ExtendsDownward_NeverAbove13OrZero()
+    {
+        // 11-12-13 + joker. The only legal extension is a joker as 10, in front.
+        // Before the cap, GetRuns appended a joker worth 14 and GetScore counted it (50).
+        var tiles = new[]
+        {
+            new Tile(11, TileColor.Blue),
+            new Tile(12, TileColor.Blue),
+            new Tile(13, TileColor.Blue)
+        };
+        var solver = new TestSolver(tiles, jokers: 1);
+
+        var runs = solver.PublicGetRuns(0).ToList();
+
+        runs.Should().Contain(r => r.Tiles.Length == 4);
+        runs.SelectMany(r => r.Tiles).Should().OnlyContain(t => t.Value >= 1 && t.Value <= 13);
+        var extended = runs.Single(r => r.Tiles.Length == 4);
+        extended.Tiles.Where(t => t.IsJoker).Should().ContainSingle().Which.Value.Should().Be(10);
+        extended.GetScore().Should().Be(46);
+    }
+
+    [Fact]
+    public void GetRuns_ShortRunEndingAt13_JokerFillsTheLowEnd()
+    {
+        // 12-13 is not a run yet. One joker makes [joker 11, 12, 13], not [12, 13, joker 14].
+        var tiles = new[]
+        {
+            new Tile(12, TileColor.Red),
+            new Tile(13, TileColor.Red)
+        };
+        var solver = new TestSolver(tiles, jokers: 1);
+
+        var runs = solver.PublicGetRuns(0).ToList();
+
+        runs.Should().ContainSingle();
+        runs[0].Tiles.Select(t => t.Value).Should().Equal(11, 12, 13);
+        runs[0].Tiles[0].IsJoker.Should().BeTrue();
+        runs[0].GetScore().Should().Be(36);
+    }
+
+    [Fact]
+    public void GetRuns_TwoJokersOn13_StayInside1To13()
+    {
+        var tiles = new[] { new Tile(13, TileColor.Black) };
+        var solver = new TestSolver(tiles, jokers: 2);
+
+        var runs = solver.PublicGetRuns(0).ToList();
+
+        runs.Should().ContainSingle();
+        runs[0].Tiles.Select(t => t.Value).Should().Equal(11, 12, 13);
+        runs[0].Tiles.Count(t => t.IsJoker).Should().Be(2);
+        runs[0].GetScore().Should().Be(36);
+    }
+
+    [Fact]
+    public void GetRuns_JokerCannotExtendBelowOne()
+    {
+        // Upward is still open, and downward from 1 would be the illegal value 0.
+        var tiles = new[]
+        {
+            new Tile(1, TileColor.Mango),
+            new Tile(2, TileColor.Mango)
+        };
+        var solver = new TestSolver(tiles, jokers: 2);
+
+        var runs = solver.PublicGetRuns(0).ToList();
+
+        runs.Should().NotBeEmpty();
+        runs.SelectMany(r => r.Tiles).Should().OnlyContain(t => t.Value >= 1 && t.Value <= 13);
+        runs.SelectMany(r => r.Tiles).Where(t => t.IsJoker).Should().OnlyContain(t => t.Value == 3 || t.Value == 4);
+    }
+
+    [Fact]
     public void GetRuns_DifferentColorBreaksRun()
     {
         // Blue 1, 2, 3 but Red comes between Blue 2 and 3 — since tiles are iterated sequentially
