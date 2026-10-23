@@ -20,12 +20,20 @@ services:
     ports: !override []
     restart: "no"
 
+  # Pas de tableau de bord sur le site de test : le port 18888 de l'hôte est déjà
+  # pris par celui de la production. Les services n'exportent rien (endpoint vide).
+  aspire-dashboard:
+    profiles: ["prod-only"]
+    ports: !override []
+    restart: "no"
+
   webfrontend:
     image: rummihub-webfrontend:test
     # Bandeau « Site de test · branche · commit » en bas à gauche (MainLayout).
     # TEST_COMMIT est posé par rummihub-deploy-test-run ; vide, pas de bandeau.
     environment:
       TestSite__Commit: ${TEST_COMMIT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
     mem_limit: 512M
     memswap_limit: 512M
     networks:
@@ -42,6 +50,8 @@ services:
     image: rummihub-apiservice:test
     mem_limit: 256M
     memswap_limit: 256M
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
     deploy:
       resources:
         limits:
@@ -51,6 +61,8 @@ services:
     image: rummihub-solver-worker:test
     mem_limit: 1024M
     memswap_limit: 1024M
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
     # 1 réplique, 1 CPU, et moins de poids CPU que la prod (cpu_shares 1024
     # par défaut) : sous charge, les workers de prod passent devant.
     cpu_shares: 512

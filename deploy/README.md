@@ -2,7 +2,7 @@
 
 Site public : `https://rummisolve.com`. `https://www.rummisolve.com` redirige vers l’apex. Le site de test `https://test.rummisolve.com` est une seconde pile, sans Caddy ni port publié, arrêtée deux heures après chaque déploiement ; voir « Site de test ».
 
-Cinq processus, comme l’AppHost Aspire (sans le tableau de bord ni Redis Insight) :
+Les processus de l’AppHost Aspire, tableau de bord compris (sans Redis Insight) :
 
 | Service | Rôle | Exposition |
 |---|---|---|
@@ -11,6 +11,7 @@ Cinq processus, comme l’AppHost Aspire (sans le tableau de bord ni Redis Insig
 | `apiservice` | `POST /solve` | réseau `internal` |
 | `solver-worker` | 2 répliques, groupe Redis `solvers` | réseau `internal` |
 | `cache` | Redis Stack (RedisJSON), volume persistant | réseau `internal` |
+| `aspire-dashboard` | traces, métriques et journaux structurés (OTLP), en mémoire | `127.0.0.1:18888`, par tunnel SSH |
 
 L’API, Redis et les workers n’ont aucun port publié. Le réseau `internal` n’a pas de sortie vers Internet. Les parties et les secrets de siège restent en mémoire dans `webfrontend` : ne pas augmenter le nombre de répliques.
 
@@ -126,6 +127,7 @@ Puis `shred -u /tmp/gha_deploy /tmp/gha_deploy.pub`.
 | Secret | `deploy/.env` | `deploy/.env.test` (autre `SOLVER_API_KEY`) |
 | Réseau applicatif | `internal`, sans Internet | le sien, sans Internet |
 | Durée de vie | permanente | arrêtée 2 h après le dernier déploiement |
+| Tableau de bord Aspire | oui | non (rien n’est exporté) |
 
 Seul lien : le réseau Docker **externe et interne** `rummihub-edge`. Le Caddy de production y est attaché et proxifie `test.<DOMAIN>` vers l’alias `webfrontend-test`. Le réseau n’a pas de passerelle : la pile de test ne s’en sert pas pour sortir, ni pour atteindre Redis ou l’API de production (autres réseaux). Si le conteneur de test est arrêté (arrêt automatique compris) ou en cours de recréation, ce nom répond `502` avec « Site de test indisponible. » Le site public continue. L’en-tête `X-Robots-Tag: noindex, nofollow` est posé sur les réponses, y compris ce 502.
 
@@ -247,7 +249,37 @@ docker compose logs -f
 docker compose logs -f webfrontend apiservice solver-worker
 ```
 
-Les fichiers de log Docker sont bornés (10 Mo × 3).
+Les fichiers de log Docker sont bornés (10 Mo × 3) et disparaissent quand Compose recrée le conteneur, donc à chaque déploiement qui touche le service.
+
+### Traces et métriques
+
+`webfrontend`, `apiservice` et les deux `solver-worker` envoient leurs traces, métriques et journaux structurés au tableau de bord Aspire (`aspire-dashboard`, OTLP gRPC sur le port 18889 du réseau `internal`). C’est le même tableau de bord que celui d’`aspire run`, sans la page des ressources ni les journaux console. Tout reste en mémoire : un redémarrage du conteneur efface l’historique. Il garde les 10 000 dernières traces et entrées de journal par service.
+
+L’interface n’écoute que sur `127.0.0.1:18888` du VPS. Depuis sa machine :
+
+```bash
+ssh -N -L 18888:127.0.0.1:18888 ubuntu@54.37.139.20
+```
+
+Puis ouvrir l’adresse de connexion, qui contient un jeton tiré à chaque démarrage du conteneur :
+
+```bash
+docker logs rummihub-aspire-dashboard-1 2>&1 | grep -m1 'login?t='
+```
+
+Le navigateur garde la session ensuite.
+
+La même télémétrie se lit en JSON depuis le VPS, avec la clé `DASHBOARD_API_KEY` de `.env` (sans clé, l’API répond 401) :
+
+```bash
+K="x-api-key: $(grep '^DASHBOARD_API_KEY=' ~/apps/RummiHub/deploy/.env | cut -d= -f2)"
+curl -s -H "$K" http://127.0.0.1:18888/api/telemetry/resources
+curl -s -H "$K" 'http://127.0.0.1:18888/api/telemetry/traces?resource=webfrontend&limit=20'
+curl -s -H "$K" http://127.0.0.1:18888/api/telemetry/traces/<traceId>
+curl -s -H "$K" 'http://127.0.0.1:18888/api/telemetry/logs?resource=apiservice&severity=Warning'
+```
+
+Les métriques ne sont que dans l’interface. Aucun service ne dépend du tableau de bord : arrêté, il ne bloque rien, et les traces de ce moment-là sont perdues. Le site de test n’a pas de tableau de bord ; ses services n’exportent rien.
 
 ## Vérifier que seuls 80 et 443 sont exposés
 
@@ -255,14 +287,14 @@ Les fichiers de log Docker sont bornés (10 Mo × 3).
 docker compose ps --format '{{.Service}} {{.Ports}}'
 ```
 
-Seule la ligne `caddy` doit montrer `0.0.0.0:80->80` et `0.0.0.0:443->443`. Les autres services ont une colonne de ports vide. Depuis l’hôte :
+Seule la ligne `caddy` doit montrer `0.0.0.0:80->80` et `0.0.0.0:443->443`. `aspire-dashboard` montre `127.0.0.1:18888->18888`, joignable depuis le VPS seulement. Les autres services ont une colonne de ports vide. Depuis l’hôte :
 
 ```bash
 curl -sv --max-time 3 http://127.0.0.1:6379 ; echo
 curl -sv --max-time 3 http://127.0.0.1:8080/health ; echo
 ```
 
-Les deux connexions doivent être refusées. `https://rummisolve.com/health` répond `Healthy` (sonde de vie, sans détail).
+Les deux connexions doivent être refusées. Depuis une autre machine, `curl --max-time 3 http://54.37.139.20:18888` doit aussi échouer. `https://rummisolve.com/health` répond `Healthy` (sonde de vie, sans détail).
 
 ## Fichier `.env`
 
@@ -271,6 +303,7 @@ Les deux connexions doivent être refusées. `https://rummisolve.com/health` ré
 | `SOLVER_API_KEY` | Secret partagé `SolverApi__Key` (≥ 32 caractères, hex). Identique des deux côtés, posé par Compose sur `webfrontend` et `apiservice`. |
 | `DOMAIN` | Apex du certificat et du site. |
 | `ACME_EMAIL` | Contact Let's Encrypt. |
+| `DASHBOARD_API_KEY` | Facultative. Clé de l’API de télémétrie du tableau de bord (`openssl rand -hex 32`). Vide : API fermée. |
 
 Aucun mot de passe Redis : le port n’est pas publié. Les graines de rejeu durables sont `GameOptions:PredefinedIds` dans `RummiHub.Web/appsettings.json` (inclus dans l’image). Le bouton « sauver la graine » n’écrit pas le fichier en production.
 

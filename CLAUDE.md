@@ -119,3 +119,4 @@ Use Aspire's built-in diagnostic tools before making changes:
 - Structured logs, console logs, and traces are captured for all resources.
 - RedisInsight is available on port 41245 for inspecting Redis state directly.
 - Use the Aspire MCP tools (`list resources`, `list structured logs`, `list traces`) to inspect live state.
+- Production runs the same dashboard as the `aspire-dashboard` Compose service. On the VPS, read its JSON API at `http://127.0.0.1:18888/api/telemetry/` with `DASHBOARD_API_KEY` from `deploy/.env`. See `deploy/README.md` « Traces et métriques ».
