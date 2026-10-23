@@ -47,7 +47,7 @@ RummiHub.AppHost (Aspire orchestrator)
 ├── RummiHub.ApiService        — Minimal API (HTTP)
 ├── RummiHub.Solver.Worker     — Background workers (x2 replicas)
 ├── RummiHub.Web               — Blazor Server + SignalR hub
-└── Redis Stack                — Message bus + result cache
+└── Redis 8 (RedisJSON)        — Message bus + result cache
 ```
 
 `RummiHub.Core` is a shared class library referenced by all services. `RummiHub.ServiceDefaults` provides common Aspire telemetry/health wiring via `builder.AddServiceDefaults()`.
@@ -58,7 +58,7 @@ The solver is fully asynchronous and distributed across services:
 
 1. **Web → API** (`GameEngine.SubmitAndWaitForResult`): POST `/solve` with `SolveRequest` (hand tiles, board, `hasPlayed` flag, `Priority` flag).
 2. **API** (`Program.cs /solve`): Computes a 16-char `contentHash` (SHA-256 of canonical JSON — `Priority` is **not** part of the hash), checks Redis JSON cache (`solve-result:{hash}`), acquires a dedup lock (`solve-lock:{hash}` SET NX), enqueues into `solve-stream` (or `solve-stream-priority` when `Priority` is set), then publishes to `solve:enqueue` Pub/Sub to wake workers. Returns **202** with the `contentHash`.
-3. **Worker** (`SolverWorker`): Consumer group `"solvers"` reads one entry at a time, **draining `solve-stream-priority` before `solve-stream`** so move validations jump ahead of slow full-rack hint solves. Recovers pending (unACKed) messages from both streams on startup. Runs `DynamicStrategy.GetSolverResult`, writes result as RedisJSON to `solve-result:{hash}` with 1h TTL, publishes to `solve:done:{hash}`, ACKs the stream entry, and removes the dedup lock.
+3. **Worker** (`SolverWorker`): Consumer group `"solvers"` reads one entry at a time, **draining `solve-stream-priority` before `solve-stream`** so move validations jump ahead of slow full-rack hint solves. Recovers pending (unACKed) messages from both streams on startup. Runs `DynamicStrategy.GetSolverResult`, writes result as Redis JSON (`JSON.SET`) to `solve-result:{hash}` with 1h TTL, publishes to `solve:done:{hash}`, ACKs the stream entry, and removes the dedup lock.
 4. **Web** (`SolveResultSubscriber`): Subscribes to `solve:done:{hash}` Pub/Sub *before* checking cache ("subscribe-then-check" pattern to eliminate race conditions). Resolves a `TaskCompletionSource<SolveResponse>` when the notification arrives.
 
 ### Domain Model (RummiHub.Core)

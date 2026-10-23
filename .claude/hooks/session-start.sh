@@ -4,7 +4,7 @@
 # `dotnet build`, `dotnet test`, `aspire run` and the /verify skill all work:
 #   - .NET 10 SDK + NuGet restore
 #   - Aspire CLI (also backs the `aspire` MCP server declared in .mcp.json)
-#   - Docker daemon + the Redis Stack images the AppHost needs
+#   - Docker daemon + the Redis 8 image the AppHost needs
 #   - ASP.NET dev certificate
 #   - Python Playwright, matched to the Chromium preinstalled in /opt/pw-browsers
 # Idempotent: every step is skipped when already done, and the container is
@@ -89,7 +89,7 @@ if command -v dockerd >/dev/null 2>&1; then
   fi
   if docker info >/dev/null 2>&1; then
     # The Redis image of RummiHub.AppHost/AppHost.cs; Aspire pulls RedisInsight itself.
-    image=docker.io/redis/redis-stack-server:latest
+    image=docker.io/library/redis:8.10.2
     docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >&2 \
       || log "WARNING: could not pull $image (aspire run will retry)"
   else
