@@ -150,12 +150,30 @@ services:
           memory: 1536M
 
   cache:
-    image: redis/redis-stack-server:7.4.0-v8
+    image: redis:8.10.2
     restart: unless-stopped
     logging: *logging
-    # L'image charge RedisJSON (JSON.GET / JSON.SET). Pas de port publié.
+    # Redis 8.10 embarque les anciens modules Stack (RedisJSON, Search, TimeSeries,
+    # Bloom). docker-entrypoint.sh ajoute --loadmodule pour chaque .so de
+    # /usr/local/lib/redis/modules : ne pas les relister ici (double chargement).
+    # redis-stack-server lisait REDIS_ARGS ; cette image l'ignore.
+    # L'AOF reste dans /data (WORKDIR). Stack tournait en root et a pu semer
+    # /data/redis et /data/redisinsight : l'entrypoint officiel ne chown alors
+    # pas le volume, et Redis 8 charge l'AOF puis échoue à le rouvrir en écriture.
+    # On rend /data à l'utilisateur redis avant de lancer l'entrypoint. Pas de
+    # port publié, pas de mot de passe. REDIS_MAXMEMORY est lu par ce shell
+    # ($$ pour échapper Compose) ; le site de test le baisse.
+    entrypoint: ["/bin/sh", "-c"]
     environment:
-      REDIS_ARGS: --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+      REDIS_MAXMEMORY: 512mb
+    command:
+      - |
+        set -eu
+        chown -R redis:redis /data
+        exec docker-entrypoint.sh redis-server \
+          --appendonly yes \
+          --maxmemory "$$REDIS_MAXMEMORY" \
+          --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     networks:

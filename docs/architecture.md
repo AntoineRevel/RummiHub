@@ -1,6 +1,6 @@
 # Architecture RummiHub
 
-RummiHub est orchestré par **.NET Aspire** (`RummiHub.AppHost`), qui démarre et relie quatre ressources : le frontend Blazor Server, l'API minimale, les workers de résolution (×2 réplicas) et Redis Stack. `RummiHub.Core` est la bibliothèque partagée (modèle de domaine et contrats) référencée par les trois services.
+RummiHub est orchestré par **.NET Aspire** (`RummiHub.AppHost`), qui démarre et relie quatre ressources : le frontend Blazor Server, l'API minimale, les workers de résolution (×2 réplicas) et Redis 8 (RedisJSON inclus). `RummiHub.Core` est la bibliothèque partagée (modèle de domaine et contrats) référencée par les trois services.
 
 ## Topologie des services
 
@@ -26,7 +26,7 @@ flowchart TB
             Strategy["GraphStrategy<br/>GraphSolver / GraphFirstSolver"]
         end
 
-        subgraph Redis["Redis Stack"]
+        subgraph Redis["Redis 8"]
             PrioStream[("solve-stream-priority<br/>(Stream prioritaire)")]
             Stream[("solve-stream<br/>(Stream)")]
             Cache[("solve-result:{hash}<br/>(JSON, TTL 1h)")]
@@ -78,7 +78,7 @@ sequenceDiagram
     autonumber
     participant W as RummiHub.Web<br/>(GameEngine)
     participant A as ApiService<br/>(POST /solve)
-    participant R as Redis Stack
+    participant R as Redis 8
     participant K as Solver.Worker<br/>(×2)
 
     W->>W: SubmitAndWaitForResult(SolveRequest)

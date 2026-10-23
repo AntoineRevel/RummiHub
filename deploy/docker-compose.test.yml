@@ -77,7 +77,7 @@ services:
     mem_limit: 320M
     memswap_limit: 320M
     environment:
-      REDIS_ARGS: --appendonly yes --maxmemory 192mb --maxmemory-policy noeviction
+      REDIS_MAXMEMORY: 192mb
     deploy:
       resources:
         limits:

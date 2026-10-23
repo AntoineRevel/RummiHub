@@ -18,10 +18,14 @@ var solverApiKey = builder.AddParameter(
     secret: true,
     persist: true);
 
+// Official Redis 8 (library/redis:8.10.2) bundles the former Stack modules.
+// Aspire starts the container with entrypoint /bin/sh, so the image entrypoint
+// that auto-loads every module under /usr/local/lib/redis/modules does not run.
+// The solve pipeline only needs RedisJSON (JSON.GET / JSON.SET).
 var cache = builder.AddRedis("cache")
-    .WithImageRegistry("docker.io/redis")
-    .WithImage("redis-stack-server", "latest")
-    .WithArgs("--include", "/etc/redis-stack.conf")
+    .WithImageRegistry("docker.io")
+    .WithImage("library/redis", "8.10.2")
+    .WithModule(RedisModules.Json)
     .WithRedisInsight(insight => insight.WithHostPort(41245));
 
 // The solver API is an internal service. Do not call WithExternalHttpEndpoints on it:

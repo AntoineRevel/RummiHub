@@ -10,7 +10,7 @@ Les processus de l’AppHost Aspire, tableau de bord compris (sans Redis Insight
 | `webfrontend` | Blazor Server, une seule réplique | réseau `internal` |
 | `apiservice` | `POST /solve` | réseau `internal` |
 | `solver-worker` | 2 répliques, groupe Redis `solvers` | réseau `internal` |
-| `cache` | Redis Stack (RedisJSON), volume persistant | réseau `internal` |
+| `cache` | Redis 8.10.2 (RedisJSON inclus), volume persistant | réseau `internal` |
 | `aspire-dashboard` | traces, métriques et journaux structurés (OTLP), en mémoire | `127.0.0.1:18888`, par tunnel SSH |
 
 L’API, Redis et les workers n’ont aucun port publié. Le réseau `internal` n’a pas de sortie vers Internet. Les parties et les secrets de siège restent en mémoire dans `webfrontend` : ne pas augmenter le nombre de répliques.
@@ -52,7 +52,7 @@ rummihub-deploy
 
 Sans l’installation ci-dessous : `git pull && docker compose up -d --build` depuis `deploy/`.
 
-Les volumes (certificats, AOF Redis, clés Data Protection) sont conservés. Un redémarrage de `webfrontend` efface les parties en cours ; les clés antiforgery, elles, restent sur le volume `dataprotection_keys`. Au démarrage, le journal peut signaler que la clé est stockée sans chiffrement : c’est le comportement par défaut de ASP.NET sur Linux, et le volume n’est pas publié.
+Les volumes (certificats, AOF Redis, clés Data Protection) sont conservés. Le volume `redis_data` reste monté sur `/data`. Redis 8.10 relit l’AOF écrit par Redis Stack 7.4 (`appendonlydir`, commandes JSON, streams, chaînes). Au premier démarrage le conteneur donne `/data` à l’utilisateur `redis` : Stack écrivait en root, et les répertoires vides `/data/redis` et `/data/redisinsight` empêchent l’entrypoint officiel de corriger les droits lui-même. RedisGears et RedisCompat, chargés par Stack, ne sont pas dans l’image officielle ; le pipeline n’en a pas besoin, et un volume sans clés Gears démarre. Le retour vers l’image Stack n’est pas pris en charge : dès que Redis 8 réécrit la base AOF, le fichier est en RDB version 15, que Redis 7.4 refuse. Si Redis refusait malgré tout de charger le volume, le vider ne perd que le cache de solves (TTL 1 h) et les messages de stream en cours — les parties sont dans `webfrontend`, pas dans Redis. Un redémarrage de `webfrontend` efface les parties en cours ; les clés antiforgery, elles, restent sur le volume `dataprotection_keys`. Au démarrage, le journal peut signaler que la clé est stockée sans chiffrement : c’est le comportement par défaut de ASP.NET sur Linux, et le volume n’est pas publié.
 
 ## Déploiement automatique
 
