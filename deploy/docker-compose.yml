@@ -13,6 +13,9 @@ x-dotnet-env: &dotnet-env
   ASPNETCORE_ENVIRONMENT: Production
   DOTNET_ENVIRONMENT: Production
   ConnectionStrings__cache: cache:6379,abortConnect=false
+  # Traces, métriques et journaux structurés vers le tableau de bord (OTLP gRPC).
+  # Vide ou absent : ServiceDefaults n'exporte rien.
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
 
 services:
   caddy:
@@ -58,6 +61,7 @@ services:
     # Une seule réplique : parties et secrets de siège sont en mémoire.
     environment:
       <<: *dotnet-env
+      OTEL_SERVICE_NAME: webfrontend
       SolverApi__Key: ${SOLVER_API_KEY:?Définir SOLVER_API_KEY dans deploy/.env}
       ApiService__BaseAddress: http://apiservice:8080
       services__apiservice__http__0: http://apiservice:8080
@@ -96,6 +100,7 @@ services:
     logging: *logging
     environment:
       <<: *dotnet-env
+      OTEL_SERVICE_NAME: apiservice
       SolverApi__Key: ${SOLVER_API_KEY:?Définir SOLVER_API_KEY dans deploy/.env}
     networks:
       - internal
@@ -125,6 +130,7 @@ services:
     logging: *logging
     environment:
       <<: *dotnet-env
+      OTEL_SERVICE_NAME: solver-worker
     networks:
       - internal
     depends_on:
@@ -163,10 +169,40 @@ services:
         limits:
           memory: 768M
 
+  # Tableau de bord Aspire : traces, métriques et journaux structurés des trois
+  # services .NET. Tout reste en mémoire et disparaît à chaque redémarrage.
+  # Interface sur 127.0.0.1 seulement, à ouvrir par tunnel SSH (deploy/README.md,
+  # « Traces et métriques »). Le port OTLP n'est joignable que depuis internal.
+  # Aucun service n'en dépend : arrêté ou absent, l'export échoue en silence.
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.1
+    restart: unless-stopped
+    logging: *logging
+    # Interface : connexion par jeton, tiré au démarrage et écrit dans le journal du
+    # conteneur. Garde par défaut les 10 000 dernières traces et entrées de journal
+    # par service.
+    environment:
+      # API /api/telemetry (en-tête x-api-key), pour lire la télémétrie depuis le VPS.
+      # Clé vide ou absente : l'API répond 401 à tout, l'interface reste accessible.
+      # Facultative pour que .env.test n'ait pas à la définir.
+      Dashboard__Api__AuthMode: ApiKey
+      Dashboard__Api__PrimaryApiKey: ${DASHBOARD_API_KEY:-}
+    ports:
+      - "127.0.0.1:18888:18888"
+    networks:
+      - internal
+      # internal n'a pas de passerelle : sans ce réseau, Docker ne publie pas le port.
+      - dashboard
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
 networks:
   edge:
   internal:
     internal: true
+  dashboard:
   # Créé une fois sur l'hôte : docker network create --internal rummihub-edge
   # (rummihub-ensure-edge-network le fait aussi). Externe pour qu'un
   # `docker compose down` de l'un ou l'autre projet ne le supprime pas.
