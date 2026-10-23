@@ -30,7 +30,7 @@
 // The hand (the rack, the play zone) answers clicks at once and is never queued behind
 // the board. [data-anim-enter-only] scopes (the rack) only animate arrivals — internal
 // reshuffles are instant. [data-anim-ignore] subtrees (the greyed-out placeholder of an
-// emptied stack, the hint) are never measured.
+// emptied stack) are never measured.
 //
 // Each tile is measured in TWO frames: root-relative (flights between scopes) and
 // scope-relative (did it really move inside its container?) — a section appearing above
@@ -58,7 +58,7 @@ const MIN_DELTA = 4;    // px — cross-scope flights below this just display
 // which would otherwise break stationary claims and let new tiles steal their slots.
 const STILL_DELTA = 18;
 const BLOCK_DELTA = 6;  // px — tiles changing set together this close fly as one block
-const HAND_STAGGER_MS = 40; // a burst of picks (auto-pick, clear) cascades instead of jumping
+const HAND_STAGGER_MS = 40; // a burst of picks (hint, clear) cascades instead of jumping
 // px — how high a lifted or hovering tile rests above its slot. The board leaves a lane at
 // least this tall between rows (SolutionComponent), so it never covers the row above.
 const LIFT = 34;

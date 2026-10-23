@@ -45,8 +45,8 @@ public class Game
     public SemaphoreSlim ActionLock { get; } = new(1, 1);
 
     /// <summary>
-    /// Background solve started at the beginning of the current turn so the player
-    /// can receive an "optimal play you could have made" hint after acting.
+    /// Background solve started at the beginning of the current turn. A human pulls
+    /// its tiles into the play zone with the Hint button; an AI seat plays it.
     /// Read/written only inside ActionLock.
     /// </summary>
     public PendingOptimalSolve? PendingOptimalSolve { get; set; }

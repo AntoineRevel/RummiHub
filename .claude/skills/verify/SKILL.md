@@ -30,10 +30,10 @@ Gotchas that cost time:
   inputs; earlier keystrokes never reach the server and buttons silently no-op.
 - Lobby flow: `/lobby` → fill `#playerName` → click `.btn-action` (creates game) →
   `.btn-add-ai` → `.btn-start` → lands on `/game/{id}?player=Name`.
-- To get a guaranteed-playable selection, click the `Auto-pick` helper button
-  (`.helper-toggle button`) and wait for `.selected-tile-wrapper`. First plays need
-  30+ points, so early turns often have **nothing playable** — if no tiles get
-  pre-selected after `.solver-status.ready`, click `.btn-draw` and retry next turn.
+- To get a guaranteed-playable selection, click the `Hint` button (`.btn-hint`)
+  and wait for `.selected-tile-wrapper`. Nothing is selected until that click.
+  First plays need 30+ points, so early turns often have **nothing playable** —
+  the play zone then says to draw; click `.btn-draw` and retry next turn.
 - Useful selectors: `.turn-banner.my-turn` (my turn), `.btn-play` / `.btn-play-review`
   / `.btn-replay` / `.btn-clear` / `.btn-draw`, `.tiles-container.readonly`,
   `.player-chip.current .player-name`, `.turn-chip`.

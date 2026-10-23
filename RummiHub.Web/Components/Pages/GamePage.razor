@@ -141,23 +141,6 @@ else
                 else if (IsMyTurn)
                 {
                     <span class="turn-banner-text">Your turn — pick tiles to play, or draw.</span>
-                    @if (_helperMode != HelperMode.None)
-                    {
-                        <div class="solver-status @(_optimalReady ? "ready" : "computing")">
-                            @if (_optimalReady)
-                            {
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                                    <polyline points="20 6 9 17 4 12"/>
-                                </svg>
-                                <span>Hint ready</span>
-                            }
-                            else
-                            {
-                                <span class="solver-dot"></span>
-                                <span>Computing hint…</span>
-                            }
-                        </div>
-                    }
                 }
                 else
                 {
@@ -269,28 +252,29 @@ else
                 </div>
 
                 <!-- Play zone, BELOW the rack and always rendered at a stable height, so
-                     picking tiles never shifts the rack. Shows the current selection during
-                     my turn, or (Hint mode) the optimal play I could have made after acting. -->
+                     picking tiles never shifts the rack. Shows only the current selection.
+                     Hint fills that selection on demand; nothing is suggested until then. -->
                 <div class="selected-tiles-section play-zone">
                     <div class="play-zone-header">
                         <h4>
-                            @if (ShowHint && !SelectedTilesForPlay.Any())
-                            {
-                                <text>Optimal play you could have made this turn</text>
-                            }
-                            else
-                            {
-                                <text>Tiles to play@(SelectedTilesForPlay.Any() ? $" ({SelectedTilesForPlay.Count})" : "")</text>
-                            }
+                            Tiles to play@(SelectedTilesForPlay.Any() ? $" ({SelectedTilesForPlay.Count})" : "")
                         </h4>
-                        <div class="helper-toggle" title="Solver help: nothing, a hint after you act, or auto-picked tiles ready to play">
-                            <button type="button" class="@(_helperMode == HelperMode.None ? "active" : "")"
-                                    @onclick="() => SetHelperMode(HelperMode.None)">No help</button>
-                            <button type="button" class="@(_helperMode == HelperMode.Hint ? "active" : "")"
-                                    @onclick="() => SetHelperMode(HelperMode.Hint)">Hint</button>
-                            <button type="button" class="@(_helperMode == HelperMode.Auto ? "active" : "")"
-                                    @onclick="() => SetHelperMode(HelperMode.Auto)">Auto-pick</button>
-                        </div>
+                        @if (CanAct)
+                        {
+                            <button type="button" class="btn-hint" @onclick="RequestHint"
+                                    disabled="@(HintPending || _isLoading)"
+                                    title="@(_hintNoMove ? "Nothing to play — draw a tile." : "Select the best tiles to play")">
+                                @if (HintPending)
+                                {
+                                    <span class="solver-dot"></span>
+                                    <span>Computing hint…</span>
+                                }
+                                else
+                                {
+                                    <span>Hint</span>
+                                }
+                            </button>
+                        }
                     </div>
                     <div class="selected-tiles-display" data-anim-scope="selection">
                         @if (IsMyTurn && SelectedTilesForPlay.Any())
@@ -303,15 +287,10 @@ else
                                 </div>
                             }
                         }
-                        else if (ShowHint)
+                        else if (ShowDrawHint)
                         {
-                            <!-- Informational only — excluded from tile-animation measuring so
-                                 these copies never lend their position to a real tile. -->
-                            <div class="hint-tiles" data-anim-ignore>
-                                @foreach (var tile in _optimalPlayTiles!)
-                                {
-                                    <TileComponent Tile="tile" ShouldHighlight="false"/>
-                                }
+                            <div class="play-zone-placeholder">
+                                Nothing to play — draw a tile.
                             </div>
                         }
                         else
@@ -799,34 +778,6 @@ else
         animation: solver-pulse 1.4s ease-in-out infinite;
     }
 
-    /* Solver status indicator */
-    .solver-status {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 3px 10px;
-        border-radius: 12px;
-        font-size: 0.78rem;
-        font-weight: 500;
-        transition: all 0.2s ease;
-    }
-
-    .solver-status.computing {
-        background: #fff3e0;
-        color: #e65100;
-        border: 1px solid #ffcc80;
-    }
-
-    .solver-status.ready {
-        background: #e8f5e9;
-        color: #2e7d32;
-        border: 1px solid #a5d6a7;
-    }
-
-    .solver-status svg {
-        flex-shrink: 0;
-    }
-
     .solver-dot {
         width: 8px;
         height: 8px;
@@ -996,32 +947,28 @@ else
         margin-bottom: 4px;
     }
 
-    .helper-toggle {
+    .btn-hint {
         display: inline-flex;
-        border: 1px solid #cfd8dc;
-        border-radius: 999px;
-        overflow: hidden;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #c5cae9;
         background: #fff;
-    }
-
-    .helper-toggle button {
-        border: none;
-        background: transparent;
-        padding: 4px 11px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        color: #667;
+        color: #3949ab;
+        border-radius: 999px;
+        padding: 4px 12px;
+        font-size: 0.78rem;
+        font-weight: 700;
         cursor: pointer;
-        transition: background 0.15s ease, color 0.15s ease;
+        transition: background 0.15s ease;
     }
 
-    .helper-toggle button:hover {
-        background: #eceff1;
+    .btn-hint:hover:not(:disabled) {
+        background: #e8eaf6;
     }
 
-    .helper-toggle button.active {
-        background: linear-gradient(135deg, #2196f3, #1976d2);
-        color: #fff;
+    .btn-hint:disabled {
+        opacity: 0.7;
+        cursor: progress;
     }
 
     .selected-tiles-display {
@@ -1034,13 +981,6 @@ else
         padding: 8px 5px 5px 5px;
         align-items: flex-start;
         align-content: flex-start;
-    }
-
-    .hint-tiles {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        opacity: 0.85;
     }
 
     .play-zone-placeholder {
