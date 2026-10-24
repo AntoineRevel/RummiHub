@@ -30,6 +30,8 @@ public partial class Lobby
     private CancellationTokenSource? _inviteCopiedResetCts;
     private bool _gameStarted;
     private string? _gameUrl;
+    /// <summary>This tab's seat secret, handed to the game tab in <see cref="_gameUrl"/>'s fragment.</summary>
+    private string? _seatToken;
     /// <summary>The browser refused to open the game tab by itself (no user gesture).</summary>
     private bool _openBlocked;
 
@@ -157,7 +159,10 @@ public partial class Lobby
 
         _hubConnection.On<string, IEnumerable<string>>(HubEvents.GameStarted, (gameId, _) =>
         {
-            _gameUrl = $"/game/{gameId}?player={Uri.EscapeDataString(_playerName)}";
+            // The fragment never reaches the server; the game page moves it into its
+            // sessionStorage and strips it from the address bar (seat-token.js).
+            _gameUrl = $"/game/{gameId}?player={Uri.EscapeDataString(_playerName)}"
+                       + (_seatToken is null ? "" : $"#seat={_seatToken}");
             _gameStarted = true;
             InvokeAsync(async () =>
             {
@@ -190,6 +195,7 @@ public partial class Lobby
     /// </summary>
     private async Task RememberSeatTokenAsync(string gameId, string token)
     {
+        _seatToken = token;
         try
         {
             var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/seat-token.js");
@@ -253,9 +259,9 @@ public partial class Lobby
 
     /// <summary>
     /// Opens the game in a new tab (seat-token.js), this lobby staying behind as the way back.
-    /// Called when the game starts and from the "Open the game" button: the automatic
-    /// opening is blocked by popup blockers for everyone but the host, whose click on Start
-    /// is recent enough to count as a user gesture.
+    /// Called when the game starts. Popup blockers refuse it for everyone but the host, whose
+    /// click on Start is recent enough to count as a user gesture, and Safari refuses it for
+    /// everyone: the lobby then offers plain links, which no browser blocks.
     /// </summary>
     private async Task OpenGameAsync()
     {

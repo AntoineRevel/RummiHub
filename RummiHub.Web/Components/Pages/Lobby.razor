@@ -145,14 +145,20 @@
                             <text>The game has started in a new tab.</text>
                         }
                     </p>
-                    <button class="btn-start" @onclick="OpenGameAsync">
+                    @* Real links, not a button calling window.open over the circuit: by the time
+                       that call reaches the browser the tap no longer counts as a user gesture,
+                       and Safari blocks the tab. A link is never blocked. *@
+                    <a class="btn-start" href="@_gameUrl" target="_blank" rel="opener">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                             <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                         </svg>
                         Open the game
-                    </button>
-                    <p class="hint">Closing the game tab brings you back here.</p>
+                    </a>
+                    <p class="hint">
+                        Closing the game tab brings you back here.
+                        Cannot open tabs? <a href="@_gameUrl" data-enhance-nav="false">Play in this tab</a>.
+                    </p>
                 </div>
             }
             else if (_isHost)
@@ -524,6 +530,15 @@
 
     .game-started .hint {
         margin: 0;
+    }
+
+    .game-started a.btn-start {
+        text-decoration: none;
+    }
+
+    .game-started .hint a {
+        color: #f57c00;
+        font-weight: 600;
     }
 
     .started-text {
