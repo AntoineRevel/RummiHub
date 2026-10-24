@@ -20,7 +20,7 @@ public class JokerRunCapTests
     {
         result.Found.Should().BeTrue();
         result.Score.Should().Be(score);
-        result.BestSolution.Runs.Concat(result.BestSolution.Groups)
+        result.BestSolution.Sets
             .SelectMany(s => s.Tiles)
             .Should().OnlyContain(t => t.Value >= 1 && t.Value <= 13);
         SolutionValidator.IsValid(result, board, rack, hasPlayed).Should().BeTrue();
@@ -36,7 +36,7 @@ public class JokerRunCapTests
 
         ShouldBeLegalRun(graph, new Set(), rack, hasPlayed: false, score: 36);
         ShouldBeLegalRun(dynamic, new Set(), rack, hasPlayed: false, score: 36);
-        graph.BestSolution.Runs.SelectMany(r => r.Tiles).Should().Contain(t => t.IsJoker && t.Value == 11);
+        graph.BestSolution.Sets.SelectMany(r => r.Tiles).Should().Contain(t => t.IsJoker && t.Value == 11);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class JokerRunCapTests
         var graph = GraphFirstSolver.Create(rack).SearchSolution();
 
         ShouldBeLegalRun(graph, new Set(), rack, hasPlayed: false, score: 36);
-        graph.BestSolution.Runs.SelectMany(r => r.Tiles)
+        graph.BestSolution.Sets.SelectMany(r => r.Tiles)
             .Where(t => t.IsJoker).Select(t => t.Value).Should().BeEquivalentTo([11, 12]);
     }
 
@@ -78,7 +78,7 @@ public class JokerRunCapTests
         ShouldBeLegalRun(graph, board, rack, hasPlayed: true, score: 46);
         ShouldBeLegalRun(dynamic, board, rack, hasPlayed: true, score: 46);
         graph.JokersToPlay.Should().Be(1);
-        graph.BestSolution.Runs.SelectMany(r => r.Tiles).Should().Contain(t => t.IsJoker && t.Value == 10);
+        graph.BestSolution.Sets.SelectMany(r => r.Tiles).Should().Contain(t => t.IsJoker && t.Value == 10);
     }
 
     [Fact]
@@ -103,6 +103,6 @@ public class JokerRunCapTests
         var graph = GraphSolver.Create(board, rack).SearchSolution();
 
         ShouldBeLegalRun(graph, board, rack, hasPlayed: true, score: 46);
-        graph.BestSolution.Runs.SelectMany(r => r.Tiles).Should().Contain(t => t.IsJoker && t.Value == 13);
+        graph.BestSolution.Sets.SelectMany(r => r.Tiles).Should().Contain(t => t.IsJoker && t.Value == 13);
     }
 }

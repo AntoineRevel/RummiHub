@@ -223,7 +223,7 @@ public class PublicTableSecurityTests
         var lastTiles = new List<Tile> { new(11, TileColor.Blue), new(11, TileColor.Red), new(11, TileColor.Black) };
         engine.CurrentPlayer.Rack = new Set(lastTiles);
         var board = new Solution { IsValid = true };
-        board.AddGroup(new ValidSet(lastTiles.ToArray()));
+        board.Sets.Add(new ValidSet(lastTiles.ToArray()));
         engine.ApplySolveResult(new SolveResponse
         {
             RequestId = "last-move",

@@ -8,26 +8,24 @@ namespace RummiHub.Tests.Core;
 public class SolutionTests
 {
     [Fact]
-    public void AddSolution_MergesRunsAndGroups()
+    public void AddSolution_AppendsTheOtherSets()
     {
-        var a = new Solution();
-        a.AddRun(new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]));
-
-        var b = new Solution();
-        b.AddGroup(new ValidSet([new Tile(5, TileColor.Blue), new Tile(5, TileColor.Red), new Tile(5, TileColor.Black)]));
+        var run = new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]);
+        var group = new ValidSet([new Tile(5, TileColor.Blue), new Tile(5, TileColor.Red), new Tile(5, TileColor.Black)]);
+        var a = new Solution { Sets = [run] };
+        var b = new Solution { Sets = [group] };
 
         a.AddSolution(b);
 
-        a.Runs.Should().HaveCount(1);
-        a.Groups.Should().HaveCount(1);
+        a.Sets.Should().Equal(run, group);
     }
 
     [Fact]
     public void ToSet_FlattensTiles()
     {
         var solution = new Solution();
-        solution.AddRun(new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]));
-        solution.AddGroup(new ValidSet([new Tile(7, TileColor.Red), new Tile(7, TileColor.Black), new Tile(7, TileColor.Mango)]));
+        solution.Sets.Add(new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]));
+        solution.Sets.Add(new ValidSet([new Tile(7, TileColor.Red), new Tile(7, TileColor.Black), new Tile(7, TileColor.Mango)]));
 
         var set = solution.ToSet();
 
@@ -38,7 +36,7 @@ public class SolutionTests
     public void ToSet_IncludesJokersFromValidSets()
     {
         var solution = new Solution();
-        solution.AddRun(new ValidSet([
+        solution.Sets.Add(new ValidSet([
             new Tile(1, TileColor.Blue),
             new Tile(isJoker: true),
             new Tile(3, TileColor.Blue)
@@ -77,27 +75,11 @@ public class SolutionTests
         var json = JsonSerializer.Serialize(board, RummiJsonOptions.Default);
         var back = JsonSerializer.Deserialize<Solution>(json, RummiJsonOptions.Default)!;
 
-        json.Should().Contain("\"sets\"").And.NotContain("runs");
+        json.Should().Contain("\"sets\"").And.NotContain("isGroup");
         back.IsValid.Should().BeTrue();
-        back.Sets.Select(s => s.IsGroup).Should().Equal(true, false);
-        back.Groups.Should().ContainSingle().Which.Tiles.Should().Equal(group.Tiles);
-    }
-
-    [Fact]
-    public void Json_StillReadsTheFormerRunsAndGroupsShape()
-    {
-        const string json = """
-            {"runs":[{"tiles":[{"value":1,"color":"Blue","isJoker":false},{"value":2,"color":"Blue","isJoker":false},{"value":3,"color":"Blue","isJoker":false}]}],
-             "groups":[{"tiles":[{"value":7,"color":"Red","isJoker":false},{"value":7,"color":"Black","isJoker":false},{"value":7,"color":"Mango","isJoker":false}]}],
-             "isValid":true}
-            """;
-
-        var board = JsonSerializer.Deserialize<Solution>(json, RummiJsonOptions.Default)!;
-
-        board.IsValid.Should().BeTrue();
-        board.Sets.Should().HaveCount(2);
-        board.Runs.Should().ContainSingle().Which.Tiles[0].Value.Should().Be(1);
-        board.Groups.Should().ContainSingle().Which.Tiles[0].Value.Should().Be(7);
+        back.Sets.Should().HaveCount(2);
+        back.Sets[0].Tiles.Should().Equal(group.Tiles);
+        back.Sets[1].Tiles.Should().Equal(run.Tiles);
     }
 
     [Fact]

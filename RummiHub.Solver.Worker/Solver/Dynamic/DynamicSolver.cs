@@ -282,11 +282,11 @@ public sealed class DynamicSolver : ISolver
         // Every run still open at value 13 has length ≥ 3 (guaranteed by SelectTerminal): close it.
         foreach (var runsOfColor in openRuns)
         foreach (var run in runsOfColor)
-            solution.AddRun(new ValidSet([.. run]));
+            solution.Sets.Add(new ValidSet([.. run]));
 
         var jokersUsed = _totalJokers - terminalState % _jokerStates;
         var rackJokersPlayed = jokersUsed - _boardJokers;
-        var score = solution.Runs.Sum(s => s.GetScore()) + solution.Groups.Sum(s => s.GetScore());
+        var score = solution.Sets.Sum(s => s.GetScore());
 
         if (_firstPlay)
         {
@@ -352,7 +352,7 @@ public sealed class DynamicSolver : ISolver
                 }
                 else if (longToClose > 0)
                 {
-                    solution.AddRun(new ValidSet([.. run]));
+                    solution.Sets.Add(new ValidSet([.. run]));
                     longToClose--;
                 }
                 else
@@ -379,7 +379,7 @@ public sealed class DynamicSolver : ISolver
                 tiles[i] = Take(ref _reconstructRealsLeft[k], v, k);
             }
 
-            solution.AddGroup(new ValidSet(tiles));
+            solution.Sets.Add(new ValidSet(tiles));
         }
     }
 

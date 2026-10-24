@@ -91,7 +91,7 @@ public class DynamicStrategyTests
     {
         // The engine claims a move, but its "run" is only two tiles long — illegal.
         var illegal = new Solution { IsValid = true };
-        illegal.AddRun(VSet(T(12, TileColor.Blue), T(13, TileColor.Blue)));
+        illegal.Sets.Add(VSet(T(12, TileColor.Blue), T(13, TileColor.Blue)));
         var bogus = SolverResult.FromSolution("Stub", illegal, [T(13, TileColor.Blue)], score: 25);
         var fallback = new SpyFallback();
 
@@ -159,19 +159,19 @@ public class DynamicStrategyTests
     private static (Solution board, Set rack) CrowdedTableWithNoPlay()
     {
         var board = new Solution { IsValid = true };
-        board.AddRun(VSet(T(4, TileColor.Blue), T(5, TileColor.Blue), T(6, TileColor.Blue)));
-        board.AddRun(VSet(T(3, TileColor.Mango), T(4, TileColor.Mango), T(5, TileColor.Mango), T(6, TileColor.Mango)));
-        board.AddRun(VSet(T(4, TileColor.Black), T(5, TileColor.Black), T(6, TileColor.Black), T(7, TileColor.Black)));
-        board.AddRun(VSet(T(7, TileColor.Blue), T(8, TileColor.Blue), T(9, TileColor.Blue)));
-        board.AddRun(VSet(T(11, TileColor.Red), T(12, TileColor.Red), T(13, TileColor.Red)));
-        board.AddRun(VSet(T(9, TileColor.Red), T(10, TileColor.Red), T(11, TileColor.Red), T(12, TileColor.Red), T(13, TileColor.Red)));
-        board.AddGroup(VSet(T(1, TileColor.Blue), T(1, TileColor.Red), T(1, TileColor.Black)));
-        board.AddGroup(VSet(T(2, TileColor.Blue), T(2, TileColor.Red), T(2, TileColor.Black)));
-        board.AddGroup(VSet(new Tile(2, TileColor.Blue, isJoker: true), T(2, TileColor.Red), T(2, TileColor.Black)));
-        board.AddGroup(VSet(T(3, TileColor.Red), T(3, TileColor.Mango), T(3, TileColor.Black)));
-        board.AddGroup(VSet(T(7, TileColor.Red), T(7, TileColor.Mango), T(7, TileColor.Black)));
-        board.AddGroup(VSet(T(8, TileColor.Blue), T(8, TileColor.Red), T(8, TileColor.Mango)));
-        board.AddGroup(VSet(T(11, TileColor.Blue), T(11, TileColor.Mango), T(11, TileColor.Black)));
+        board.Sets.Add(VSet(T(4, TileColor.Blue), T(5, TileColor.Blue), T(6, TileColor.Blue)));
+        board.Sets.Add(VSet(T(3, TileColor.Mango), T(4, TileColor.Mango), T(5, TileColor.Mango), T(6, TileColor.Mango)));
+        board.Sets.Add(VSet(T(4, TileColor.Black), T(5, TileColor.Black), T(6, TileColor.Black), T(7, TileColor.Black)));
+        board.Sets.Add(VSet(T(7, TileColor.Blue), T(8, TileColor.Blue), T(9, TileColor.Blue)));
+        board.Sets.Add(VSet(T(11, TileColor.Red), T(12, TileColor.Red), T(13, TileColor.Red)));
+        board.Sets.Add(VSet(T(9, TileColor.Red), T(10, TileColor.Red), T(11, TileColor.Red), T(12, TileColor.Red), T(13, TileColor.Red)));
+        board.Sets.Add(VSet(T(1, TileColor.Blue), T(1, TileColor.Red), T(1, TileColor.Black)));
+        board.Sets.Add(VSet(T(2, TileColor.Blue), T(2, TileColor.Red), T(2, TileColor.Black)));
+        board.Sets.Add(VSet(new Tile(2, TileColor.Blue, isJoker: true), T(2, TileColor.Red), T(2, TileColor.Black)));
+        board.Sets.Add(VSet(T(3, TileColor.Red), T(3, TileColor.Mango), T(3, TileColor.Black)));
+        board.Sets.Add(VSet(T(7, TileColor.Red), T(7, TileColor.Mango), T(7, TileColor.Black)));
+        board.Sets.Add(VSet(T(8, TileColor.Blue), T(8, TileColor.Red), T(8, TileColor.Mango)));
+        board.Sets.Add(VSet(T(11, TileColor.Blue), T(11, TileColor.Mango), T(11, TileColor.Black)));
 
         var rack = new Set([
             T(1, TileColor.Blue), T(4, TileColor.Blue), T(9, TileColor.Blue), T(11, TileColor.Blue), T(12, TileColor.Blue), T(12, TileColor.Blue),

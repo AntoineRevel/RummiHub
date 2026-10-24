@@ -20,21 +20,24 @@ public static class ContentHasher
             .ThenBy(t => t.Value)
             .ToList();
 
-        var sortedRuns = SortValidSets(board.Runs);
-        var sortedGroups = SortValidSets(board.Groups);
+        var sortedSets = SortValidSets(board.Sets);
 
         var canonical = JsonSerializer.Serialize(
-            new { Hand = sortedHand, Runs = sortedRuns, Groups = sortedGroups, HasPlayed = hasPlayed },
+            new { Hand = sortedHand, Sets = sortedSets, HasPlayed = hasPlayed },
             RummiJsonOptions.Default);
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexStringLower(hashBytes)[..16];
     }
 
+    // Board order is cosmetic: sets are sorted on all their tiles, so a run and a group that
+    // start with the same tile still land in the same order whatever the board shows.
     private static List<List<Tile>> SortValidSets(List<ValidSet> sets) =>
         sets
-            .Select(s => s.Tiles.OrderBy(t => t.Color).ThenBy(t => t.Value).ToList())
-            .OrderBy(tiles => tiles.FirstOrDefault().Color)
-            .ThenBy(tiles => tiles.FirstOrDefault().Value)
+            .Select(s => s.Tiles.OrderBy(t => t.IsJoker).ThenBy(t => t.Color).ThenBy(t => t.Value).ToList())
+            .OrderBy(SortKey, StringComparer.Ordinal)
             .ToList();
+
+    private static string SortKey(List<Tile> tiles) =>
+        string.Concat(tiles.Select(t => (char)('A' + (t.IsJoker ? 64 : 0) + (int)t.Color * 16 + t.Value)));
 }

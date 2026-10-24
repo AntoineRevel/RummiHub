@@ -6,7 +6,6 @@ namespace RummiHub.Solver.Worker.Solver.Graph.First;
 
 public class RummiFirstNode : BaseSolver
 {
-    private readonly bool _isRun;
     private readonly RummiFirstNode? _parentNode;
     private readonly ValidSet _set;
     private readonly int _startIndex;
@@ -17,7 +16,7 @@ public class RummiFirstNode : BaseSolver
     public readonly int Score;
 
     private RummiFirstNode(ValidSet set, Tile[] tiles, bool[] isTileUsed, int jokers, int startIndex,
-        ConcurrentBag<RummiFirstNode> leafNodes, int score, RummiFirstNode? parentNode, bool isRun) :
+        ConcurrentBag<RummiFirstNode> leafNodes, int score, RummiFirstNode? parentNode) :
         base(tiles, jokers)
     {
         IsTileUsed = (bool[])isTileUsed.Clone();
@@ -27,12 +26,11 @@ public class RummiFirstNode : BaseSolver
         LeafNodes = leafNodes;
         Score = score;
         _parentNode = parentNode;
-        _isRun = isRun;
     }
 
     public static RummiFirstNode CreateRoot(Tile[] tiles, int jokers)
     {
-        return new RummiFirstNode(new ValidSet([]), tiles, new bool[tiles.Length], jokers, 0, [], 0, null, false);
+        return new RummiFirstNode(new ValidSet([]), tiles, new bool[tiles.Length], jokers, 0, [], 0, null);
     }
 
     public void GetChildren()
@@ -44,20 +42,20 @@ public class RummiFirstNode : BaseSolver
             if (IsTileUsed[i]) continue;
 
             UsedTiles[i] = true;
-            foreach (var set in GetRuns(i)) CreateChildNode(ref createdNode, i, set, true);
-            foreach (var set in GetGroups(i)) CreateChildNode(ref createdNode, i, set, false);
+            foreach (var set in GetRuns(i)) CreateChildNode(ref createdNode, i, set);
+            foreach (var set in GetGroups(i)) CreateChildNode(ref createdNode, i, set);
             UsedTiles[i] = false;
         }
 
         if (createdNode == 0) LeafNodes.Add(this);
     }
 
-    private void CreateChildNode(ref int createdNode, int index, ValidSet set, bool isRun)
+    private void CreateChildNode(ref int createdNode, int index, ValidSet set)
     {
         createdNode++;
         MarkTilesAsUsed(set, index);
         var child = new RummiFirstNode(set, Tiles, UsedTiles, Jokers, index + 1, LeafNodes,
-            Score + set.GetScore(), this, isRun);
+            Score + set.GetScore(), this);
         MarkTilesAsUnused(set, index);
         Children.Add(child);
     }
@@ -69,11 +67,7 @@ public class RummiFirstNode : BaseSolver
 
         while (currentNode._parentNode is not null)
         {
-            if (currentNode._isRun)
-                solution.AddRun(currentNode._set);
-            else
-                solution.AddGroup(currentNode._set);
-
+            solution.Sets.Add(currentNode._set);
             currentNode = currentNode._parentNode;
         }
 

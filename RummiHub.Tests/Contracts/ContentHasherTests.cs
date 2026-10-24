@@ -63,6 +63,20 @@ public class ContentHasherTests
     }
 
     [Fact]
+    public void SameSetsInAnotherOrder_ReturnsSameHash()
+    {
+        // The group and the run both start with the blue 5 once sorted.
+        var group = new ValidSet([new Tile(5, TileColor.Red), new Tile(5, TileColor.Blue), new Tile(5, TileColor.Black)]);
+        var run = new ValidSet([new Tile(5, TileColor.Blue), new Tile(6, TileColor.Blue), new Tile(7, TileColor.Blue)]);
+        var hand = new List<Tile> { new(1, TileColor.Blue) };
+
+        var hash1 = ContentHasher.ComputeHash(hand, new Solution { Sets = [group, run] }, hasPlayed: true);
+        var hash2 = ContentHasher.ComputeHash(hand, new Solution { Sets = [run, group] }, hasPlayed: true);
+
+        hash1.Should().Be(hash2);
+    }
+
+    [Fact]
     public void Returns16CharLowercaseHex()
     {
         var hand = new List<Tile> { new(5, TileColor.Red) };

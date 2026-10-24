@@ -26,8 +26,8 @@ public class DynamicSolverTests
         // Board: run [3R,4R,5R] and group [7B,7R,7Bl]. Rack: [6R] extends the run; [7Mango]
         // completes the group to four. The DP should play both rack tiles.
         var board = new Solution { IsValid = true };
-        board.AddRun(new ValidSet([new Tile(3, TileColor.Red), new Tile(4, TileColor.Red), new Tile(5, TileColor.Red)]));
-        board.AddGroup(new ValidSet([new Tile(7, TileColor.Blue), new Tile(7, TileColor.Red), new Tile(7, TileColor.Black)]));
+        board.Sets.Add(new ValidSet([new Tile(3, TileColor.Red), new Tile(4, TileColor.Red), new Tile(5, TileColor.Red)]));
+        board.Sets.Add(new ValidSet([new Tile(7, TileColor.Blue), new Tile(7, TileColor.Red), new Tile(7, TileColor.Black)]));
 
         var rack = new Set([new Tile(6, TileColor.Red), new Tile(7, TileColor.Mango)]);
 
@@ -43,7 +43,7 @@ public class DynamicSolverTests
     {
         // Board run with a joker filling the 4 slot: [3B, joker(4B), 5B]. Rack [6B] extends it.
         var board = new Solution { IsValid = true };
-        board.AddRun(new ValidSet([new Tile(3, TileColor.Blue), new Tile(4, TileColor.Blue, isJoker: true), new Tile(5, TileColor.Blue)]));
+        board.Sets.Add(new ValidSet([new Tile(3, TileColor.Blue), new Tile(4, TileColor.Blue, isJoker: true), new Tile(5, TileColor.Blue)]));
         var rack = new Set([new Tile(6, TileColor.Blue)]);
 
         var boardSet = board.ToSet();
@@ -241,7 +241,7 @@ public class DynamicSolverTests
             tiles[i] = new Tile(start + i, (TileColor)color);
         }
 
-        board.AddRun(new ValidSet(tiles));
+        board.Sets.Add(new ValidSet(tiles));
     }
 
     private static void TryDrawGroup(int[,] deck, Random rng, Solution board)
@@ -266,7 +266,7 @@ public class DynamicSolverTests
             tiles[i] = new Tile(value, (TileColor)chosen[i]);
         }
 
-        board.AddGroup(new ValidSet(tiles));
+        board.Sets.Add(new ValidSet(tiles));
     }
 
     private static string Describe(Set board, Set rack)
@@ -314,11 +314,11 @@ public class DynamicSolverPerformanceTests(ITestOutputHelper output)
         // A medium table: enough to make the exponential search noticeably slow (~1-2 s) while
         // the DP stays in the low milliseconds — keeping this comparison cheap for CI.
         var board = new Solution { IsValid = true };
-        board.AddRun(new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue), new Tile(4, TileColor.Blue)]));
-        board.AddRun(new ValidSet([new Tile(8, TileColor.Black), new Tile(9, TileColor.Black), new Tile(10, TileColor.Black), new Tile(11, TileColor.Black)]));
-        board.AddRun(new ValidSet([new Tile(5, TileColor.Red), new Tile(6, TileColor.Red), new Tile(7, TileColor.Red)]));
-        board.AddGroup(new ValidSet([new Tile(9, TileColor.Blue), new Tile(9, TileColor.Red), new Tile(9, TileColor.Mango)]));
-        board.AddGroup(new ValidSet([new Tile(12, TileColor.Blue), new Tile(12, TileColor.Red), new Tile(12, TileColor.Black), new Tile(12, TileColor.Mango)]));
+        board.Sets.Add(new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue), new Tile(4, TileColor.Blue)]));
+        board.Sets.Add(new ValidSet([new Tile(8, TileColor.Black), new Tile(9, TileColor.Black), new Tile(10, TileColor.Black), new Tile(11, TileColor.Black)]));
+        board.Sets.Add(new ValidSet([new Tile(5, TileColor.Red), new Tile(6, TileColor.Red), new Tile(7, TileColor.Red)]));
+        board.Sets.Add(new ValidSet([new Tile(9, TileColor.Blue), new Tile(9, TileColor.Red), new Tile(9, TileColor.Mango)]));
+        board.Sets.Add(new ValidSet([new Tile(12, TileColor.Blue), new Tile(12, TileColor.Red), new Tile(12, TileColor.Black), new Tile(12, TileColor.Mango)]));
         var boardSet = board.ToSet();
 
         var rack = new Set([
@@ -350,14 +350,14 @@ public class DynamicSolverPerformanceTests(ITestOutputHelper output)
         var board = new Solution { IsValid = true };
 
         // Runs across several colors.
-        board.AddRun(new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue), new Tile(4, TileColor.Blue)]));
-        board.AddRun(new ValidSet([new Tile(5, TileColor.Red), new Tile(6, TileColor.Red), new Tile(7, TileColor.Red)]));
-        board.AddRun(new ValidSet([new Tile(8, TileColor.Black), new Tile(9, TileColor.Black), new Tile(10, TileColor.Black), new Tile(11, TileColor.Black)]));
-        board.AddRun(new ValidSet([new Tile(2, TileColor.Mango), new Tile(3, TileColor.Mango), new Tile(4, TileColor.Mango)]));
+        board.Sets.Add(new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue), new Tile(4, TileColor.Blue)]));
+        board.Sets.Add(new ValidSet([new Tile(5, TileColor.Red), new Tile(6, TileColor.Red), new Tile(7, TileColor.Red)]));
+        board.Sets.Add(new ValidSet([new Tile(8, TileColor.Black), new Tile(9, TileColor.Black), new Tile(10, TileColor.Black), new Tile(11, TileColor.Black)]));
+        board.Sets.Add(new ValidSet([new Tile(2, TileColor.Mango), new Tile(3, TileColor.Mango), new Tile(4, TileColor.Mango)]));
 
         // Groups.
-        board.AddGroup(new ValidSet([new Tile(9, TileColor.Blue), new Tile(9, TileColor.Red), new Tile(9, TileColor.Mango)]));
-        board.AddGroup(new ValidSet([new Tile(12, TileColor.Blue), new Tile(12, TileColor.Red), new Tile(12, TileColor.Black), new Tile(12, TileColor.Mango)]));
+        board.Sets.Add(new ValidSet([new Tile(9, TileColor.Blue), new Tile(9, TileColor.Red), new Tile(9, TileColor.Mango)]));
+        board.Sets.Add(new ValidSet([new Tile(12, TileColor.Blue), new Tile(12, TileColor.Red), new Tile(12, TileColor.Black), new Tile(12, TileColor.Mango)]));
 
         var rack = new Set([
             new Tile(5, TileColor.Blue), new Tile(6, TileColor.Blue), new Tile(7, TileColor.Blue),

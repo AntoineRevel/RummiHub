@@ -12,7 +12,7 @@ public record SolveRequest
     public required List<Tile> Hand { get; init; }
 
     /// <summary>
-    /// Current board state as a structured solution (Runs + Groups).
+    /// Current board state as a structured solution (its ordered sets).
     /// </summary>
     public required Solution Board { get; init; }
 
