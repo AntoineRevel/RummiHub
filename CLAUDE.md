@@ -27,16 +27,10 @@ Tests use **xUnit** with **FluentAssertions**. There are no integration tests â€
 
 ## Shipping a feature
 
-When a feature is ready, finish with both of these. Do this for every new feature, without waiting to be asked again.
+When a feature is ready, finish with this. Do it for every new feature, without waiting to be asked again.
 
 1. Branch from `origin/master` (`cursor/<topic>`), commit, push, and open a pull request to `master`. Do not push to `master` directly.
-2. Deploy that same branch to the test site:
-
-```bash
-gh workflow run deploy-test.yml --ref <branch>
-```
-
-That runs `.github/workflows/deploy-test.yml` on the real branch: the tests, then https://test.rummisolve.com at that commit. There is no `test` branch. The commit must not change `deploy/` â€” the server rejects the deploy otherwise. Do not push to `master`.
+2. Nothing else to run: every push to a PR triggers `.github/workflows/pr.yml`, which runs the tests and then deploys the branch head to https://test.rummisolve.com. The test site shows the last PR pushed; to put a PR back on it, re-run its `site-de-test` job. There is no `test` branch. A commit that changes `deploy/` is not deployed to the test site.
 
 ## Architecture
 
