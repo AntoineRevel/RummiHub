@@ -132,7 +132,30 @@
                 }
             </div>
 
-            @if (_isHost)
+            @if (_gameStarted)
+            {
+                <div class="game-started">
+                    <p class="started-text">
+                        @if (_openBlocked)
+                        {
+                            <text>The game has started. Your browser did not open it by itself — open it from here.</text>
+                        }
+                        else
+                        {
+                            <text>The game has started in a new tab.</text>
+                        }
+                    </p>
+                    <button class="btn-start" @onclick="OpenGameAsync">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                            <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                        Open the game
+                    </button>
+                    <p class="hint">Closing the game tab brings you back here.</p>
+                </div>
+            }
+            else if (_isHost)
             {
                 <button class="btn-add-ai" @onclick="AddAiPlayer" disabled="@(_players.Count >= 4)">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -488,6 +511,25 @@
         font-size: 0.85rem;
         color: #aaa;
         margin: -8px 0 0 0;
+    }
+
+    .game-started {
+        text-align: center;
+    }
+
+    .game-started .btn-start {
+        width: 100%;
+        margin: 0 0 12px 0;
+    }
+
+    .game-started .hint {
+        margin: 0;
+    }
+
+    .started-text {
+        margin: 0 0 12px 0;
+        color: #2e7d32;
+        font-weight: 600;
     }
 
     .waiting-hint {

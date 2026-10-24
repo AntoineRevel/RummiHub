@@ -1,0 +1,18 @@
+@inject IConfiguration Configuration
+
+@* Posé seulement sur le site de test (TestSite__Commit, deploy/docker-compose.test.yml) :
+   branche et commit déployés. Absent en production, donc pas de bandeau.
+   Inline : un bandeau fin dans le flux, tout en haut (page de jeu : rien ne doit
+   recouvrir le dock). Sinon : pastille fixe en bas à gauche. *@
+@if (!string.IsNullOrWhiteSpace(_testCommit))
+{
+    <div class="@(Inline ? "test-site-strip" : "test-site-badge")" title="@_testCommit">Site de test · @_testCommit</div>
+}
+
+@code {
+    [Parameter] public bool Inline { get; set; }
+
+    private string? _testCommit;
+
+    protected override void OnInitialized() => _testCommit = Configuration["TestSite:Commit"];
+}

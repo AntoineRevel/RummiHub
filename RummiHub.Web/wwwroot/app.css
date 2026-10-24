@@ -2,6 +2,24 @@ html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
+/* Tile size, shared by every tile on screen (board, rack, play zone, toast). Phones get
+   smaller tiles so a 14-tile rack fits in two rows and the table shows more sets. */
+:root {
+    --tile-w: 50px;
+    --tile-h: 70px;
+    --tile-font: 24px;
+    --tile-radius: 10px;
+}
+
+@media (max-width: 640px) {
+    :root {
+        --tile-w: 42px;
+        --tile-h: 58px;
+        --tile-font: 20px;
+        --tile-radius: 8px;
+    }
+}
+
 a, .btn-link {
     color: #006bb7;
 }

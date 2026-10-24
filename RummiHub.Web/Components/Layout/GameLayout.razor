@@ -1,0 +1,14 @@
+@inherits LayoutComponentBase
+
+@* The game page alone: no sidebar, no page padding. The table gets the whole viewport;
+   the page's own top bar carries the way back to the lobby. *@
+<main class="game-main">
+    <TestSiteBadge Inline="true"/>
+    @Body
+</main>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>

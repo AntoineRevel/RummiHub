@@ -1,0 +1,32 @@
+/* Site de test : coin bas gauche, au-dessus de tout, sans capter les clics. */
+.test-site-badge {
+    position: fixed;
+    left: 8px;
+    bottom: 8px;
+    z-index: 10000;
+    max-width: min(480px, calc(100vw - 16px));
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: rgba(214, 51, 132, 0.85);
+    color: #fff;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.test-site-strip {
+    flex: none;
+    height: 16px;
+    line-height: 16px;
+    padding: 0 10px;
+    background: rgba(214, 51, 132, 0.85);
+    color: #fff;
+    font-size: 0.7rem;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
