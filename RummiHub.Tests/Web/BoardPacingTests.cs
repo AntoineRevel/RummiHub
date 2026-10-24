@@ -23,8 +23,8 @@ public class BoardPacingTests
     [Fact]
     public void EstimateMs_UnchangedBoard_ReturnsZero()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
 
         BoardPacing.EstimateMs(previous, next).Should().Be(0);
     }
@@ -32,8 +32,8 @@ public class BoardPacingTests
     [Fact]
     public void EstimateMs_TileAppendedToLastSet_PlacesOneTile()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+        var previous = new Solution { Sets = [BlueRun, RedRun] };
+        var next = new Solution { Sets = [BlueRun, RedRunExtended] };
 
         BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(1));
     }
@@ -45,8 +45,8 @@ public class BoardPacingTests
         // move of its own — only the placed tile counts.
         var blueRunExtended = Set(
             T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
-        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [blueRunExtended, RedRun], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
+        var next = new Solution { Sets = [blueRunExtended, RedRun, FivesGroup] };
 
         BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(1));
     }
@@ -54,8 +54,8 @@ public class BoardPacingTests
     [Fact]
     public void EstimateMs_NewSet_PlacesEachOfItsTiles()
     {
-        var previous = new Solution { Runs = [BlueRun] };
-        var next = new Solution { Runs = [BlueRun, RedRun] };
+        var previous = new Solution { Sets = [BlueRun] };
+        var next = new Solution { Sets = [BlueRun, RedRun] };
 
         BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
     }
@@ -68,8 +68,8 @@ public class BoardPacingTests
         var longBlueRun = Set(
             T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
         var foursGroup = Set(T(4, TileColor.Blue), T(4, TileColor.Red), T(4, TileColor.Black));
-        var previous = new Solution { Runs = [longBlueRun] };
-        var next = new Solution { Runs = [BlueRun], Groups = [foursGroup] };
+        var previous = new Solution { Sets = [longBlueRun] };
+        var next = new Solution { Sets = [BlueRun, foursGroup] };
 
         BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
     }
@@ -79,8 +79,8 @@ public class BoardPacingTests
     {
         // A 5-Red already rests in FivesGroup; the other 5-Red is played into a new run. The
         // group keeps its own copy: the new run's 3 tiles are placed, nothing more.
-        var previous = new Solution { Runs = [BlueRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [BlueRun, FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
 
         BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
     }
@@ -88,8 +88,8 @@ public class BoardPacingTests
     [Fact]
     public void EnteredIndices_UnchangedBoard_IsEmpty()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
 
         BoardPacing.EnteredIndices(previous, next).Should().BeEmpty();
     }
@@ -97,8 +97,8 @@ public class BoardPacingTests
     [Fact]
     public void EnteredIndices_TileAppended_ReturnsItsReadingIndex()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+        var previous = new Solution { Sets = [BlueRun, RedRun] };
+        var next = new Solution { Sets = [BlueRun, RedRunExtended] };
 
         // Reading order: BlueRun tiles 0-2, RedRunExtended tiles 3-6 — the appended 8-Red is 6.
         BoardPacing.EnteredIndices(previous, next).Should().Equal(6);
@@ -110,9 +110,9 @@ public class BoardPacingTests
         // A 5-Red already sits in FivesGroup; the player now plays the OTHER 5-Red into a new
         // run. The new copy (index 3, first tile of the new run) must be flagged — never the
         // twin resting in the group.
-        var previous = new Solution { Runs = [BlueRun], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [BlueRun, FivesGroup] };
         var newRedRun = Set(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
-        var next = new Solution { Runs = [BlueRun, newRedRun], Groups = [FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, newRedRun, FivesGroup] };
 
         BoardPacing.EnteredIndices(previous, next).Should().Equal(3, 4, 5);
     }
@@ -124,8 +124,8 @@ public class BoardPacingTests
         // is flagged, by per-occurrence diff against the paired previous set.
         var extendedGroup = Set(
             T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black), T(5, TileColor.Mango));
-        var previous = new Solution { Runs = [BlueRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [BlueRun], Groups = [extendedGroup] };
+        var previous = new Solution { Sets = [BlueRun, FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, extendedGroup] };
 
         BoardPacing.EnteredIndices(previous, next).Should().Equal(6);
     }
@@ -138,8 +138,8 @@ public class BoardPacingTests
         var redRunLong = Set(
             T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red), T(8, TileColor.Red));
         var redRunShort = Set(T(6, TileColor.Red), T(7, TileColor.Red), T(8, TileColor.Red));
-        var previous = new Solution { Runs = [redRunLong] };
-        var next = new Solution { Runs = [redRunShort], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [redRunLong] };
+        var next = new Solution { Sets = [redRunShort, FivesGroup] };
 
         BoardPacing.EnteredIndices(previous, next).Should().Equal(3, 4, 5);
         BoardPacing.PlayedIndices(previous, next, [T(5, TileColor.Blue), T(5, TileColor.Black)])
@@ -149,10 +149,10 @@ public class BoardPacingTests
     [Fact]
     public void PlayedIndices_Joker_IsFlagged()
     {
-        var previous = new Solution { Runs = [BlueRun] };
+        var previous = new Solution { Sets = [BlueRun] };
         var next = new Solution
         {
-            Runs = [BlueRun, Set(T(5, TileColor.Red), new Tile(isJoker: true), T(7, TileColor.Red))]
+            Sets = [BlueRun, Set(T(5, TileColor.Red), new Tile(isJoker: true), T(7, TileColor.Red))]
         };
         Tile[] played = [T(5, TileColor.Red), new Tile(isJoker: true), T(7, TileColor.Red)];
 
@@ -176,8 +176,8 @@ public class BoardPacingTests
     [Fact]
     public void ModifiedSetIndices_UnchangedBoard_IsEmpty()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
 
         BoardPacing.ModifiedSetIndices(previous, next).Should().BeEmpty();
     }
@@ -185,8 +185,8 @@ public class BoardPacingTests
     [Fact]
     public void ModifiedSetIndices_AppendedTile_MarksOnlyThatSet()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+        var previous = new Solution { Sets = [BlueRun, RedRun] };
+        var next = new Solution { Sets = [BlueRun, RedRunExtended] };
 
         BoardPacing.ModifiedSetIndices(previous, next).Should().Equal(1);
     }
@@ -196,8 +196,8 @@ public class BoardPacingTests
     {
         var extended = Set(
             T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black), T(5, TileColor.Mango));
-        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [extended] };
+        var previous = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, RedRun, extended] };
 
         // Two runs, then the group — only the group changed.
         BoardPacing.ModifiedSetIndices(previous, next).Should().Equal(2);
@@ -206,8 +206,8 @@ public class BoardPacingTests
     [Fact]
     public void ModifiedSetIndices_NewSet_IsMarked()
     {
-        var previous = new Solution { Runs = [BlueRun] };
-        var next = new Solution { Runs = [BlueRun, RedRun] };
+        var previous = new Solution { Sets = [BlueRun] };
+        var next = new Solution { Sets = [BlueRun, RedRun] };
 
         BoardPacing.ModifiedSetIndices(previous, next).Should().Equal(1);
     }
@@ -215,8 +215,8 @@ public class BoardPacingTests
     [Fact]
     public void ReadingMs_UnchangedBoard_IsZero()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
 
         BoardPacing.ReadingMs(previous, next).Should().Be(0);
     }
@@ -224,8 +224,8 @@ public class BoardPacingTests
     [Fact]
     public void ReadingMs_OneSetTouched_IsTheBaseWindow()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+        var previous = new Solution { Sets = [BlueRun, RedRun] };
+        var next = new Solution { Sets = [BlueRun, RedRunExtended] };
 
         BoardPacing.ReadingMs(previous, next).Should().Be(BoardPacing.ReadMs);
     }
@@ -235,8 +235,8 @@ public class BoardPacingTests
     {
         var blueRunExtended = Set(
             T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [blueRunExtended, RedRunExtended] };
+        var previous = new Solution { Sets = [BlueRun, RedRun] };
+        var next = new Solution { Sets = [blueRunExtended, RedRunExtended] };
 
         BoardPacing.ReadingMs(previous, next).Should().Be(BoardPacing.ReadMs + BoardPacing.ReadPerSetMs);
     }
@@ -247,10 +247,13 @@ public class BoardPacingTests
         // Twelve brand-new sets: far past the cap.
         var next = new Solution
         {
-            Runs = Enumerable.Range(1, 6).Select(v => Set(
-                T(v, TileColor.Red), T(v + 1, TileColor.Red), T(v + 2, TileColor.Red))).ToList(),
-            Groups = Enumerable.Range(1, 6).Select(v => Set(
-                T(v, TileColor.Blue), T(v, TileColor.Black), T(v, TileColor.Mango))).ToList(),
+            Sets =
+            [
+                ..Enumerable.Range(1, 6).Select(v => Set(
+                    T(v, TileColor.Red), T(v + 1, TileColor.Red), T(v + 2, TileColor.Red))),
+                ..Enumerable.Range(1, 6).Select(v => Set(
+                    T(v, TileColor.Blue), T(v, TileColor.Black), T(v, TileColor.Mango)))
+            ]
         };
 
         BoardPacing.ReadingMs(new Solution(), next).Should().Be(BoardPacing.MaxReadMs);
@@ -259,8 +262,8 @@ public class BoardPacingTests
     [Fact]
     public void SameBoard_SameSetsAndTiles_IsTrue()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
-        var next = new Solution { Runs = [BlueRun, RedRun], Groups = [FivesGroup] };
+        var previous = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
+        var next = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
 
         BoardPacing.SameBoard(previous, next).Should().BeTrue();
     }
@@ -268,8 +271,8 @@ public class BoardPacingTests
     [Fact]
     public void SameBoard_ExtendedSet_IsFalse()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [BlueRun, RedRunExtended] };
+        var previous = new Solution { Sets = [BlueRun, RedRun] };
+        var next = new Solution { Sets = [BlueRun, RedRunExtended] };
 
         BoardPacing.SameBoard(previous, next).Should().BeFalse();
     }
@@ -277,8 +280,8 @@ public class BoardPacingTests
     [Fact]
     public void SameBoard_SetsSwapped_IsFalse()
     {
-        var previous = new Solution { Runs = [BlueRun, RedRun] };
-        var next = new Solution { Runs = [RedRun, BlueRun] };
+        var previous = new Solution { Sets = [BlueRun, RedRun] };
+        var next = new Solution { Sets = [RedRun, BlueRun] };
 
         BoardPacing.SameBoard(previous, next).Should().BeFalse();
     }

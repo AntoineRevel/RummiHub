@@ -128,8 +128,7 @@ public static class GameTraceGenerator
     private static Solution Clone(Solution s) => new()
     {
         IsValid = s.IsValid,
-        Runs = s.Runs.Select(r => new ValidSet(r.Tiles.ToArray())).ToList(),
-        Groups = s.Groups.Select(g => new ValidSet(g.Tiles.ToArray())).ToList()
+        Sets = s.Sets.Select(set => new ValidSet(set.Tiles.ToArray())).ToList()
     };
 
     private static Tile[] GenerateTiles()

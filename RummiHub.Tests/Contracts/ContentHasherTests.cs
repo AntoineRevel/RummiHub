@@ -9,7 +9,7 @@ public class ContentHasherTests
     private static Solution EmptyBoard() => new();
 
     private static Solution BoardWithRun(params Tile[] tiles) =>
-        new() { Runs = [new ValidSet(tiles)] };
+        new() { Sets = [new ValidSet(tiles)] };
 
     [Fact]
     public void SameInput_ReturnsSameHash()

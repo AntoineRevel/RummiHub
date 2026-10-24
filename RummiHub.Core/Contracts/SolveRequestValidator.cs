@@ -28,19 +28,17 @@ public static class SolveRequestValidator
         if (request.Hand is null)
             return Fail("Hand is required.", out error);
 
-        if (request.Board is null || request.Board.Runs is null || request.Board.Groups is null)
+        if (request.Board?.Sets is null)
             return Fail("Board is required.", out error);
 
         if (request.Hand.Count > MaxTiles)
             return Fail($"Hand cannot exceed {MaxTiles} tiles.", out error);
 
-        if (request.Board.Runs.Count > MaxSets || request.Board.Groups.Count > MaxSets)
-            return Fail($"Board cannot exceed {MaxSets} runs or {MaxSets} groups.", out error);
+        if (request.Board.Sets.Count > MaxSets)
+            return Fail($"Board cannot exceed {MaxSets} sets.", out error);
 
         var boardTiles = new List<Tile>();
-        if (!TryCollect(request.Board.Runs, boardTiles, out error))
-            return false;
-        if (!TryCollect(request.Board.Groups, boardTiles, out error))
+        if (!TryCollect(request.Board.Sets, boardTiles, out error))
             return false;
 
         if (boardTiles.Count > MaxTiles)

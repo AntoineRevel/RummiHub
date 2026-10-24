@@ -14,12 +14,12 @@ public class BoardAlignmentTests
     {
         var runA = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var runB = Set(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
-        var previous = new Solution { Runs = [runA, runB] };
+        var previous = new Solution { Sets = [runA, runB] };
 
         // Solver returns the same runs in a different order (B first), A extended with a 4.
         var runBNext = Set(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var runANext = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
-        var next = new Solution { Runs = [runBNext, runANext] };
+        var next = new Solution { Sets = [runBNext, runANext] };
 
         var aligned = BoardAlignment.Align(previous, next);
 
@@ -33,11 +33,11 @@ public class BoardAlignmentTests
     public void Align_AppendsBrandNewSetsLast()
     {
         var runA = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
-        var previous = new Solution { Runs = [runA] };
+        var previous = new Solution { Sets = [runA] };
 
         var newRun = Set(T(7, TileColor.Black), T(8, TileColor.Black), T(9, TileColor.Black));
         var runANext = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
-        var next = new Solution { Runs = [newRun, runANext] };
+        var next = new Solution { Sets = [newRun, runANext] };
 
         var aligned = BoardAlignment.Align(previous, next);
 
@@ -50,12 +50,15 @@ public class BoardAlignmentTests
     {
         var run = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var group = Set(T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black));
-        var previous = new Solution { Runs = [run], Groups = [group] };
+        var previous = new Solution { Sets = [run, group] };
 
         var next = new Solution
         {
-            Runs = [Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))],
-            Groups = [Set(T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black), T(5, TileColor.Mango))]
+            Sets =
+            [
+                Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue)),
+                Set(T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black), T(5, TileColor.Mango))
+            ]
         };
 
         var aligned = BoardAlignment.Align(previous, next);
@@ -70,11 +73,11 @@ public class BoardAlignmentTests
     {
         var previous = new Solution
         {
-            Runs = [Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))]
+            Sets = [Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))]
         };
         var r1 = Set(T(9, TileColor.Red), T(10, TileColor.Red), T(11, TileColor.Red));
         var r2 = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
-        var next = new Solution { Runs = [r1, r2] };
+        var next = new Solution { Sets = [r1, r2] };
 
         var aligned = BoardAlignment.Align(previous, next);
 

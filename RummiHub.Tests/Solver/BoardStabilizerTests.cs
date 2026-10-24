@@ -31,7 +31,7 @@ public class BoardStabilizerTests
     {
         var blueRun = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var redRun = VSet(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red));
-        var board = new Solution { IsValid = true, Runs = [blueRun, redRun] };
+        var board = new Solution { IsValid = true, Sets = [blueRun, redRun] };
         var rack = new Set([T(11, TileColor.Blue), T(11, TileColor.Red), T(11, TileColor.Black)]);
 
         var solved = SolveFor(board, rack);
@@ -53,7 +53,7 @@ public class BoardStabilizerTests
         var blueRun = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var redRun = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var nines = VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [blueRun, redRun], Groups = [nines] };
+        var board = new Solution { IsValid = true, Sets = [blueRun, redRun, nines] };
         var rack = new Set([T(4, TileColor.Blue)]);
 
         var solved = SolveFor(board, rack);
@@ -79,7 +79,7 @@ public class BoardStabilizerTests
         var blackRun = VSet(T(6, TileColor.Black), T(7, TileColor.Black), T(8, TileColor.Black),
             T(9, TileColor.Black), T(10, TileColor.Black));
         var ones = VSet(T(1, TileColor.Blue), T(1, TileColor.Red), T(1, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [blackRun], Groups = [ones] };
+        var board = new Solution { IsValid = true, Sets = [blackRun, ones] };
         var rack = new Set([T(8, TileColor.Black)]);
 
         var solved = SolveFor(board, rack);
@@ -102,7 +102,7 @@ public class BoardStabilizerTests
         var lowBlue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var highBlue = VSet(T(4, TileColor.Blue), T(5, TileColor.Blue), T(6, TileColor.Blue));
         var nines = VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [lowBlue, highBlue], Groups = [nines] };
+        var board = new Solution { IsValid = true, Sets = [lowBlue, highBlue, nines] };
 
         var churned = new Solution { IsValid = true };
         churned.AddRun(VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue),
@@ -124,14 +124,15 @@ public class BoardStabilizerTests
     }
 
     [Fact]
-    public void MoveNeedingTheWholeTable_FallsBackToTheSolverArrangement()
+    public void MoveNeedingTheWholeTable_KeepsTheSolverSetsSeatedOnTheOldOnes()
     {
         // Playing [5Bk, 5M, 8B, 8R] only works by dismantling BOTH runs (group the fives,
         // extend both 6-7 tails with the eights). No proper subset of sets recomposes, so
-        // the stabilizer must hand back the solver's own result untouched.
+        // the solver's own sets stand, each run in its old seat and the fives beside the
+        // first run they came from.
         var blueRun = VSet(T(5, TileColor.Blue), T(6, TileColor.Blue), T(7, TileColor.Blue));
         var redRun = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
-        var board = new Solution { IsValid = true, Runs = [blueRun, redRun] };
+        var board = new Solution { IsValid = true, Sets = [blueRun, redRun] };
         var rack = new Set([T(5, TileColor.Black), T(5, TileColor.Mango),
             T(8, TileColor.Blue), T(8, TileColor.Red)]);
 
@@ -140,7 +141,35 @@ public class BoardStabilizerTests
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.Should().BeSameAs(solved);
+        result.TilesToPlay.Should().BeEquivalentTo(solved.TilesToPlay);
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Tiles.Should().AllSatisfy(t => t.Color.Should().Be(TileColor.Blue));
+        sets[1].IsGroup.Should().BeTrue();
+        sets[2].Tiles.Should().AllSatisfy(t => t.Color.Should().Be(TileColor.Red));
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void RunTurnedIntoAGroup_SitsBesideTheRunItCameFrom()
+    {
+        // 7B and 7Bk only fit by taking 7R off the red run: the new group is made of that
+        // run's tile, so it lands right after the run, not after every other set.
+        var mango = VSet(T(1, TileColor.Mango), T(2, TileColor.Mango), T(3, TileColor.Mango));
+        var red = VSet(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
+        var blue = VSet(T(11, TileColor.Blue), T(12, TileColor.Blue), T(13, TileColor.Blue));
+        var board = new Solution { IsValid = true, Sets = [mango, red, blue] };
+        var rack = new Set([T(7, TileColor.Blue), T(7, TileColor.Black)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(4);
+        sets[0].Should().BeSameAs(mango);
+        sets[1].Tiles.Select(t => t.Value).Should().Equal(8, 9, 10);
+        sets[2].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(7)).And.HaveCount(3);
+        sets[3].Should().BeSameAs(blue);
+        ShouldBeLegalOver(result, board, rack);
     }
 
     [Fact]
@@ -151,7 +180,7 @@ public class BoardStabilizerTests
         var jokerRun = VSet(T(3, TileColor.Blue), new Tile(4, TileColor.Blue, isJoker: true),
             T(5, TileColor.Blue));
         var elevens = VSet(T(11, TileColor.Blue), T(11, TileColor.Red), T(11, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [jokerRun], Groups = [elevens] };
+        var board = new Solution { IsValid = true, Sets = [jokerRun, elevens] };
         var rack = new Set([T(4, TileColor.Blue), T(6, TileColor.Blue)]);
 
         var solved = SolveFor(board, rack);
@@ -173,7 +202,7 @@ public class BoardStabilizerTests
         var board = new Solution
         {
             IsValid = true,
-            Runs = [VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))]
+            Sets = [VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))]
         };
 
         var invalid = SolverResult.Invalid("test");
@@ -193,7 +222,7 @@ public class BoardStabilizerTests
         var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var eights = VSet(T(8, TileColor.Mango), T(8, TileColor.Red), T(8, TileColor.Black));
-        var board = new Solution { IsValid = true, Runs = [blue, red], Groups = [thirteens, eights] };
+        var board = new Solution { IsValid = true, Sets = [blue, red, thirteens, eights] };
 
         // Pointlessly reordered, and the group rebuilt in color order instead of
         // keeping Black, Blue, Red and appending Mango.
@@ -226,7 +255,7 @@ public class BoardStabilizerTests
         var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var mango = VSet(T(10, TileColor.Mango), T(11, TileColor.Mango), T(12, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [red, blue, mango] };
+        var board = new Solution { IsValid = true, Sets = [red, blue, mango] };
         var rack = new Set([T(4, TileColor.Blue)]);
 
         var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
@@ -242,7 +271,7 @@ public class BoardStabilizerTests
     {
         var run = VSet(T(5, TileColor.Blue), T(6, TileColor.Blue), T(7, TileColor.Blue));
         var other = VSet(T(1, TileColor.Red), T(1, TileColor.Black), T(1, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [run], Groups = [other] };
+        var board = new Solution { IsValid = true, Sets = [run, other] };
         var rack = new Set([T(4, TileColor.Blue)]);
 
         var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
@@ -260,7 +289,7 @@ public class BoardStabilizerTests
         var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var keep = VSet(T(2, TileColor.Mango), T(3, TileColor.Mango), T(4, TileColor.Mango));
         var nines = VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Black));
-        var board = new Solution { IsValid = true, Runs = [blue, red, keep], Groups = [nines] };
+        var board = new Solution { IsValid = true, Sets = [blue, red, keep, nines] };
         var rack = new Set([T(4, TileColor.Blue), T(8, TileColor.Red), T(9, TileColor.Mango)]);
 
         var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
@@ -292,8 +321,7 @@ public class BoardStabilizerTests
         var board = new Solution
         {
             IsValid = true,
-            Runs = [blackRun, blueRun, redRun],
-            Groups = [elevensA, twos, fours, elevensB, twelves, thirteens]
+            Sets = [blackRun, blueRun, redRun, elevensA, twos, fours, elevensB, twelves, thirteens]
         };
         var rack = new Set([T(9, TileColor.Mango), T(10, TileColor.Black)]);
 
@@ -312,7 +340,7 @@ public class BoardStabilizerTests
         var thirteens = VSet(T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Black));
         var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var red = VSet(T(4, TileColor.Red), T(5, TileColor.Red), T(6, TileColor.Red));
-        var board = new Solution { IsValid = true, Runs = [blue, red], Groups = [thirteens] };
+        var board = new Solution { IsValid = true, Sets = [blue, red, thirteens] };
         var rack = new Set([T(13, TileColor.Mango)]);
 
         var solved = GraphSolver.Create(board.ToSet(), rack).SearchSolution();
@@ -338,7 +366,7 @@ public class BoardStabilizerTests
         var mango = VSet(T(6, TileColor.Mango), T(7, TileColor.Mango), T(8, TileColor.Mango));
         var ones = VSet(T(1, TileColor.Blue), T(1, TileColor.Mango), T(1, TileColor.Black), T(1, TileColor.Red));
         var thirteens = VSet(T(13, TileColor.Blue), new Tile(13, TileColor.Red, isJoker: true), T(13, TileColor.Black));
-        var sent = new Solution { IsValid = true, Runs = [mango], Groups = [ones, thirteens] };
+        var sent = new Solution { IsValid = true, Sets = [mango, ones, thirteens] };
         var board = JsonSerializer.Deserialize<Solution>(
             JsonSerializer.Serialize(sent, RummiJsonOptions.Default), RummiJsonOptions.Default)!;
         var rack = new Set([T(10, TileColor.Mango), T(9, TileColor.Mango)]);

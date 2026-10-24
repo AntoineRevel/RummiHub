@@ -1,4 +1,6 @@
+using System.Text.Json;
 using FluentAssertions;
+using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 
 namespace RummiHub.Tests.Core;
@@ -63,5 +65,47 @@ public class SolutionTests
     public void InvalidSolution_IsValidFalse()
     {
         Solution.InvalidSolution.IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Json_KeepsRunsAndGroupsInOneOrderedList()
+    {
+        var group = new ValidSet([new Tile(5, TileColor.Blue), new Tile(5, TileColor.Red), new Tile(5, TileColor.Black)]);
+        var run = new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]);
+        var board = new Solution { IsValid = true, Sets = [group, run] };
+
+        var json = JsonSerializer.Serialize(board, RummiJsonOptions.Default);
+        var back = JsonSerializer.Deserialize<Solution>(json, RummiJsonOptions.Default)!;
+
+        json.Should().Contain("\"sets\"").And.NotContain("runs");
+        back.IsValid.Should().BeTrue();
+        back.Sets.Select(s => s.IsGroup).Should().Equal(true, false);
+        back.Groups.Should().ContainSingle().Which.Tiles.Should().Equal(group.Tiles);
+    }
+
+    [Fact]
+    public void Json_StillReadsTheFormerRunsAndGroupsShape()
+    {
+        const string json = """
+            {"runs":[{"tiles":[{"value":1,"color":"Blue","isJoker":false},{"value":2,"color":"Blue","isJoker":false},{"value":3,"color":"Blue","isJoker":false}]}],
+             "groups":[{"tiles":[{"value":7,"color":"Red","isJoker":false},{"value":7,"color":"Black","isJoker":false},{"value":7,"color":"Mango","isJoker":false}]}],
+             "isValid":true}
+            """;
+
+        var board = JsonSerializer.Deserialize<Solution>(json, RummiJsonOptions.Default)!;
+
+        board.IsValid.Should().BeTrue();
+        board.Sets.Should().HaveCount(2);
+        board.Runs.Should().ContainSingle().Which.Tiles[0].Value.Should().Be(1);
+        board.Groups.Should().ContainSingle().Which.Tiles[0].Value.Should().Be(7);
+    }
+
+    [Fact]
+    public void IsGroup_ReadsAJokerByTheValueItStandsFor()
+    {
+        new ValidSet([new Tile(4, TileColor.Red), new Tile(5, TileColor.Red, isJoker: true), new Tile(6, TileColor.Red)])
+            .IsGroup.Should().BeFalse();
+        new ValidSet([new Tile(9, TileColor.Red), new Tile(9, TileColor.Blue, isJoker: true), new Tile(9, TileColor.Black)])
+            .IsGroup.Should().BeTrue();
     }
 }
