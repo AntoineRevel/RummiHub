@@ -4,7 +4,7 @@
 # Le job se connecte en SSH sans commande distante. La clé ne peut exécuter que
 # rummihub-deploy : sans commande, cela déploie origin/master. « deploy-test » est
 # réservé au site de test (deploy/README.md).
-name: Déploiement de production
+name: Production deploy
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
       group: production
       cancel-in-progress: false
     steps:
-      - name: Déployer sur le VPS
+      - name: Deploy to the server
         env:
           SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

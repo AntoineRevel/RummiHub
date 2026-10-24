@@ -5,13 +5,13 @@
 #
 # Le site de test montre la dernière PR poussée : une seule pile de test, partagée.
 # Pour remettre une PR dessus (ou relancer après l'arrêt automatique de 2 h) :
-# Re-run du job « site-de-test » seul, sans refaire les tests. Pour une branche sans
+# Re-run du job « test-site » seul, sans refaire les tests. Pour une branche sans
 # PR : Actions → Run workflow, ou gh workflow run pr.yml --ref <branche>.
 #
 # SSH réutilise la clé de production. La commande forcée n'accepte que
 # « deploy-test <SHA> » et refuse un commit qui modifie deploy/
 # (deploy/autodeploy/rummihub-deploy-test-run) : dans ce cas le job ne déploie pas.
-name: Tests et site de test
+name: Tests and test site
 
 on:
   pull_request:
@@ -25,10 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Vérifier que la ref est une branche
+      - name: Check that the ref is a branch
         if: github.event_name == 'workflow_dispatch' && github.ref_type != 'branch'
         run: |
-          echo "Refus : dans « Use workflow from », choisir une branche, pas une étiquette." >&2
+          echo 'Refused: pick a branch in "Use workflow from", not a tag.' >&2
           exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -36,7 +36,7 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet test RummiHub.slnx
 
-  site-de-test:
+  test-site:
     needs: test
     # Les PR venues d'un fork n'ont pas les secrets.
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
@@ -55,17 +55,17 @@ jobs:
         with:
           ref: ${{ env.SHA }}
           fetch-depth: 0
-      - name: Vérifier que deploy/ n'est pas modifié
+      - name: Check that deploy/ is unchanged
         id: deploy-dir
         run: |
           git fetch -q origin master
           if git diff --quiet origin/master...HEAD -- deploy; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::Ce commit modifie deploy/ : pas de site de test (le VPS le refuserait). Merger pour l'essayer."
+            echo "::notice::This commit changes deploy/: not deployed to the test site (the server would refuse it). Merge it to try it."
             echo "ok=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Déployer le commit sur le site de test
+      - name: Deploy the commit to the test site
         if: steps.deploy-dir.outputs.ok == 'true'
         env:
           SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
