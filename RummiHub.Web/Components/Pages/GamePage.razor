@@ -147,21 +147,17 @@ else
                     <span class="dot-pulse" aria-hidden="true"></span>
                     <span class="turn-banner-text">Waiting for @CurrentPlayerName…</span>
                 }
-                @* Review mode already offers this next to "Next player". Everywhere else —
-                   while an AI plays, and once that move has landed — the last board story
-                   stays replayable from here. *@
-                @if (!AwaitingMyConfirmation)
-                {
-                    <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)"
-                            title="Replay the last move">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                             stroke-width="2">
-                            <polyline points="1 4 1 10 7 10"/>
-                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-                        </svg>
-                        Replay animation
-                    </button>
-                }
+                @* The one replay control while the game runs (review mode included), so it
+                   never moves around; the game-over panel takes its place at the end. *@
+                <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)"
+                        title="Replay the last move">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2">
+                        <polyline points="1 4 1 10 7 10"/>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                    </svg>
+                    Replay animation
+                </button>
             </div>
         }
 
@@ -318,14 +314,6 @@ else
                 <div class="human-actions-buttons">
                     @if (AwaitingMyConfirmation)
                     {
-                        <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                 stroke-width="2">
-                                <polyline points="1 4 1 10 7 10"/>
-                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-                            </svg>
-                            Replay animation
-                        </button>
                         <button @onclick="OnConfirmEndTurn" class="btn-play" disabled="@_isLoading">
                             @if (_isLoading)
                             {
@@ -716,7 +704,7 @@ else
         flex-wrap: wrap;
     }
 
-    /* Same control as the review bar, but it must not stretch the banner or shift the board. */
+    /* Smaller than the action buttons: it must not stretch the banner or shift the board. */
     .turn-banner .btn-replay,
     .game-over .btn-replay {
         flex: none;
