@@ -11,15 +11,18 @@ namespace RummiHub.Solver.Worker.Solver.Dynamic;
 ///
 /// <para>
 /// The tiles played stay exactly the ones the solver chose (same optimality). What changes
-/// is only the arrangement, in three attempts, cheapest first:
+/// is only the arrangement, in three attempts, cheapest first. Runs and groups are one list:
+/// a broken run may come back as groups and the other way round, whatever moves the fewest
+/// tiles, and every rebuilt set sits beside the set its tiles came from (<see cref="BoardSeating"/>).
 /// </para>
 /// <list type="number">
 /// <item>Pure growth: each played tile extends an existing run or group, or the played tiles
 /// form brand-new sets. Every other set is returned as the same instance, in its old seat,
 /// and an extension keeps the tiles that were already there in their old order.</item>
 /// <item>A bounded search over the sets that actually touch the played tiles. Combinations
-/// are tried fewest-breaks first, most-relevant sets first, and recomposed locally. Sets
-/// outside the combination are returned untouched.</item>
+/// are tried fewest-breaks first, most-relevant sets first, and recomposed locally; among
+/// the combinations that break that fewest number of sets, the one moving the fewest tiles
+/// wins. Sets outside the combination are returned untouched.</item>
 /// <item>When the move genuinely needs a wider rebuild than the budget allows, sets the
 /// solver happened to recreate unchanged are put back in their old seat anyway, so a
 /// fallback never reshuffles a set it did not need to touch.</item>
@@ -49,10 +52,10 @@ public static class BoardStabilizer
         var played = PlayedTiles(solved);
         if (played.Count == 0) return solved;
 
-        var previous = ListSets(previousBoard);
+        var previous = previousBoard.Sets;
         if (previous.Count == 0) return solved;
 
-        if (TryFastPath(previousBoard, previous, played) is { } grown)
+        if (TryFastPath(previous, played) is { } grown)
         {
             var fast = Finish(solved, previousBoard, played, grown);
             if (fast is not null) return fast;
@@ -68,8 +71,7 @@ public static class BoardStabilizer
     /// Extensions and self-contained new sets. Succeeds only when every played tile is
     /// consumed; the dynamic program picks the cover that breaks the fewest sets.
     /// </summary>
-    private static Solution? TryFastPath(Solution previousBoard, List<(bool IsRun, ValidSet Set)> previous,
-        List<Tile> played)
+    private static Solution? TryFastPath(List<ValidSet> previous, List<Tile> played)
     {
         var n = played.Count;
         if (n > FastPathMaxTiles) return null;
@@ -83,19 +85,19 @@ public static class BoardStabilizer
             for (var sub = relevant; sub > 0; sub = (sub - 1) & relevant)
             {
                 var added = TilesFor(played, sub);
-                var built = previous[i].IsRun
-                    ? TryBuildRun(previous[i].Set.Tiles, added)
-                    : TryBuildGroup(previous[i].Set.Tiles, added);
+                var built = previous[i].IsGroup
+                    ? TryBuildGroup(previous[i].Tiles, added)
+                    : TryBuildRun(previous[i].Tiles, added);
                 if (built is not null) perSet[i].Add((sub, built));
             }
         }
 
-        var fresh = new List<(int Mask, bool IsRun, ValidSet Built)>();
+        var fresh = new List<(int Mask, ValidSet Built)>();
         for (var mask = 1; mask <= full; mask++)
         {
             var added = TilesFor(played, mask);
-            if (TryBuildGroup([], added) is { } group) fresh.Add((mask, false, group));
-            else if (TryBuildRun([], added) is { } run) fresh.Add((mask, true, run));
+            if ((TryBuildGroup([], added) ?? TryBuildRun([], added)) is { } built)
+                fresh.Add((mask, built));
         }
 
         var rows = previous.Count + 1;
@@ -165,18 +167,15 @@ public static class BoardStabilizer
 
         if (best[full] >= Inf) return null;
 
-        var newRuns = new List<ValidSet>();
-        var newGroups = new List<ValidSet>();
+        var newSets = new List<ValidSet>();
         var remainder = full;
         while (freshParentOption[remainder] >= 0)
         {
-            var option = fresh[freshParentOption[remainder]];
-            if (option.IsRun) newRuns.Add(option.Built);
-            else newGroups.Add(option.Built);
+            newSets.Add(fresh[freshParentOption[remainder]].Built);
             remainder = freshParentMask[remainder];
         }
 
-        var grownBySet = new ValidSet?[previous.Count];
+        var sets = previous.ToList();
         var rowCursor = previous.Count;
         var maskCursor = remainder;
         while (rowCursor > 0)
@@ -184,27 +183,16 @@ public static class BoardStabilizer
             var option = parentOption[rowCursor][maskCursor];
             if (option == -2) return null;
             if (option >= 0)
-                grownBySet[rowCursor - 1] = perSet[rowCursor - 1][option].Built;
+                sets[rowCursor - 1] = perSet[rowCursor - 1][option].Built;
             maskCursor = parentMask[rowCursor][maskCursor];
             rowCursor--;
         }
 
-        var runs = previousBoard.Runs.ToList();
-        var groups = previousBoard.Groups.ToList();
-        var runCount = runs.Count;
-        for (var i = 0; i < previous.Count; i++)
-        {
-            if (grownBySet[i] is not { } built) continue;
-            if (previous[i].IsRun) runs[i] = built;
-            else groups[i - runCount] = built;
-        }
-
-        runs.AddRange(newRuns);
-        groups.AddRange(newGroups);
-        return new Solution { IsValid = true, Runs = runs, Groups = groups };
+        sets.AddRange(newSets);
+        return new Solution { IsValid = true, Sets = sets };
     }
 
-    private static SolverResult? TrySearch(Solution previousBoard, List<(bool IsRun, ValidSet Set)> previous,
+    private static SolverResult? TrySearch(Solution previousBoard, List<ValidSet> previous,
         SolverResult solved, List<Tile> played, CancellationToken cancellationToken)
     {
         var rank = Relevance(previous, played);
@@ -224,22 +212,30 @@ public static class BoardStabilizer
 
         for (var brokenCount = 1; brokenCount <= maxBroken; brokenCount++)
         {
+            // Every combination breaking this many sets competes; the one moving the fewest
+            // tiles wins. A budget running out keeps the best found so far.
+            SolverResult? best = null;
+            var bestMoved = int.MaxValue;
             foreach (var combo in Combinations(candidates, brokenCount))
             {
                 if (--attemptsLeft < 0 || stopwatch.Elapsed > MaxSearchTime
                                        || cancellationToken.IsCancellationRequested)
-                    return null;
+                    return best;
 
                 var recomposed = TryRecompose(previous, combo, playedReals, playedJokers, cancellationToken);
                 if (recomposed is null) continue;
 
-                var assembled = Assemble(previous, combo, recomposed);
-                var laid = LayOut(previous, assembled);
-                if (laid is null) continue;
+                var laid = LayOut(previous, Assemble(previous, combo, recomposed));
+                var moved = BoardSeating.MovedTiles(previous, laid.Sets);
+                if (moved >= bestMoved) continue;
 
                 var result = Finish(solved, previousBoard, played, laid);
-                if (result is not null) return result;
+                if (result is null) continue;
+                (best, bestMoved) = (result, moved);
+                if (moved == played.Count) return best;
             }
+
+            if (best is not null) return best;
         }
 
         return null;
@@ -248,20 +244,16 @@ public static class BoardStabilizer
     /// <summary>
     /// Puts sets the solver recreated unchanged back into the seat they already occupied.
     /// </summary>
-    private static SolverResult? Anchor(Solution previousBoard, List<(bool IsRun, ValidSet Set)> previous,
-        SolverResult solved, List<Tile> played)
-    {
-        var laid = LayOut(previous, solved.BestSolution);
-        if (laid is null) return null;
-        return Finish(solved, previousBoard, played, laid);
-    }
+    private static SolverResult? Anchor(Solution previousBoard, List<ValidSet> previous,
+        SolverResult solved, List<Tile> played) =>
+        Finish(solved, previousBoard, played, LayOut(previous, solved.BestSolution.Sets));
 
-    private static Solution? TryRecompose(List<(bool IsRun, ValidSet Set)> previous, int[] combo,
+    private static Solution? TryRecompose(List<ValidSet> previous, int[] combo,
         List<Tile> playedTiles, int playedJokers, CancellationToken cancellationToken)
     {
         var broken = new Set();
         foreach (var index in combo)
-            broken.Concat(previous[index].Set);
+            broken.Concat(previous[index]);
 
         var rack = new Set(playedTiles);
         for (var i = 0; i < playedJokers; i++)
@@ -275,125 +267,79 @@ public static class BoardStabilizer
         return sub.BestSolution;
     }
 
-    private static Solution Assemble(List<(bool IsRun, ValidSet Set)> previous, int[] combo, Solution recomposed)
+    private static List<ValidSet> Assemble(List<ValidSet> previous, int[] combo, Solution recomposed)
     {
         var broken = new HashSet<int>(combo);
-        var solution = new Solution { IsValid = true };
+        var sets = new List<ValidSet>();
         for (var i = 0; i < previous.Count; i++)
-        {
-            if (broken.Contains(i)) continue;
-            if (previous[i].IsRun) solution.AddRun(previous[i].Set);
-            else solution.AddGroup(previous[i].Set);
-        }
+            if (!broken.Contains(i))
+                sets.Add(previous[i]);
 
-        solution.Runs.AddRange(recomposed.Runs);
-        solution.Groups.AddRange(recomposed.Groups);
-        return solution;
+        sets.AddRange(recomposed.Sets);
+        return sets;
     }
 
     /// <summary>
     /// Re-seats <paramref name="candidate"/> on the previous board: identical sets come back
-    /// as the original instances, extensions keep the old tile order, and anything new fills
-    /// the seat of the set it shares the most tiles with. Returns null when not a single
-    /// previous set survived — there is nothing to anchor, and the solver arrangement stands.
+    /// as the original instances, extensions keep the old tile order, and every set is then
+    /// ordered by <see cref="BoardSeating.Seat"/>: in the seat of the set it shares the most
+    /// tiles with, or right beside the set its tiles came from.
     /// </summary>
-    private static Solution? LayOut(List<(bool IsRun, ValidSet Set)> previous, Solution candidate)
+    private static Solution LayOut(List<ValidSet> previous, List<ValidSet> candidate)
     {
-        var pool = new List<PoolSet>();
-        foreach (var set in candidate.Runs) pool.Add(new PoolSet(true, set));
-        foreach (var set in candidate.Groups) pool.Add(new PoolSet(false, set));
-
-        var placed = new ValidSet?[previous.Count];
-        var preserved = 0;
+        var pool = candidate.ToList();
+        var taken = new bool[previous.Count];
+        var settled = new bool[pool.Count];
         for (var i = 0; i < previous.Count; i++)
         {
-            var match = pool.FirstOrDefault(p =>
-                !p.Used && p.IsRun == previous[i].IsRun && SameCounts(p.Set, previous[i].Set));
-            if (match is null) continue;
-            match.Used = true;
-            placed[i] = previous[i].Set;
-            preserved++;
+            var match = Enumerable.Range(0, pool.Count)
+                .FirstOrDefault(p => !settled[p] && SameCounts(pool[p], previous[i]), -1);
+            if (match < 0) continue;
+            pool[match] = previous[i];
+            settled[match] = true;
+            taken[i] = true;
         }
 
-        if (preserved == 0) return null;
-
-        var baseUsed = new bool[previous.Count];
-        for (var i = 0; i < previous.Count; i++)
-            baseUsed[i] = placed[i] is not null;
-
-        foreach (var item in pool)
+        for (var p = 0; p < pool.Count; p++)
         {
-            if (item.Used) continue;
+            if (settled[p]) continue;
             var best = -1;
             var bestSize = 0;
             for (var i = 0; i < previous.Count; i++)
             {
-                if (baseUsed[i] || previous[i].IsRun != item.IsRun) continue;
-                if (!ContainsCounts(item.Set, previous[i].Set)) continue;
-                var size = previous[i].Set.Tiles.Length;
+                if (taken[i] || previous[i].IsGroup != pool[p].IsGroup) continue;
+                if (!ContainsCounts(pool[p], previous[i])) continue;
+                var size = previous[i].Tiles.Length;
                 if (size <= bestSize) continue;
                 bestSize = size;
                 best = i;
             }
 
             if (best < 0) continue;
-            if (AdoptGrowth(previous[best].IsRun, previous[best].Set, item.Set) is not { } adopted) continue;
-            item.Set = adopted;
-            baseUsed[best] = true;
+            if (AdoptGrowth(previous[best], pool[p]) is not { } adopted) continue;
+            pool[p] = adopted;
+            taken[best] = true;
         }
 
-        var runs = new List<ValidSet>();
-        var groups = new List<ValidSet>();
-        for (var i = 0; i < previous.Count; i++)
-        {
-            var dest = previous[i].IsRun ? runs : groups;
-            if (placed[i] is not null)
-            {
-                dest.Add(placed[i]!);
-                continue;
-            }
-
-            var best = -1;
-            var bestShared = 0;
-            for (var p = 0; p < pool.Count; p++)
-            {
-                if (pool[p].Used || pool[p].IsRun != previous[i].IsRun) continue;
-                var shared = SharedCount(previous[i].Set, pool[p].Set);
-                if (shared <= bestShared) continue;
-                bestShared = shared;
-                best = p;
-            }
-
-            if (best < 0) continue;
-            dest.Add(pool[best].Set);
-            pool[best].Used = true;
-        }
-
-        foreach (var item in pool)
-        {
-            if (item.Used) continue;
-            (item.IsRun ? runs : groups).Add(item.Set);
-        }
-
-        return new Solution { IsValid = true, Runs = runs, Groups = groups };
+        return new Solution { IsValid = true, Sets = BoardSeating.Seat(previous, pool) };
     }
 
-    private static ValidSet? AdoptGrowth(bool isRun, ValidSet original, ValidSet candidate)
+    private static ValidSet? AdoptGrowth(ValidSet original, ValidSet candidate)
     {
         if (SameCounts(original, candidate)) return original;
         if (!ContainsCounts(candidate, original)) return null;
 
         var extras = Difference(candidate, original);
-        var built = isRun
-            ? TryBuildRun(original.Tiles, extras)
-            : TryBuildGroup(original.Tiles, extras);
+        var built = original.IsGroup
+            ? TryBuildGroup(original.Tiles, extras)
+            : TryBuildRun(original.Tiles, extras);
         return built is not null && SameCounts(built, candidate) ? built : null;
     }
 
     private static SolverResult? Finish(SolverResult solved, Solution previousBoard, List<Tile> played,
         Solution arranged)
     {
-        var score = arranged.Runs.Sum(s => s.GetScore()) + arranged.Groups.Sum(s => s.GetScore());
+        var score = arranged.Sets.Sum(s => s.GetScore());
         var jokers = played.Count(t => t.IsJoker);
         var reals = played.Where(t => !t.IsJoker).ToList();
         var result = SolverResult.FromSolution(solved.Source, arranged, reals, jokers, score);
@@ -409,7 +355,7 @@ public static class BoardStabilizer
         return SolutionValidator.IsValid(result, previousBoard.ToSet(), rack, hasPlayed: true);
     }
 
-    private static int RelevantBits((bool IsRun, ValidSet Set) set, List<Tile> played)
+    private static int RelevantBits(ValidSet set, List<Tile> played)
     {
         var bits = 0;
         for (var i = 0; i < played.Count; i++)
@@ -421,11 +367,11 @@ public static class BoardStabilizer
                 continue;
             }
 
-            foreach (var existing in set.Set.Tiles)
+            foreach (var existing in set.Tiles)
             {
                 if (existing.IsJoker) continue;
-                var sameRun = set.IsRun && existing.Color == tile.Color;
-                var sameGroup = !set.IsRun && existing.Value == tile.Value;
+                var sameRun = !set.IsGroup && existing.Color == tile.Color;
+                var sameGroup = set.IsGroup && existing.Value == tile.Value;
                 if (sameRun || sameGroup)
                 {
                     bits |= 1 << i;
@@ -437,12 +383,12 @@ public static class BoardStabilizer
         return bits;
     }
 
-    private static int[] Relevance(List<(bool IsRun, ValidSet Set)> sets, List<Tile> played)
+    private static int[] Relevance(List<ValidSet> sets, List<Tile> played)
     {
         var direct = new int[sets.Count];
         for (var i = 0; i < sets.Count; i++)
         {
-            var score = sets[i].Set.Tiles.Any(t => t.IsJoker) ? 8 : 0;
+            var score = sets[i].Tiles.Any(t => t.IsJoker) ? 8 : 0;
             foreach (var play in played)
             {
                 if (play.IsJoker)
@@ -451,7 +397,7 @@ public static class BoardStabilizer
                     continue;
                 }
 
-                foreach (var tile in sets[i].Set.Tiles)
+                foreach (var tile in sets[i].Tiles)
                 {
                     if (tile.IsJoker) continue;
                     if (tile.Value == play.Value) score += 6;
@@ -472,7 +418,7 @@ public static class BoardStabilizer
             for (var j = 0; j < sets.Count; j++)
             {
                 if (i == j || direct[j] == 0) continue;
-                if (Touches(sets[i].Set, sets[j].Set))
+                if (Touches(sets[i], sets[j]))
                     touch = Math.Max(touch, direct[j]);
             }
 
@@ -630,12 +576,6 @@ public static class BoardStabilizer
         return tiles;
     }
 
-    private static List<(bool IsRun, ValidSet Set)> ListSets(Solution board) =>
-    [
-        ..board.Runs.Select(s => (true, s)),
-        ..board.Groups.Select(s => (false, s))
-    ];
-
     private static IEnumerable<int[]> Combinations(int[] candidates, int size)
     {
         var combo = new int[size];
@@ -714,29 +654,5 @@ public static class BoardStabilizer
         }
 
         return extras;
-    }
-
-    private static int SharedCount(ValidSet a, ValidSet b)
-    {
-        var counts = Counts(a);
-        var shared = 0;
-        foreach (var tile in b.Tiles)
-        {
-            var key = tile.IsJoker
-                ? new CountKey(true, 0, default)
-                : new CountKey(false, tile.Value, tile.Color);
-            if (counts.GetValueOrDefault(key) <= 0) continue;
-            counts[key]--;
-            shared++;
-        }
-
-        return shared;
-    }
-
-    private sealed class PoolSet(bool isRun, ValidSet set)
-    {
-        public bool IsRun { get; } = isRun;
-        public ValidSet Set { get; set; } = set;
-        public bool Used { get; set; }
     }
 }

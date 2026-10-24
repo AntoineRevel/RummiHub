@@ -1,14 +1,6 @@
 @using RummiHub.Core.Models
 <div class="solution-container">
-    @foreach (var setWithIndex in GetRunsWithIndices())
-    {
-        <ValidSetComponent ValidSet="setWithIndex.Set" StartIndex="setWithIndex.StartIndex"
-                           HighlightIndices="HighlightIndices"
-                           IsModified="IsSetModified(setWithIndex.SetOrdinal)"/>
-    }
-</div>
-<div class="solution-container">
-    @foreach (var setWithIndex in GetGroupsWithIndices())
+    @foreach (var setWithIndex in GetSetsWithIndices())
     {
         <ValidSetComponent ValidSet="setWithIndex.Set" StartIndex="setWithIndex.StartIndex"
                            HighlightIndices="HighlightIndices"
@@ -20,9 +12,9 @@
     [Parameter] public required Solution Solution { get; set; }
 
     /// <summary>
-    /// Reading-order indices (runs then groups) of the tiles to highlight. Computed
-    /// server-side (see BoardPacing.EnteredIndices) so the freshly-played copy of a tile
-    /// lights up, never an identical twin already resting on the board.
+    /// Reading-order indices of the tiles to highlight. Computed server-side (see
+    /// BoardPacing.EnteredIndices) so the freshly-played copy of a tile lights up, never an
+    /// identical twin already resting on the board.
     /// </summary>
     [Parameter] public HashSet<int>? HighlightIndices { get; set; }
 
@@ -34,29 +26,13 @@
     private bool IsSetModified(int setOrdinal) =>
         ModifiedSetIndices?.Contains(setOrdinal) == true;
 
-    private List<(ValidSet Set, int StartIndex, int SetOrdinal)> GetRunsWithIndices()
+    private List<(ValidSet Set, int StartIndex, int SetOrdinal)> GetSetsWithIndices()
     {
         var result = new List<(ValidSet, int, int)>();
         var currentIndex = 0;
         var ordinal = 0;
 
-        foreach (var set in Solution.Runs)
-        {
-            result.Add((set, currentIndex, ordinal));
-            currentIndex += set.Tiles.Length;
-            ordinal++;
-        }
-
-        return result;
-    }
-
-    private List<(ValidSet Set, int StartIndex, int SetOrdinal)> GetGroupsWithIndices()
-    {
-        var result = new List<(ValidSet, int, int)>();
-        var currentIndex = Solution.Runs.Sum(r => r.Tiles.Length);
-        var ordinal = Solution.Runs.Count;
-
-        foreach (var set in Solution.Groups)
+        foreach (var set in Solution.Sets)
         {
             result.Add((set, currentIndex, ordinal));
             currentIndex += set.Tiles.Length;

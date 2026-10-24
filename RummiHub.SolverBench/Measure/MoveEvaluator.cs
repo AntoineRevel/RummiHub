@@ -25,18 +25,11 @@ public static class MoveEvaluator
         var normalized = new Solution { IsValid = true };
         var score = 0;
 
-        foreach (var run in result.BestSolution.Runs)
+        foreach (var set in result.BestSolution.Sets)
         {
-            var realized = RealizeRun(run.Tiles);
-            normalized.AddRun(new ValidSet(realized ?? run.Tiles));
-            score += (realized ?? run.Tiles).Sum(t => t.Value);
-        }
-
-        foreach (var group in result.BestSolution.Groups)
-        {
-            var realized = RealizeGroup(group.Tiles);
-            normalized.AddGroup(new ValidSet(realized ?? group.Tiles));
-            score += (realized ?? group.Tiles).Sum(t => t.Value);
+            var realized = set.IsGroup ? RealizeGroup(set.Tiles) : RealizeRun(set.Tiles);
+            normalized.Sets.Add(new ValidSet(realized ?? set.Tiles));
+            score += (realized ?? set.Tiles).Sum(t => t.Value);
         }
 
         return SolverResult.FromSolution(result.Source, normalized, result.TilesToPlay, result.JokersToPlay, score);

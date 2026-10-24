@@ -34,13 +34,13 @@ public static class PositionInterest
         if (jokersPlayed >= 1)
             tags.Add("joker-play");
 
-        var beforeSets = before.Runs.Count + before.Groups.Count;
-        var afterSets = move.BestSolution.Runs.Count + move.BestSolution.Groups.Count;
+        var beforeSets = before.Sets.Count;
+        var afterSets = move.BestSolution.Sets.Count;
         if (beforeSets > 0 && Math.Abs(afterSets - beforeSets) >= BigRearrangementSetDelta)
             tags.Add("big-rearrangement");
 
         // A board joker that the move re-homes into a different set is a classic tricky case.
-        var boardJokers = before.Runs.Concat(before.Groups).SelectMany(s => s.Tiles).Count(t => t.IsJoker);
+        var boardJokers = before.Sets.SelectMany(s => s.Tiles).Count(t => t.IsJoker);
         if (boardJokers >= 1 && tags.Contains("big-rearrangement"))
             tags.Add("joker-rearrangement");
 

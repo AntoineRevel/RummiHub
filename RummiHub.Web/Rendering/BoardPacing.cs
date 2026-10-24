@@ -67,6 +67,13 @@ public static class BoardPacing
     public static int EstimateMs(Solution previous, Solution next)
         => DurationForPlacedTiles(CountPlacedTiles(previous, next));
 
+    // Tiles the client PLACES (acts 2 and 3): every tile of the next board its paired previous
+    // set doesn't keep — tiles entering from the hand, plus board tiles changing set. Counted one
+    // by one; the client flies tiles changing set together as one block, so this can only
+    // over-estimate.
+    private static int CountPlacedTiles(Solution previous, Solution next)
+        => BoardSeating.MovedTiles(previous.Sets, next.Sets);
+
     /// <summary>
     /// Duration of the board story placing <paramref name="placed"/> tiles. Conservative: it always
     /// counts acts 1 and 2, since whether the board really has to make room depends on the
@@ -101,14 +108,14 @@ public static class BoardPacing
     /// the client has nothing to redraw (a draw, a turn confirmation).
     /// </summary>
     public static bool SameBoard(Solution previous, Solution next) =>
-        SameSets(previous.Runs, next.Runs) && SameSets(previous.Groups, next.Groups);
+        SameSets(previous.Sets, next.Sets);
 
     private static bool SameSets(List<ValidSet> previous, List<ValidSet> next) =>
         previous.Count == next.Count
         && previous.Zip(next).All(pair => pair.First.Tiles.AsSpan().SequenceEqual(pair.Second.Tiles));
 
     /// <summary>
-    /// Reading-order indices (on <paramref name="next"/>, runs then groups) of the tiles that
+    /// Reading-order indices (on <paramref name="next"/>) of the tiles that
     /// entered the board between the two renders — i.e. the tiles the client flies in from the
     /// hand. Uses the same set pairing and per-occurrence multiset diff as the client, so when a
     /// played tile has an identical twin already sitting on the board, the NEW copy is flagged,
@@ -116,9 +123,9 @@ public static class BoardPacing
     /// </summary>
     public static List<int> EnteredIndices(Solution previous, Solution next)
     {
-        var prevSets = ReadingOrder(previous);
-        var nextSets = ReadingOrder(next);
-        var pairs = PairSets(prevSets, nextSets);
+        var prevSets = previous.Sets;
+        var nextSets = next.Sets;
+        var pairs = BoardSeating.Pair(prevSets, nextSets);
 
         var entered = new List<int>();
         var index = 0;
@@ -163,7 +170,7 @@ public static class BoardPacing
             remaining[key] = remaining.GetValueOrDefault(key) + 1;
         }
 
-        var tiles = ReadingOrder(next).SelectMany(set => set.Tiles).ToArray();
+        var tiles = next.Sets.SelectMany(set => set.Tiles).ToArray();
         var result = new List<int>();
         foreach (var index in EnteredIndices(previous, next))
         {
@@ -177,15 +184,15 @@ public static class BoardPacing
     }
 
     /// <summary>
-    /// Reading-order indices (runs, then groups) of sets whose tiles changed between the two
+    /// Reading-order indices of sets whose tiles changed between the two
     /// boards: a tile was added or removed, or the set is new. Sets that merely kept their
     /// seat are absent, so the UI can outline what the move actually touched.
     /// </summary>
     public static List<int> ModifiedSetIndices(Solution previous, Solution next)
     {
-        var prevSets = ReadingOrder(previous);
-        var nextSets = ReadingOrder(next);
-        var pairs = PairSets(prevSets, nextSets);
+        var prevSets = previous.Sets;
+        var nextSets = next.Sets;
+        var pairs = BoardSeating.Pair(prevSets, nextSets);
 
         var modified = new List<int>();
         for (var j = 0; j < nextSets.Count; j++)
@@ -198,72 +205,6 @@ public static class BoardPacing
         }
 
         return modified;
-    }
-
-    // Tiles the client PLACES (acts 2 and 3): every tile of the next board its paired previous
-    // set doesn't keep — tiles entering from the hand, plus board tiles changing set. Counted one
-    // by one; the client flies tiles changing set together as one block, so this can only
-    // over-estimate.
-    private static int CountPlacedTiles(Solution previous, Solution next)
-    {
-        var nextSets = ReadingOrder(next);
-        var pairs = PairSets(ReadingOrder(previous), nextSets);
-
-        var placed = 0;
-        for (var j = 0; j < nextSets.Count; j++)
-            placed += nextSets[j].Tiles.Length - pairs[j].Shared;
-
-        return placed;
-    }
-
-    // Pairs each next set with a previous set by maximal multiset overlap, greedy in reading
-    // order (like BoardAlignment). Unpaired next sets get (-1, 0).
-    private static (int PrevIndex, int Shared)[] PairSets(List<ValidSet> prevSets, List<ValidSet> nextSets)
-    {
-        var pairs = new (int PrevIndex, int Shared)[nextSets.Count];
-        Array.Fill(pairs, (-1, 0));
-
-        for (var i = 0; i < prevSets.Count; i++)
-        {
-            var best = -1;
-            var bestShared = 0;
-            for (var j = 0; j < nextSets.Count; j++)
-            {
-                if (pairs[j].PrevIndex >= 0) continue;
-                var shared = SharedTileCount(prevSets[i], nextSets[j]);
-                if (shared > bestShared) (best, bestShared) = (j, shared);
-            }
-
-            if (best >= 0) pairs[best] = (i, bestShared);
-        }
-
-        return pairs;
-    }
-
-    private static List<ValidSet> ReadingOrder(Solution board) => [..board.Runs, ..board.Groups];
-
-    // Multiset intersection by tile identity, occurrence-aware; all jokers fold into one bucket.
-    private static int SharedTileCount(ValidSet a, ValidSet b)
-    {
-        var counts = new Dictionary<int, int>();
-        foreach (var tile in a.Tiles)
-        {
-            var key = TileKey(tile);
-            counts[key] = counts.GetValueOrDefault(key) + 1;
-        }
-
-        var shared = 0;
-        foreach (var tile in b.Tiles)
-        {
-            var key = TileKey(tile);
-            if (counts.TryGetValue(key, out var count) && count > 0)
-            {
-                counts[key] = count - 1;
-                shared++;
-            }
-        }
-
-        return shared;
     }
 
     private static int TileKey(Tile tile) => tile.IsJoker ? -1 : (tile.Value << 2) | (int)tile.Color;

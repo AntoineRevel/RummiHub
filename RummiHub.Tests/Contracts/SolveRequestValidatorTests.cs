@@ -20,7 +20,7 @@ public class SolveRequestValidatorTests
     {
         var board = new Solution
         {
-            Runs =
+            Sets =
             [
                 new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)])
             ]
@@ -50,7 +50,7 @@ public class SolveRequestValidatorTests
     {
         var board = new Solution
         {
-            Groups =
+            Sets =
             [
                 new ValidSet([new Tile(7, TileColor.Black), new Tile(7, TileColor.Black)])
             ]
@@ -101,7 +101,7 @@ public class SolveRequestValidatorTests
         }
 
         var hand = Enumerable.Repeat(new Tile(isJoker: true), 60);
-        var board = new Solution { Runs = runs };
+        var board = new Solution { Sets = runs };
 
         SolveRequestValidator.TryValidate(Request(hand, board), out var error).Should().BeFalse();
         error.Should().Contain("together");
@@ -112,7 +112,7 @@ public class SolveRequestValidatorTests
     {
         var board = new Solution
         {
-            Runs = [new ValidSet(Enumerable.Range(1, 14).Select(v => new Tile(Math.Min(v, 13), TileColor.Blue)).ToArray())]
+            Sets = [new ValidSet(Enumerable.Range(1, 14).Select(v => new Tile(Math.Min(v, 13), TileColor.Blue)).ToArray())]
         };
 
         SolveRequestValidator.TryValidate(Request([], board), out var error).Should().BeFalse();
@@ -124,17 +124,17 @@ public class SolveRequestValidatorTests
     {
         var board = new Solution
         {
-            Groups = Enumerable.Range(0, SolveRequestValidator.MaxSets + 1).Select(_ => new ValidSet()).ToList()
+            Sets = Enumerable.Range(0, SolveRequestValidator.MaxSets + 1).Select(_ => new ValidSet()).ToList()
         };
 
         SolveRequestValidator.TryValidate(Request([], board), out var error).Should().BeFalse();
-        error.Should().Contain("groups");
+        error.Should().Contain("sets");
     }
 
     [Fact]
     public void TryValidate_RejectsANullSet()
     {
-        var board = new Solution { Runs = [null!] };
+        var board = new Solution { Sets = [null!] };
 
         SolveRequestValidator.TryValidate(Request([], board), out var error).Should().BeFalse();
         error.Should().Contain("empty set");

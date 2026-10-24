@@ -20,7 +20,7 @@ public sealed record BenchPosition
     /// <summary>False ⇒ opening play (first-play solvers); true ⇒ in-game move.</summary>
     public bool HasPlayed { get; init; }
 
-    /// <summary>Board state (Runs + Groups). Empty for a genuine opening play.</summary>
+    /// <summary>Board state (its sets). Empty for a genuine opening play.</summary>
     public required Solution Board { get; init; }
 
     /// <summary>The player's rack (jokers carried as <c>Tile.IsJoker</c>).</summary>

@@ -206,7 +206,7 @@ public class GameEngineTests
         var rackBefore = player.Rack.Tiles.Count;
 
         var newBoard = new Solution { IsValid = true };
-        newBoard.AddRun(new ValidSet([playedTile, new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]));
+        newBoard.Sets.Add(new ValidSet([playedTile, new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]));
 
         var response = new SolveResponse
         {
@@ -248,10 +248,10 @@ public class GameEngineTests
     {
         var engine = CreateEngine(seed: "stable");
         var existing = new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]);
-        engine.Board.AddRun(existing);
+        engine.Board.Sets.Add(existing);
 
         var newBoard = new Solution { IsValid = true };
-        newBoard.AddGroup(new ValidSet([new Tile(5, TileColor.Red), new Tile(5, TileColor.Black), new Tile(5, TileColor.Mango)]));
+        newBoard.Sets.Add(new ValidSet([new Tile(5, TileColor.Red), new Tile(5, TileColor.Black), new Tile(5, TileColor.Mango)]));
 
         var response = new SolveResponse
         {
@@ -263,8 +263,7 @@ public class GameEngineTests
 
         engine.ApplySolveResult(response);
 
-        engine.Board.Runs.Should().HaveCount(1);
-        engine.Board.Groups.Should().HaveCount(1);
+        engine.Board.Sets.Should().HaveCount(2).And.Contain(existing);
     }
 
     [Fact]

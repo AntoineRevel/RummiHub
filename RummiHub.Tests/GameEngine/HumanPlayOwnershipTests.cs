@@ -47,8 +47,7 @@ public class HumanPlayOwnershipTests
         probe.Calls.Should().Be(0);
         alice.Rack.GetAllTilesIncludingJokers().Should().Equal(rackBefore);
         alice.HasPlayed.Should().BeTrue();
-        engine.Board.Runs.Should().BeEmpty();
-        engine.Board.Groups.Should().BeEmpty();
+        engine.Board.Sets.Should().BeEmpty();
         engine.TilePoolCount.Should().Be(78);
         TotalTiles(engine).Should().Be(106);
     }
@@ -70,8 +69,7 @@ public class HumanPlayOwnershipTests
         alice.Rack.GetAllTilesIncludingJokers().Should().Equal(rackBefore);
         alice.HasPlayed.Should().BeTrue();
         alice.TilesToPlay.Should().BeEmpty();
-        engine.Board.Groups.Should().BeEmpty();
-        engine.Board.Runs.Should().BeEmpty();
+        engine.Board.Sets.Should().BeEmpty();
         engine.TilePoolCount.Should().Be(78);
         engine.IsGameOver.Should().BeFalse();
         TotalTiles(engine).Should().Be(106);
@@ -96,7 +94,7 @@ public class HumanPlayOwnershipTests
         alice.Rack.Tiles.Should().BeEquivalentTo([held, other]);
         alice.Rack.Jokers.Should().Be(0);
         alice.HasPlayed.Should().BeFalse();
-        engine.Board.Groups.Should().BeEmpty();
+        engine.Board.Sets.Should().BeEmpty();
     }
 
     [Fact]
@@ -152,8 +150,7 @@ public class HumanPlayOwnershipTests
         alice.Rack.Jokers.Should().Be(heldJokers);
         alice.Rack.Tiles.Should().ContainSingle().Which.Should().Be(five);
         alice.HasPlayed.Should().BeFalse();
-        engine.Board.Runs.Should().BeEmpty();
-        engine.Board.Groups.Should().BeEmpty();
+        engine.Board.Sets.Should().BeEmpty();
     }
 
     [Fact]
@@ -239,8 +236,7 @@ public class HumanPlayOwnershipTests
         alice.HasPlayed.Should().BeFalse();
         alice.TilesToPlay.Should().BeEmpty();
         alice.Rack.GetAllTilesIncludingJokers().Should().Equal(rackBefore);
-        engine.Board.Runs.Should().BeEmpty();
-        engine.Board.Groups.Should().BeEmpty();
+        engine.Board.Sets.Should().BeEmpty();
         engine.TilePoolCount.Should().Be(78);
         engine.IsGameOver.Should().BeFalse();
         engine.WinnerName.Should().BeNull();
@@ -296,7 +292,7 @@ public class HumanPlayOwnershipTests
     {
         var board = new Solution { IsValid = true };
         if (tiles.Length > 0)
-            board.AddGroup(new ValidSet(tiles));
+            board.Sets.Add(new ValidSet(tiles));
         return board;
     }
 

@@ -44,12 +44,11 @@ public class GameTraceGeneratorTests
 
         foreach (var first in trace.Positions.Where(p => p.Phase == BenchPhase.FirstPlay))
         {
-            first.Board.Runs.Should().BeEmpty();
-            first.Board.Groups.Should().BeEmpty();
+            first.Board.Sets.Should().BeEmpty();
         }
 
         foreach (var during in trace.Positions.Where(p => p.Phase == BenchPhase.DuringGame))
-            (during.Board.Runs.Count + during.Board.Groups.Count)
+            during.Board.Sets.Count
                 .Should().BeGreaterThan(0, "a during-game position has a non-empty board");
     }
 

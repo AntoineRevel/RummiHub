@@ -31,7 +31,7 @@ public class BoardStabilizerTests
     {
         var blueRun = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var redRun = VSet(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red));
-        var board = new Solution { IsValid = true, Runs = [blueRun, redRun] };
+        var board = new Solution { IsValid = true, Sets = [blueRun, redRun] };
         var rack = new Set([T(11, TileColor.Blue), T(11, TileColor.Red), T(11, TileColor.Black)]);
 
         var solved = SolveFor(board, rack);
@@ -39,11 +39,11 @@ public class BoardStabilizerTests
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.BestSolution.Runs.Should().HaveCount(2)
-            .And.Contain(s => ReferenceEquals(s, blueRun))
-            .And.Contain(s => ReferenceEquals(s, redRun));
-        result.BestSolution.Groups.Should().ContainSingle()
-            .Which.Tiles.Should().AllSatisfy(t => t.Value.Should().Be(11));
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Should().BeSameAs(blueRun);
+        sets[1].Should().BeSameAs(redRun);
+        sets[2].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(11));
         ShouldBeLegalOver(result, board, rack);
     }
 
@@ -53,7 +53,7 @@ public class BoardStabilizerTests
         var blueRun = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var redRun = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var nines = VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [blueRun, redRun], Groups = [nines] };
+        var board = new Solution { IsValid = true, Sets = [blueRun, redRun, nines] };
         var rack = new Set([T(4, TileColor.Blue)]);
 
         var solved = SolveFor(board, rack);
@@ -61,13 +61,14 @@ public class BoardStabilizerTests
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        // The untouched sets come back as the very same instances…
-        result.BestSolution.Runs.Should().Contain(s => ReferenceEquals(s, redRun));
-        result.BestSolution.Groups.Should().ContainSingle()
-            .Which.Should().BeSameAs(nines);
-        // …and the blue run simply grew by the played tile.
-        result.BestSolution.Runs.Should().HaveCount(2)
-            .And.Contain(s => s.Tiles.Length == 4 && s.Tiles.All(t => t.Color == TileColor.Blue));
+        // The blue run simply grew by the played tile, in its seat…
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Tiles.Select(t => (t.Color, t.Value)).Should().Equal(
+            (TileColor.Blue, 1), (TileColor.Blue, 2), (TileColor.Blue, 3), (TileColor.Blue, 4));
+        // …and the untouched sets come back as the very same instances.
+        sets[1].Should().BeSameAs(redRun);
+        sets[2].Should().BeSameAs(nines);
         ShouldBeLegalOver(result, board, rack);
     }
 
@@ -79,7 +80,7 @@ public class BoardStabilizerTests
         var blackRun = VSet(T(6, TileColor.Black), T(7, TileColor.Black), T(8, TileColor.Black),
             T(9, TileColor.Black), T(10, TileColor.Black));
         var ones = VSet(T(1, TileColor.Blue), T(1, TileColor.Red), T(1, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [blackRun], Groups = [ones] };
+        var board = new Solution { IsValid = true, Sets = [blackRun, ones] };
         var rack = new Set([T(8, TileColor.Black)]);
 
         var solved = SolveFor(board, rack);
@@ -87,9 +88,11 @@ public class BoardStabilizerTests
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.BestSolution.Groups.Should().ContainSingle().Which.Should().BeSameAs(ones);
-        result.BestSolution.Runs.Should().HaveCount(2)
-            .And.AllSatisfy(r => r.Tiles.Should().HaveCount(3));
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Tiles.Should().HaveCount(3);
+        sets[1].Tiles.Should().HaveCount(3);
+        sets[2].Should().BeSameAs(ones);
         ShouldBeLegalOver(result, board, rack);
     }
 
@@ -102,36 +105,37 @@ public class BoardStabilizerTests
         var lowBlue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var highBlue = VSet(T(4, TileColor.Blue), T(5, TileColor.Blue), T(6, TileColor.Blue));
         var nines = VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [lowBlue, highBlue], Groups = [nines] };
+        var board = new Solution { IsValid = true, Sets = [lowBlue, highBlue, nines] };
 
         var churned = new Solution { IsValid = true };
-        churned.AddRun(VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue),
+        churned.Sets.Add(VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue),
             T(4, TileColor.Blue), T(5, TileColor.Blue), T(6, TileColor.Blue)));
-        churned.AddGroup(VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Mango),
+        churned.Sets.Add(VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Mango),
             T(9, TileColor.Black)));
         var solved = SolverResult.FromSolution(
             "test", churned, [T(9, TileColor.Black)], jokersToPlay: 0, score: 57);
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.BestSolution.Runs.Should().HaveCount(2)
-            .And.Contain(s => ReferenceEquals(s, lowBlue))
-            .And.Contain(s => ReferenceEquals(s, highBlue));
-        result.BestSolution.Groups.Should().ContainSingle()
-            .Which.Tiles.Should().HaveCount(4);
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Should().BeSameAs(lowBlue);
+        sets[1].Should().BeSameAs(highBlue);
+        sets[2].Tiles.Should().HaveCount(4);
         result.TilesToPlay.Should().BeEquivalentTo(new[] { T(9, TileColor.Black) });
         ShouldBeLegalOver(result, board, new Set([T(9, TileColor.Black)]));
     }
 
     [Fact]
-    public void MoveNeedingTheWholeTable_FallsBackToTheSolverArrangement()
+    public void MoveNeedingTheWholeTable_KeepsTheSolverSetsSeatedOnTheOldOnes()
     {
         // Playing [5Bk, 5M, 8B, 8R] only works by dismantling BOTH runs (group the fives,
         // extend both 6-7 tails with the eights). No proper subset of sets recomposes, so
-        // the stabilizer must hand back the solver's own result untouched.
+        // the solver's own sets stand, each run in its old seat and the fives beside the
+        // first run they came from.
         var blueRun = VSet(T(5, TileColor.Blue), T(6, TileColor.Blue), T(7, TileColor.Blue));
         var redRun = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
-        var board = new Solution { IsValid = true, Runs = [blueRun, redRun] };
+        var board = new Solution { IsValid = true, Sets = [blueRun, redRun] };
         var rack = new Set([T(5, TileColor.Black), T(5, TileColor.Mango),
             T(8, TileColor.Blue), T(8, TileColor.Red)]);
 
@@ -140,7 +144,35 @@ public class BoardStabilizerTests
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.Should().BeSameAs(solved);
+        result.TilesToPlay.Should().BeEquivalentTo(solved.TilesToPlay);
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Tiles.Should().AllSatisfy(t => t.Color.Should().Be(TileColor.Blue));
+        sets[1].IsGroup.Should().BeTrue();
+        sets[2].Tiles.Should().AllSatisfy(t => t.Color.Should().Be(TileColor.Red));
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void RunTurnedIntoAGroup_SitsBesideTheRunItCameFrom()
+    {
+        // 7B and 7Bk only fit by taking 7R off the red run: the new group is made of that
+        // run's tile, so it lands right after the run, not after every other set.
+        var mango = VSet(T(1, TileColor.Mango), T(2, TileColor.Mango), T(3, TileColor.Mango));
+        var red = VSet(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
+        var blue = VSet(T(11, TileColor.Blue), T(12, TileColor.Blue), T(13, TileColor.Blue));
+        var board = new Solution { IsValid = true, Sets = [mango, red, blue] };
+        var rack = new Set([T(7, TileColor.Blue), T(7, TileColor.Black)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(4);
+        sets[0].Should().BeSameAs(mango);
+        sets[1].Tiles.Select(t => t.Value).Should().Equal(8, 9, 10);
+        sets[2].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(7)).And.HaveCount(3);
+        sets[3].Should().BeSameAs(blue);
+        ShouldBeLegalOver(result, board, rack);
     }
 
     [Fact]
@@ -151,7 +183,7 @@ public class BoardStabilizerTests
         var jokerRun = VSet(T(3, TileColor.Blue), new Tile(4, TileColor.Blue, isJoker: true),
             T(5, TileColor.Blue));
         var elevens = VSet(T(11, TileColor.Blue), T(11, TileColor.Red), T(11, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [jokerRun], Groups = [elevens] };
+        var board = new Solution { IsValid = true, Sets = [jokerRun, elevens] };
         var rack = new Set([T(4, TileColor.Blue), T(6, TileColor.Blue)]);
 
         var solved = SolveFor(board, rack);
@@ -159,8 +191,10 @@ public class BoardStabilizerTests
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.BestSolution.Groups.Should().ContainSingle().Which.Should().BeSameAs(elevens);
-        var run = result.BestSolution.Runs.Should().ContainSingle().Subject;
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(2);
+        sets[1].Should().BeSameAs(elevens);
+        var run = sets[0];
         run.Tiles.Should().HaveCount(5);
         run.Tiles.Count(t => t.IsJoker).Should().Be(1);
         result.JokersToPlay.Should().Be(0, "the joker already lived on the board");
@@ -173,7 +207,7 @@ public class BoardStabilizerTests
         var board = new Solution
         {
             IsValid = true,
-            Runs = [VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))]
+            Sets = [VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))]
         };
 
         var invalid = SolverResult.Invalid("test");
@@ -193,24 +227,26 @@ public class BoardStabilizerTests
         var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var eights = VSet(T(8, TileColor.Mango), T(8, TileColor.Red), T(8, TileColor.Black));
-        var board = new Solution { IsValid = true, Runs = [blue, red], Groups = [thirteens, eights] };
+        var board = new Solution { IsValid = true, Sets = [blue, red, thirteens, eights] };
 
         // Pointlessly reordered, and the group rebuilt in color order instead of
         // keeping Black, Blue, Red and appending Mango.
         var churned = new Solution { IsValid = true };
-        churned.AddRun(VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red)));
-        churned.AddRun(VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue)));
-        churned.AddGroup(VSet(T(8, TileColor.Mango), T(8, TileColor.Red), T(8, TileColor.Black)));
-        churned.AddGroup(VSet(
+        churned.Sets.Add(VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red)));
+        churned.Sets.Add(VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue)));
+        churned.Sets.Add(VSet(T(8, TileColor.Mango), T(8, TileColor.Red), T(8, TileColor.Black)));
+        churned.Sets.Add(VSet(
             T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Black), T(13, TileColor.Mango)));
         var solved = SolverResult.FromSolution("churn", churned, [T(13, TileColor.Mango)]);
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.BestSolution.Runs.Should().Equal(blue, red);
-        result.BestSolution.Groups.Should().HaveCount(2);
-        result.BestSolution.Groups[1].Should().BeSameAs(eights);
-        result.BestSolution.Groups[0].Tiles.Select(t => (t.Color, t.Value))
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(4);
+        sets[0].Should().BeSameAs(blue);
+        sets[1].Should().BeSameAs(red);
+        sets[3].Should().BeSameAs(eights);
+        sets[2].Tiles.Select(t => (t.Color, t.Value))
             .Should().Equal(
                 (TileColor.Black, 13),
                 (TileColor.Blue, 13),
@@ -226,14 +262,14 @@ public class BoardStabilizerTests
         var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var mango = VSet(T(10, TileColor.Mango), T(11, TileColor.Mango), T(12, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [red, blue, mango] };
+        var board = new Solution { IsValid = true, Sets = [red, blue, mango] };
         var rack = new Set([T(4, TileColor.Blue)]);
 
         var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
 
-        result.BestSolution.Runs[0].Should().BeSameAs(red);
-        result.BestSolution.Runs[2].Should().BeSameAs(mango);
-        result.BestSolution.Runs[1].Tiles.Select(t => t.Value).Should().Equal(1, 2, 3, 4);
+        result.BestSolution.Sets[0].Should().BeSameAs(red);
+        result.BestSolution.Sets[2].Should().BeSameAs(mango);
+        result.BestSolution.Sets[1].Tiles.Select(t => t.Value).Should().Equal(1, 2, 3, 4);
         ShouldBeLegalOver(result, board, rack);
     }
 
@@ -242,14 +278,15 @@ public class BoardStabilizerTests
     {
         var run = VSet(T(5, TileColor.Blue), T(6, TileColor.Blue), T(7, TileColor.Blue));
         var other = VSet(T(1, TileColor.Red), T(1, TileColor.Black), T(1, TileColor.Mango));
-        var board = new Solution { IsValid = true, Runs = [run], Groups = [other] };
+        var board = new Solution { IsValid = true, Sets = [run, other] };
         var rack = new Set([T(4, TileColor.Blue)]);
 
         var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
 
-        result.BestSolution.Runs.Should().ContainSingle()
-            .Which.Tiles.Select(t => t.Value).Should().Equal(4, 5, 6, 7);
-        result.BestSolution.Groups.Should().ContainSingle().Which.Should().BeSameAs(other);
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(2);
+        sets[0].Tiles.Select(t => t.Value).Should().Equal(4, 5, 6, 7);
+        sets[1].Should().BeSameAs(other);
         ShouldBeLegalOver(result, board, rack);
     }
 
@@ -260,15 +297,17 @@ public class BoardStabilizerTests
         var red = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var keep = VSet(T(2, TileColor.Mango), T(3, TileColor.Mango), T(4, TileColor.Mango));
         var nines = VSet(T(9, TileColor.Blue), T(9, TileColor.Red), T(9, TileColor.Black));
-        var board = new Solution { IsValid = true, Runs = [blue, red, keep], Groups = [nines] };
+        var board = new Solution { IsValid = true, Sets = [blue, red, keep, nines] };
         var rack = new Set([T(4, TileColor.Blue), T(8, TileColor.Red), T(9, TileColor.Mango)]);
 
         var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
 
-        result.BestSolution.Runs[0].Tiles.Select(t => t.Value).Should().Equal(1, 2, 3, 4);
-        result.BestSolution.Runs[1].Tiles.Select(t => t.Value).Should().Equal(5, 6, 7, 8);
-        result.BestSolution.Runs[2].Should().BeSameAs(keep);
-        result.BestSolution.Groups.Should().ContainSingle().Which.Tiles.Select(t => t.Color)
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(4);
+        sets[0].Tiles.Select(t => t.Value).Should().Equal(1, 2, 3, 4);
+        sets[1].Tiles.Select(t => t.Value).Should().Equal(5, 6, 7, 8);
+        sets[2].Should().BeSameAs(keep);
+        sets[3].Tiles.Select(t => t.Color)
             .Should().Equal(TileColor.Blue, TileColor.Red, TileColor.Black, TileColor.Mango);
         result.TilesToPlay.Should().BeEquivalentTo(rack.Tiles);
         ShouldBeLegalOver(result, board, rack);
@@ -292,17 +331,16 @@ public class BoardStabilizerTests
         var board = new Solution
         {
             IsValid = true,
-            Runs = [blackRun, blueRun, redRun],
-            Groups = [elevensA, twos, fours, elevensB, twelves, thirteens]
+            Sets = [blackRun, blueRun, redRun, elevensA, twos, fours, elevensB, twelves, thirteens]
         };
         var rack = new Set([T(9, TileColor.Mango), T(10, TileColor.Black)]);
 
         var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
 
         result.TilesToPlay.Should().BeEquivalentTo(rack.Tiles);
-        result.BestSolution.Runs.Should().Contain(s => ReferenceEquals(s, blackRun));
-        result.BestSolution.Groups.Should().Contain(s => ReferenceEquals(s, twos));
-        result.BestSolution.Groups.Should().Contain(s => ReferenceEquals(s, fours));
+        result.BestSolution.Sets.Should().Contain(s => ReferenceEquals(s, blackRun))
+            .And.Contain(s => ReferenceEquals(s, twos))
+            .And.Contain(s => ReferenceEquals(s, fours));
         ShouldBeLegalOver(result, board, rack);
     }
 
@@ -312,7 +350,7 @@ public class BoardStabilizerTests
         var thirteens = VSet(T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Black));
         var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var red = VSet(T(4, TileColor.Red), T(5, TileColor.Red), T(6, TileColor.Red));
-        var board = new Solution { IsValid = true, Runs = [blue, red], Groups = [thirteens] };
+        var board = new Solution { IsValid = true, Sets = [blue, red, thirteens] };
         var rack = new Set([T(13, TileColor.Mango)]);
 
         var solved = GraphSolver.Create(board.ToSet(), rack).SearchSolution();
@@ -321,9 +359,12 @@ public class BoardStabilizerTests
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.BestSolution.Runs.Should().Equal(blue, red);
-        result.BestSolution.Groups.Should().ContainSingle().Which.Tiles.Should().HaveCount(4);
-        result.BestSolution.Groups[0].Tiles.Take(3).Select(t => t.Color)
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Should().BeSameAs(blue);
+        sets[1].Should().BeSameAs(red);
+        sets[2].Tiles.Should().HaveCount(4);
+        sets[2].Tiles.Take(3).Select(t => t.Color)
             .Should().Equal(TileColor.Blue, TileColor.Red, TileColor.Black);
         ShouldBeLegalOver(result, board, rack);
     }
@@ -338,7 +379,7 @@ public class BoardStabilizerTests
         var mango = VSet(T(6, TileColor.Mango), T(7, TileColor.Mango), T(8, TileColor.Mango));
         var ones = VSet(T(1, TileColor.Blue), T(1, TileColor.Mango), T(1, TileColor.Black), T(1, TileColor.Red));
         var thirteens = VSet(T(13, TileColor.Blue), new Tile(13, TileColor.Red, isJoker: true), T(13, TileColor.Black));
-        var sent = new Solution { IsValid = true, Runs = [mango], Groups = [ones, thirteens] };
+        var sent = new Solution { IsValid = true, Sets = [mango, ones, thirteens] };
         var board = JsonSerializer.Deserialize<Solution>(
             JsonSerializer.Serialize(sent, RummiJsonOptions.Default), RummiJsonOptions.Default)!;
         var rack = new Set([T(10, TileColor.Mango), T(9, TileColor.Mango)]);
@@ -348,9 +389,11 @@ public class BoardStabilizerTests
 
         var result = BoardStabilizer.Stabilize(board, solved);
 
-        result.BestSolution.Groups.Should().Equal(board.Groups);
-        result.BestSolution.Runs.Should().ContainSingle().Which.Tiles.Select(t => t.Value)
-            .Should().Equal(6, 7, 8, 9, 10);
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Tiles.Select(t => t.Value).Should().Equal(6, 7, 8, 9, 10);
+        sets[1].Should().BeSameAs(board.Sets[1]);
+        sets[2].Should().BeSameAs(board.Sets[2]);
         ShouldBeLegalOver(result, board, rack);
     }
 }

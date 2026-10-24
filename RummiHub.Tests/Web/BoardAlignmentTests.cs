@@ -14,55 +14,49 @@ public class BoardAlignmentTests
     {
         var runA = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
         var runB = Set(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
-        var previous = new Solution { Runs = [runA, runB] };
+        var previous = new Solution { Sets = [runA, runB] };
 
         // Solver returns the same runs in a different order (B first), A extended with a 4.
         var runBNext = Set(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var runANext = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
-        var next = new Solution { Runs = [runBNext, runANext] };
+        var next = new Solution { Sets = [runBNext, runANext] };
 
         var aligned = BoardAlignment.Align(previous, next);
 
         // A's match (now length 4) comes first, B's match second — following previous order.
-        aligned.Runs[0].Tiles.Should().HaveCount(4);
-        aligned.Runs[0].Tiles[0].Value.Should().Be(1);
-        aligned.Runs[1].Tiles[0].Value.Should().Be(5);
+        aligned.Sets.Should().Equal(runANext, runBNext);
     }
 
     [Fact]
     public void Align_AppendsBrandNewSetsLast()
     {
         var runA = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
-        var previous = new Solution { Runs = [runA] };
+        var previous = new Solution { Sets = [runA] };
 
         var newRun = Set(T(7, TileColor.Black), T(8, TileColor.Black), T(9, TileColor.Black));
         var runANext = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
-        var next = new Solution { Runs = [newRun, runANext] };
+        var next = new Solution { Sets = [newRun, runANext] };
 
         var aligned = BoardAlignment.Align(previous, next);
 
-        aligned.Runs[0].Tiles[0].Value.Should().Be(1);   // matched set kept in place
-        aligned.Runs[1].Tiles[0].Value.Should().Be(7);   // brand-new set appended last
+        aligned.Sets.Should().Equal(runANext, newRun);   // matched set kept in place, brand-new set last
     }
 
     [Fact]
-    public void Align_AlignsRunsAndGroupsIndependently()
+    public void Align_PutsAGroupBuiltFromARunsTileBesideThatRun()
     {
-        var run = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
-        var group = Set(T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black));
-        var previous = new Solution { Runs = [run], Groups = [group] };
+        var mango = Set(T(1, TileColor.Mango), T(2, TileColor.Mango), T(3, TileColor.Mango));
+        var red = Set(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
+        var blue = Set(T(11, TileColor.Blue), T(12, TileColor.Blue), T(13, TileColor.Blue));
+        var previous = new Solution { Sets = [mango, red, blue] };
 
-        var next = new Solution
-        {
-            Runs = [Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))],
-            Groups = [Set(T(5, TileColor.Red), T(5, TileColor.Blue), T(5, TileColor.Black), T(5, TileColor.Mango))]
-        };
+        var sevens = Set(T(7, TileColor.Red), T(7, TileColor.Blue), T(7, TileColor.Black));
+        var shortRed = Set(T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
+        var next = new Solution { Sets = [sevens, blue, mango, shortRed] };
 
         var aligned = BoardAlignment.Align(previous, next);
 
-        aligned.Runs.Should().HaveCount(1);
-        aligned.Groups.Should().HaveCount(1);
-        aligned.Groups[0].Tiles.Should().HaveCount(4);
+        aligned.Sets.Should().Equal(mango, shortRed, sevens, blue);
     }
 
     [Fact]
@@ -70,14 +64,14 @@ public class BoardAlignmentTests
     {
         var previous = new Solution
         {
-            Runs = [Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))]
+            Sets = [Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue))]
         };
         var r1 = Set(T(9, TileColor.Red), T(10, TileColor.Red), T(11, TileColor.Red));
         var r2 = Set(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
-        var next = new Solution { Runs = [r1, r2] };
+        var next = new Solution { Sets = [r1, r2] };
 
         var aligned = BoardAlignment.Align(previous, next);
 
-        aligned.Runs.Should().BeEquivalentTo(next.Runs);   // same sets, order aside
+        aligned.Sets.Should().BeEquivalentTo(next.Sets);   // same sets, order aside
     }
 }

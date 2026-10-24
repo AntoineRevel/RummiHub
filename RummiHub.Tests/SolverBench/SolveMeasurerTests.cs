@@ -85,7 +85,7 @@ public class SolveMeasurerTests
         // A large board + full rack makes GraphSolver's exponential search hopeless within 1 ms.
         var board = new Solution { IsValid = true };
         foreach (var color in new[] { TileColor.Blue, TileColor.Red, TileColor.Black, TileColor.Mango })
-            board.AddRun(new ValidSet(Enumerable.Range(1, 5).Select(v => new Tile(v, color)).ToArray()));
+            board.Sets.Add(new ValidSet(Enumerable.Range(1, 5).Select(v => new Tile(v, color)).ToArray()));
 
         var hand = new[]
         {

@@ -18,8 +18,8 @@ public class MoveBankTests : IDisposable
     private static BenchPosition SamplePosition()
     {
         var board = new Solution { IsValid = true };
-        board.AddRun(new ValidSet([new Tile(10, TileColor.Blue), new Tile(11, TileColor.Blue), new Tile(12, TileColor.Blue)]));
-        board.AddGroup(new ValidSet([new Tile(5, TileColor.Red), new Tile(5, TileColor.Black), new Tile(5, TileColor.Mango)]));
+        board.Sets.Add(new ValidSet([new Tile(10, TileColor.Blue), new Tile(11, TileColor.Blue), new Tile(12, TileColor.Blue)]));
+        board.Sets.Add(new ValidSet([new Tile(5, TileColor.Red), new Tile(5, TileColor.Black), new Tile(5, TileColor.Mango)]));
         var hand = new List<Tile> { new(13, TileColor.Blue), new(isJoker: true) };
 
         return new BenchPosition
@@ -52,8 +52,7 @@ public class MoveBankTests : IDisposable
         loaded.Provenance.Should().Be(original.Provenance);
         loaded.Notes.Should().Be(original.Notes);
         loaded.Hand.Should().BeEquivalentTo(original.Hand);
-        loaded.Board.Runs.Should().HaveCount(1);
-        loaded.Board.Groups.Should().HaveCount(1);
+        loaded.Board.Sets.Select(s => s.IsGroup).Should().Equal(original.Board.Sets.Select(s => s.IsGroup));
         loaded.ReferenceBest.Found.Should().BeTrue();
         loaded.ReferenceBest.Jokers.Should().Be(1);
         loaded.ReferenceBest.Score.Should().Be(25);

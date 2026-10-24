@@ -17,19 +17,18 @@ public static class SolutionValidator
 
         var solution = result.BestSolution;
 
-        if (!solution.Runs.All(IsLegalRun)) return false;
-        if (!solution.Groups.All(IsLegalGroup)) return false;
+        if (!solution.Sets.All(set => IsLegalRun(set) || IsLegalGroup(set))) return false;
 
         // Every played tile must come from the rack (multiset containment).
         if (!IsSubMultiset(result.TilesToPlay.Where(t => !t.IsJoker), rack.Tiles)) return false;
 
         // Tile conservation: solution == board + played, both for colored tiles and jokers.
-        var solutionTiles = Histogram(solution.Runs.Concat(solution.Groups)
+        var solutionTiles = Histogram(solution.Sets
             .SelectMany(s => s.Tiles).Where(t => !t.IsJoker));
         var expectedTiles = Histogram(board.Tiles.Concat(result.TilesToPlay.Where(t => !t.IsJoker)));
         if (!SameHistogram(solutionTiles, expectedTiles)) return false;
 
-        var solutionJokers = solution.Runs.Concat(solution.Groups).SelectMany(s => s.Tiles).Count(t => t.IsJoker);
+        var solutionJokers = solution.Sets.SelectMany(s => s.Tiles).Count(t => t.IsJoker);
         if (solutionJokers != board.Jokers + result.JokersToPlay) return false;
 
         if (hasPlayed)
