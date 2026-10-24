@@ -25,13 +25,15 @@ public partial class Lobby
     private List<string> _availableGameIds = [];
     private string _selectedGameId = string.Empty;
     private ElementReference _nameInput;
+    private ElementReference _startButton;
+    private bool _startArmed;
     private bool _hasFocused;
     private bool _inviteCopied;
     private CancellationTokenSource? _inviteCopiedResetCts;
     private bool _gameStarted;
     private string? _gameUrl;
-    /// <summary>The browser refused to open the game tab by itself (no user gesture).</summary>
-    private bool _openBlocked;
+    /// <summary>This tab's seat secret, handed to the game tab in <see cref="_gameUrl"/>'s fragment.</summary>
+    private string? _seatToken;
 
     private static readonly string[] DefaultNames =
     [
@@ -45,6 +47,12 @@ public partial class Lobby
         {
             _hasFocused = true;
             await _nameInput.FocusAsync();
+        }
+
+        if (!_startArmed && _isHost && !_gameStarted)
+        {
+            _startArmed = true;
+            await InvokeSeatModuleAsync(m => m.InvokeVoidAsync("armStart", _startButton));
         }
     }
 
@@ -157,7 +165,10 @@ public partial class Lobby
 
         _hubConnection.On<string, IEnumerable<string>>(HubEvents.GameStarted, (gameId, _) =>
         {
-            _gameUrl = $"/game/{gameId}?player={Uri.EscapeDataString(_playerName)}";
+            // The fragment never reaches the server; the game page moves it into its
+            // sessionStorage and strips it from the address bar (seat-token.js).
+            _gameUrl = $"/game/{gameId}?player={Uri.EscapeDataString(_playerName)}"
+                       + (_seatToken is null ? "" : $"#seat={_seatToken}");
             _gameStarted = true;
             InvokeAsync(async () =>
             {
@@ -169,7 +180,12 @@ public partial class Lobby
         _hubConnection.On<string>(HubEvents.Error, message =>
         {
             _error = message;
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(async () =>
+            {
+                // A failed Start leaves the blank tab its click opened with nothing to show.
+                await InvokeSeatModuleAsync(m => m.InvokeVoidAsync("discardPendingTab"));
+                StateHasChanged();
+            });
         });
 
         try
@@ -190,6 +206,7 @@ public partial class Lobby
     /// </summary>
     private async Task RememberSeatTokenAsync(string gameId, string token)
     {
+        _seatToken = token;
         try
         {
             var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/seat-token.js");
@@ -252,20 +269,21 @@ public partial class Lobby
     }
 
     /// <summary>
-    /// Opens the game in a new tab (seat-token.js), this lobby staying behind as the way back.
-    /// Called when the game starts and from the "Open the game" button: the automatic
-    /// opening is blocked by popup blockers for everyone but the host, whose click on Start
-    /// is recent enough to count as a user gesture.
+    /// Opens the game when it starts (seat-token.js): in the tab the host's Start click opened,
+    /// else in a new tab, else, when the browser blocks it (Safari, popup blockers: a player
+    /// who joined has no click to open a tab with), in this tab, so no browser setting is needed.
     /// </summary>
-    private async Task OpenGameAsync()
+    private Task OpenGameAsync() =>
+        _gameUrl is null ? Task.CompletedTask : InvokeSeatModuleAsync(m => m.InvokeVoidAsync("openGame", _gameUrl));
+
+    private async Task InvokeSeatModuleAsync(Func<IJSObjectReference, ValueTask> call)
     {
-        if (_gameUrl is null) return;
         try
         {
             var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/seat-token.js");
             try
             {
-                _openBlocked = !await module.InvokeAsync<bool>("openGame", _gameUrl);
+                await call(module);
             }
             finally
             {
@@ -274,7 +292,7 @@ public partial class Lobby
         }
         catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException)
         {
-            _openBlocked = true;
+            // The circuit is gone or the browser refused: the "Open the game" link remains.
         }
     }
 }
