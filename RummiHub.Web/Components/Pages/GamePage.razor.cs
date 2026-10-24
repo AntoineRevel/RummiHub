@@ -21,6 +21,7 @@ public partial class GamePage : IAsyncDisposable
     private bool _isConnected;
     private GameStateDto? _gameState;
     private List<Tile> _rackTiles = [];
+    private RackSort _rackSort = RackSort.Color;
     private string? _error;
     private string? _errorPlay;
     private bool _isLoading;
@@ -210,7 +211,10 @@ public partial class GamePage : IAsyncDisposable
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
+        {
+            await LoadRackSortAsync();
             await EnsureHubAsync();
+        }
 
         // Captured before awaiting JS: a state arriving meanwhile is drawn by the next render,
         // which schedules its own reveal from the board it actually shows.
@@ -781,15 +785,51 @@ public partial class GamePage : IAsyncDisposable
     private int GetSelectedCountForTile(Tile tileType) =>
         SelectedTilesForPlay.Count(t => t.Equals(tileType));
 
-    private IEnumerable<IGrouping<Tile, Tile>> GetGroupedTiles() =>
-        _rackTiles
-            .OrderBy(t => t.IsJoker ? 1 : 0)
-            .ThenBy(t => t.Color)
-            .ThenBy(t => t.Value)
-            .GroupBy(t => t)
-            .OrderBy(g => g.Key.IsJoker ? 1 : 0)
-            .ThenBy(g => g.Key.Color)
-            .ThenBy(g => g.Key.Value);
+    // Jokers always come last; the player picks the order of the rest.
+    private IEnumerable<IGrouping<Tile, Tile>> GetGroupedTiles()
+    {
+        var groups = _rackTiles.GroupBy(t => t).OrderBy(g => g.Key.IsJoker ? 1 : 0);
+        return _rackSort == RackSort.Value
+            ? groups.ThenBy(g => g.Key.Value).ThenBy(g => g.Key.Color)
+            : groups.ThenBy(g => g.Key.Color).ThenBy(g => g.Key.Value);
+    }
+
+    // --- Rack sort preference (per browser, kept in localStorage) ---
+
+    private enum RackSort { Color, Value }
+
+    private const string RackSortStorageKey = "rummihub-rack-sort";
+
+    private async Task LoadRackSortAsync()
+    {
+        try
+        {
+            var stored = await JS.InvokeAsync<string?>("localStorage.getItem", RackSortStorageKey);
+            if (Enum.TryParse<RackSort>(stored, out var sort) && sort != _rackSort)
+            {
+                _rackSort = sort;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException)
+        {
+            // Storage blocked or circuit gone: keep the default order.
+        }
+    }
+
+    private async Task SetRackSortAsync(RackSort sort)
+    {
+        if (sort == _rackSort) return;
+        _rackSort = sort;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", RackSortStorageKey, sort.ToString());
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException)
+        {
+            // Not remembered for next time; this game still uses the new order.
+        }
+    }
 
     // --- Played-tiles highlight ---
 

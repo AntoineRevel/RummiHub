@@ -210,7 +210,18 @@ else
                      Enter-only scope: a drawn tile flies in from the pool and deselections
                      fly home, but internal reshuffles display instantly. -->
                 <div class="available-tiles-section">
-                    <h4>Available tiles</h4>
+                    <div class="available-tiles-header">
+                        <h4>Available tiles</h4>
+                        <div class="rack-sort" role="group" aria-label="Sort tiles by">
+                            <span class="rack-sort-label">Sort by</span>
+                            <button type="button" class="rack-sort-btn @(_rackSort == RackSort.Color ? "active" : "")"
+                                    aria-pressed="@(_rackSort == RackSort.Color)"
+                                    @onclick="() => SetRackSortAsync(RackSort.Color)">Color</button>
+                            <button type="button" class="rack-sort-btn @(_rackSort == RackSort.Value ? "active" : "")"
+                                    aria-pressed="@(_rackSort == RackSort.Value)"
+                                    @onclick="() => SetRackSortAsync(RackSort.Value)">Value</button>
+                        </div>
+                    </div>
                     <div class="tiles-container @(CanAct ? "" : "readonly")"
                          data-anim-scope="rack" data-anim-enter-only data-anim-enter-from="pool">
                         @foreach (var tileGroup in GetGroupedTiles())
@@ -1019,12 +1030,55 @@ else
         margin: 10px 0;
     }
 
-    .available-tiles-section h4 {
+    .available-tiles-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
         margin: 0 0 8px 0;
+    }
+
+    .available-tiles-section h4 {
+        margin: 0;
         color: #495057;
         font-size: 0.95rem;
         font-weight: 600;
         text-align: left;
+    }
+
+    .rack-sort {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .rack-sort-label {
+        font-size: 0.78rem;
+        color: #888;
+        margin-right: 2px;
+    }
+
+    .rack-sort-btn {
+        border: 1px solid #c5cae9;
+        background: #fff;
+        color: #3949ab;
+        border-radius: 999px;
+        padding: 3px 10px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        line-height: 1.2;
+        cursor: pointer;
+    }
+
+    .rack-sort-btn:hover {
+        background: #e8eaf6;
+    }
+
+    .rack-sort-btn.active {
+        background: #3949ab;
+        border-color: #3949ab;
+        color: #fff;
     }
 
     .tiles-container {
