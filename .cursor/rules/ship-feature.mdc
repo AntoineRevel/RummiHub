@@ -1,12 +1,12 @@
 ---
-description: Après une fonctionnalité, ouvrir une PR et déployer sur le site de test
+description: Après une fonctionnalité, ouvrir une PR (elle se déploie seule sur le site de test)
 alwaysApply: true
 ---
 
-Quand une fonctionnalité est prête, faire les deux sans attendre qu'on le redemande :
+Quand une fonctionnalité est prête, sans attendre qu'on le redemande :
 
 1. Branche `cursor/<sujet>` depuis `origin/master`, commit, pousser, et ouvrir une pull request vers `master`. Ne pas pousser sur `master`.
-2. Déployer cette branche sur le site de test : `gh workflow run deploy-test.yml --ref <branche>`.
-   Ça lance les tests, puis met à jour https://test.rummisolve.com avec ce commit.
+2. Rien d'autre à lancer : chaque push sur la PR déclenche `.github/workflows/pr.yml`, qui lance les tests puis met https://test.rummisolve.com sur la pointe de la branche.
+   Le site de test montre la dernière PR poussée ; pour y remettre une PR, relancer son job `test-site`.
    Il n'y a pas de branche `test`.
-   Le commit ne doit pas modifier `deploy/` : le serveur refuse le déploiement sinon.
+   Un commit qui modifie `deploy/` n'est pas déployé sur le site de test.

@@ -1,13 +1,12 @@
-# Tests sur chaque PR : le check requis « test » (branche à jour) est imposé
-# par la protection de master, donc le déploiement ne les relance pas.
-# Sur master (push ou lancement manuel) : déploiement direct sur le VPS.
-# Le job deploy se connecte en SSH sans commande distante. La clé ne peut exécuter
-# que rummihub-deploy : sans commande, cela déploie origin/master. « deploy-test »
-# est réservé au site de test (deploy/README.md).
-name: Tests et déploiement
+# Déploiement de la production, sur master (push ou lancement manuel). Les tests ont
+# tourné sur la PR (pr.yml) : le check requis « test » et la branche à jour sont
+# imposés par la protection de master, donc ils ne sont pas relancés ici.
+# Le job se connecte en SSH sans commande distante. La clé ne peut exécuter que
+# rummihub-deploy : sans commande, cela déploie origin/master. « deploy-test » est
+# réservé au site de test (deploy/README.md).
+name: Production deploy
 
 on:
-  pull_request:
   push:
     branches: [master]
   workflow_dispatch:
@@ -16,17 +15,6 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.x
-      - run: dotnet test RummiHub.slnx
-
   deploy:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
@@ -36,7 +24,7 @@ jobs:
       group: production
       cancel-in-progress: false
     steps:
-      - name: Déployer sur le VPS
+      - name: Deploy to the server
         env:
           SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

@@ -1,0 +1,79 @@
+# Tests sur chaque PR, puis déploiement du commit testé sur le site de test
+# (https://test.rummisolve.com). Le check « test » est exigé par la protection de
+# master (branche à jour) : le code mergé a déjà passé les tests, la prod ne les
+# relance pas (deploy.yml).
+#
+# Le site de test montre la dernière PR poussée : une seule pile de test, partagée.
+# Pour remettre une PR dessus (ou relancer après l'arrêt automatique de 2 h) :
+# Re-run du job « test-site » seul, sans refaire les tests. Pour une branche sans
+# PR : Actions → Run workflow, ou gh workflow run pr.yml --ref <branche>.
+#
+# SSH réutilise la clé de production. La commande forcée n'accepte que
+# « deploy-test <SHA> » et refuse un commit qui modifie deploy/
+# (deploy/autodeploy/rummihub-deploy-test-run) : dans ce cas le job ne déploie pas.
+name: Tests and test site
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check that the ref is a branch
+        if: github.event_name == 'workflow_dispatch' && github.ref_type != 'branch'
+        run: |
+          echo 'Refused: pick a branch in "Use workflow from", not a tag.' >&2
+          exit 1
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test RummiHub.slnx
+
+  test-site:
+    needs: test
+    # Les PR venues d'un fork n'ont pas les secrets.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Un déploiement de test à la fois ; celui en cours n'est jamais annulé.
+    concurrency:
+      group: test
+      cancel-in-progress: false
+    env:
+      # Sur une PR, github.sha est le commit de merge temporaire : on déploie la
+      # pointe de la branche, que le VPS peut récupérer et que le bandeau nomme.
+      SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0
+      - name: Check that deploy/ is unchanged
+        id: deploy-dir
+        run: |
+          git fetch -q origin master
+          if git diff --quiet origin/master...HEAD -- deploy; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::This commit changes deploy/: not deployed to the test site (the server would refuse it). Merge it to try it."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Deploy the commit to the test site
+        if: steps.deploy-dir.outputs.ok == 'true'
+        env:
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ServerAliveInterval=30 "ubuntu@$SSH_HOST" "deploy-test $SHA"

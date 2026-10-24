@@ -56,7 +56,7 @@ Les volumes (certificats, AOF Redis, clés Data Protection) sont conservés. Le 
 
 ## Déploiement automatique
 
-Le workflow `.github/workflows/deploy.yml` lance les tests sur chaque PR. La protection de `master` exige le check `test` et une branche à jour : le code qui arrive sur `master` a déjà passé les tests sur la PR. Le déploiement part donc directement après le merge (push sur `master`, ou *Run workflow*), sans les relancer. Il se connecte en SSH au VPS **sans commande distante**. La clé ne peut exécuter que `rummihub-deploy` : sans commande, cela démarre `rummihub-deploy.service`, qui :
+Deux workflows. `.github/workflows/pr.yml` lance les tests sur chaque PR, puis met le commit testé sur le site de test (section « Site de test »). La protection de `master` exige le check `test` et une branche à jour : le code qui arrive sur `master` a déjà passé les tests sur la PR. `.github/workflows/deploy.yml` déploie donc la production directement après le merge (push sur `master`, ou *Run workflow*), sans les relancer. Il se connecte en SSH au VPS **sans commande distante**. La clé ne peut exécuter que `rummihub-deploy` : sans commande, cela démarre `rummihub-deploy.service`, qui :
 
 1. avance le dépôt sur `origin/master` (`git merge --ff-only`, avec la clé de déploiement en lecture seule) ;
 2. lance `rummihub-compose-prod` : crée le réseau `rummihub-edge` s’il manque, attend le verrou partagé avec le site de test, puis `docker compose up -d --build --wait`. Le build tourne pendant que l’ancienne version reste en ligne, seuls les services modifiés sont recréés, puis Compose attend les healthchecks. Si le verrou est déjà pris, le script échoue **sans** lancer Compose : l’ancienne pile reste en place ;
@@ -208,25 +208,29 @@ rummihub-deploy
 
 ### Lancer un déploiement
 
-*Actions → Déploiement du site de test → Run workflow*, puis choisir la branche dans *Use workflow from*. En ligne de commande :
+Automatique : chaque push sur une PR lance `.github/workflows/pr.yml`, qui fait `dotnet test` puis, si les tests passent, le SSH `deploy-test <SHA>` avec la pointe de la branche (pas le commit de merge temporaire de la PR). Le site montre ce commit. Il n’y a pas de branche `test`. Une PR venue d’un fork n’est pas déployée (pas de secrets).
+
+Il n’y a qu’une pile de test : elle montre **la dernière PR poussée**. Un déploiement à la fois, jamais annulé au milieu ; s’il en arrive plusieurs pendant ce temps, seul le plus récent passe ensuite. Pour remettre une PR sur le site, ou le relancer après l’arrêt automatique : dans son run *Actions*, relancer le seul job `test-site` (*Re-run* sur le job), les tests ne sont pas refaits.
+
+Pour une branche sans PR : *Actions → Tests and test site → Run workflow*, branche choisie dans *Use workflow from* (une étiquette est refusée), ou :
 
 ```bash
-gh workflow run deploy-test.yml -R AntoineRevel/RummiHub --ref ma-branche
+gh workflow run pr.yml -R AntoineRevel/RummiHub --ref ma-branche
 ```
 
-Ça lance `dotnet test` sur cette branche, puis le SSH `deploy-test <SHA>` avec le commit qui vient de passer les tests. Le site montre ce commit. Il n’y a pas de branche `test`. Pour relancer : *Re-run jobs*, ou la même commande. La branche doit contenir `.github/workflows/deploy-test.yml` dans sa version actuelle (toute branche créée depuis `master` après ce changement, sinon merger `master` dedans). Une étiquette est refusée. Un déploiement à la fois, jamais annulé au milieu.
+La branche doit contenir `.github/workflows/pr.yml` (sinon merger `master` dedans).
 
 À la main, sur le VPS : `rummihub-deploy-test <SHA complet>`, par exemple `rummihub-deploy-test "$(git ls-remote origin refs/heads/ma-branche | cut -f1)"` depuis un clone. Il démarre `rummihub-deploy-test@<SHA>.service`, qui fait `git fetch origin master <SHA>`, `git checkout --force --detach <SHA>`, puis `docker compose -p rummihub-test … up -d --build --wait --remove-orphans`. Journal : l’onglet *Actions*, ou `journalctl -u 'rummihub-deploy-test@*'`.
 
 Un bandeau rose en bas à gauche du site de test indique ce qui tourne : « Site de test · branche · commit ». `rummihub-deploy-test-run` le passe au webfrontend (`TestSite__Commit`) ; la branche est celle dont le commit est la pointe sur `origin`, absente si elle a avancé depuis. La production n'a pas cette variable, donc pas de bandeau.
 
-**`deploy/` doit être celui de `master`.** Si le commit modifie `deploy/` depuis son point de départ sur `master` (`git diff origin/master...<SHA> -- deploy`), le déploiement est refusé avant le checkout. La pile de test tourne avec les fichiers Compose du commit : un Compose modifié (volume `/`, `docker.sock`, `privileged`…) donnerait root sur le VPS de production. Le code applicatif et le `Dockerfile` peuvent changer librement. Pour essayer une modification de `deploy/`, la merger d’abord.
+**`deploy/` doit être celui de `master`.** Si le commit modifie `deploy/` depuis son point de départ sur `master` (`git diff origin/master...<SHA> -- deploy`), le déploiement est refusé avant le checkout. La pile de test tourne avec les fichiers Compose du commit : un Compose modifié (volume `/`, `docker.sock`, `privileged`…) donnerait root sur le VPS de production. Le code applicatif et le `Dockerfile` peuvent changer librement. Le workflow fait la même vérification avant le SSH : une PR qui touche `deploy/` reste verte, avec une note « not deployed to the test site ». Pour essayer une modification de `deploy/`, la merger d’abord.
 
 ### Arrêter le site de test
 
 La pile de test s’arrête seule **deux heures après son dernier déploiement**, pour rendre le CPU et la mémoire à la production. `rummihub-test-autostop.timer` lance `rummihub-test-autostop` toutes les 5 minutes. Chaque déploiement de test touche `/run/rummihub/test-deployed` juste avant `docker compose up` ; si ce fichier a plus de 2 h, ou s’il manque, le script fait `docker compose … stop` sur `rummihub-test`. L’arrêt tombe donc entre 2 h et 2 h 05. Pendant un déploiement (prod ou test), le verrou `compose.lock` est pris : le script passe son tour.
 
-- Relancer pour deux heures : relancer le déploiement (*Re-run jobs*, ou *Run workflow* sur la même branche). `up` redémarre les conteneurs arrêtés ; avec le cache Docker, le build d’un commit déjà déployé est court.
+- Relancer pour deux heures : relancer le job `test-site` du dernier run de la PR (ou *Run workflow* sur la branche). `up` redémarre les conteneurs arrêtés ; avec le cache Docker, le build d’un commit déjà déployé est court.
 - Prolonger une pile qui tourne : `touch /run/rummihub/test-deployed` sur le VPS.
 - Au boot, `/run` est vide. Une pile de test qui tournait repart (`restart: unless-stopped`) et s’arrête au passage suivant du timer ; une pile arrêtée reste arrêtée.
 - À l’installation du timer, le fichier n’existe pas encore : la pile en cours s’arrête dans les 5 minutes. `touch /run/rummihub/test-deployed` avant `enable --now` lui laisse deux heures.
