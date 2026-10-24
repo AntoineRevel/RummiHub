@@ -25,9 +25,8 @@ public partial class GamePage : IAsyncDisposable
     private string? _error;
     private string? _errorPlay;
     private bool _isLoading;
+    /// <summary>The tile I last drew, lit in the rack until I next touch it.</summary>
     private Tile? _drawnTile;
-    private bool _showDrawnTileToast;
-    private Timer? _toastTimer;
     private HashSet<int>? _highlightIndices;
     private HashSet<int>? _modifiedSetIndices;
     private Timer? _highlightTimer;
@@ -341,12 +340,7 @@ public partial class GamePage : IAsyncDisposable
                 _rackTiles = rack;
         });
 
-        Handle<Tile>(HubEvents.TileDrawn, tile =>
-        {
-            _drawnTile = tile;
-            _showDrawnTileToast = true;
-            SetupToastTimer();
-        });
+        Handle<Tile>(HubEvents.TileDrawn, tile => _drawnTile = tile);
 
         Handle<string>(HubEvents.InvalidPlay, message =>
         {
@@ -771,6 +765,7 @@ public partial class GamePage : IAsyncDisposable
     private void OnTileStackClick(Tile tileType)
     {
         if (!CanAct) return;
+        _drawnTile = null;
 
         // Each click selects one more copy; a click past the last copy clears them all.
         var totalAvailable = _rackTiles.Count(t => t.Equals(tileType));
@@ -859,28 +854,6 @@ public partial class GamePage : IAsyncDisposable
         _highlightTimer = null;
     }
 
-    // --- Toast ---
-
-    private void SetupToastTimer()
-    {
-        _toastTimer?.Stop();
-        _toastTimer?.Dispose();
-        _toastTimer = new Timer(3000);
-        _toastTimer.Elapsed += (_, _) =>
-        {
-            InvokeAsync(() =>
-            {
-                _showDrawnTileToast = false;
-                _drawnTile = null;
-                _toastTimer?.Stop();
-                _toastTimer?.Dispose();
-                _toastTimer = null;
-                StateHasChanged();
-            });
-        };
-        _toastTimer.Start();
-    }
-
     /// <summary>A move that arrived while a replay was on screen, applied once it lands.</summary>
     private sealed class HeldMove
     {
@@ -895,7 +868,6 @@ public partial class GamePage : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        _toastTimer?.Dispose();
         _highlightTimer?.Dispose();
         _turnRevealTimer?.Dispose();
         _replayHoldTimer?.Dispose();
