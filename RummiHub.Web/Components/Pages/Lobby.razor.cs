@@ -28,6 +28,10 @@ public partial class Lobby
     private bool _hasFocused;
     private bool _inviteCopied;
     private CancellationTokenSource? _inviteCopiedResetCts;
+    private bool _gameStarted;
+    private string? _gameUrl;
+    /// <summary>The browser refused to open the game tab by itself (no user gesture).</summary>
+    private bool _openBlocked;
 
     private static readonly string[] DefaultNames =
     [
@@ -153,8 +157,13 @@ public partial class Lobby
 
         _hubConnection.On<string, IEnumerable<string>>(HubEvents.GameStarted, (gameId, _) =>
         {
-            InvokeAsync(() =>
-                Navigation.NavigateTo($"/game/{gameId}?player={Uri.EscapeDataString(_playerName)}"));
+            _gameUrl = $"/game/{gameId}?player={Uri.EscapeDataString(_playerName)}";
+            _gameStarted = true;
+            InvokeAsync(async () =>
+            {
+                await OpenGameAsync();
+                StateHasChanged();
+            });
         });
 
         _hubConnection.On<string>(HubEvents.Error, message =>
@@ -240,5 +249,32 @@ public partial class Lobby
     {
         if (_hubConnection is not null && _gameId is not null)
             await _hubConnection.SendAsync(HubEvents.StartGame, _gameId);
+    }
+
+    /// <summary>
+    /// Opens the game in a new tab (seat-token.js), this lobby staying behind as the way back.
+    /// Called when the game starts and from the "Open the game" button: the automatic
+    /// opening is blocked by popup blockers for everyone but the host, whose click on Start
+    /// is recent enough to count as a user gesture.
+    /// </summary>
+    private async Task OpenGameAsync()
+    {
+        if (_gameUrl is null) return;
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/seat-token.js");
+            try
+            {
+                _openBlocked = !await module.InvokeAsync<bool>("openGame", _gameUrl);
+            }
+            finally
+            {
+                await module.DisposeAsync();
+            }
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException)
+        {
+            _openBlocked = true;
+        }
     }
 }

@@ -35,13 +35,6 @@ else
          the top bar and the dock stay put, so nothing clips a tile in flight. -->
     <div class="game-container @(IsMyTurn ? "is-my-turn" : "")" tabindex="0" @onkeydown="OnKeyDown">
         <header class="game-topbar">
-            <a class="home-link" href="lobby" title="Back to lobby" aria-label="Back to lobby">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 11l9-8 9 8"/>
-                    <path d="M5 10v10h5v-6h4v6h5V10"/>
-                </svg>
-            </a>
             <span class="meta-chip turn-chip" title="Current turn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="23 4 23 10 17 10"/>
@@ -223,7 +216,7 @@ else
                 }
 
                 <div class="rack-toolbar">
-                    <span class="rack-count">Your tiles · @_rackTiles.Count</span>
+                    <span class="rack-count">Your tiles</span>
                     <div class="rack-sort" role="group" aria-label="Sort tiles by">
                         <span class="rack-sort-label">Sort</span>
                         <button type="button" class="rack-sort-btn @(_rackSort == RackSort.Color ? "active" : "")"
@@ -388,13 +381,13 @@ else
                     }
                     else
                     {
-                        <button @onclick="OnDrawTile" class="btn-draw"
+                        <button @onclick="OnDrawTile" class="btn-draw" title="Draw a tile from the pool"
                                 disabled="@(!IsMyTurn || _isLoading || _gameState.TilePoolCount == 0)">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                  stroke-width="2">
                                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                             </svg>
-                            <span>Draw <span class="btn-sub">· @_gameState.TilePoolCount left</span></span>
+                            <span>Draw</span>
                         </button>
                     }
                 </div>
@@ -455,25 +448,6 @@ else
         background: rgba(255, 255, 255, 0.96);
         backdrop-filter: blur(6px);
         border-bottom: 1px solid #eee;
-    }
-
-    .home-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 30px;
-        height: 30px;
-        border-radius: 8px;
-        color: #555;
-        background: #f4f6f8;
-        border: 1px solid #e2e6ea;
-        flex-shrink: 0;
-    }
-
-    .home-link:hover {
-        color: #1565c0;
-        background: #e3f2fd;
-        border-color: #bbdefb;
     }
 
     .meta-chip {
@@ -1149,11 +1123,6 @@ else
         max-width: 240px;
     }
 
-    .btn-draw .btn-sub {
-        font-weight: 400;
-        opacity: 0.85;
-    }
-
     .lbl-short {
         display: none;
     }
@@ -1299,8 +1268,7 @@ else
         .chip-label,
         .game-id,
         .btn-label,
-        .lbl-full,
-        .btn-draw .btn-sub {
+        .lbl-full {
             display: none;
         }
 
