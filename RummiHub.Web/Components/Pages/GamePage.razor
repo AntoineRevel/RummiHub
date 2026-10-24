@@ -1,5 +1,7 @@
 @page "/game/{GameId}"
 @using RummiHub.Web.Models
+@using RummiHub.Web.Components.Layout
+@layout GameLayout
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 
@@ -28,96 +30,105 @@ else if (_gameState == null)
 }
 else
 {
+    <!-- Three bands: a one-line top bar, the table (takes every spare pixel), and the hand
+         dock stuck to the bottom. The page scrolls only when the table outgrows the screen;
+         the top bar and the dock stay put, so nothing clips a tile in flight. -->
     <div class="game-container @(IsMyTurn ? "is-my-turn" : "")" tabindex="0" @onkeydown="OnKeyDown">
-        <!-- Compact top bar -->
-        <header class="game-header">
-            <div class="game-meta">
-                <span class="meta-chip turn-chip" title="Current turn">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="23 4 23 10 17 10"/>
-                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                    </svg>
-                    Turn @_gameState.Turn
-                </span>
-                <!-- A drawn tile flies into the rack out of this chip. -->
-                <span class="meta-chip pool-chip" title="Tiles left in pool" data-anim-origin="pool">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                    </svg>
-                    @_gameState.TilePoolCount in pool
-                </span>
-                @* The server sends the seed only at game over: it rebuilds every rack. *@
-                @if (!string.IsNullOrEmpty(_gameState.DistributionSeed))
+        <header class="game-topbar">
+            <a class="home-link" href="lobby" title="Back to lobby" aria-label="Back to lobby">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 11l9-8 9 8"/>
+                    <path d="M5 10v10h5v-6h4v6h5V10"/>
+                </svg>
+            </a>
+            <span class="meta-chip turn-chip" title="Current turn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                <span class="chip-label">Turn</span> @_gameState.Turn
+            </span>
+            <!-- A drawn tile flies into the rack out of this chip. -->
+            <span class="meta-chip pool-chip" title="Tiles left in pool" data-anim-origin="pool">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                @_gameState.TilePoolCount <span class="chip-label">in pool</span>
+            </span>
+
+            <!-- Players, as pills on the same line (they wrap under it on a phone). -->
+            <div class="players-bar">
+                @foreach (var (player, index) in _gameState.Players.Select((p, i) => (p, i)))
                 {
-                    <span class="meta-chip seed-chip" title="Distribution seed">
-                        Seed:&nbsp;<strong>@_gameState.DistributionSeed</strong>
-                        <button type="button"
-                                class="seed-replay-btn @(_seedSaved ? "saved" : "")"
-                                title="Save this seed to the lobby so you can replay the same game"
-                                disabled="@_seedSaved"
-                                @onclick="OnSaveSeed">
-                            @if (_seedSaved)
+                    var isCurrent = index == _gameState.CurrentPlayerIndex && !_gameState.IsGameOver;
+                    var isMe = player.Name == PlayerName;
+                    <!-- The tiles a player lays fly onto the board out of their chip — unless they
+                         come from my own play zone. -->
+                    <div class="player-chip @(isCurrent ? "current" : "") @(isMe ? "me" : "")"
+                         data-anim-origin="@(isCurrent ? "mover" : null)"
+                         title="@player.Name · @player.TileCount tiles">
+                        @if (isCurrent)
+                        {
+                            <span class="active-pulse" aria-hidden="true"></span>
+                        }
+                        <span class="player-name">
+                            @player.Name
+                            @if (isMe)
                             {
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                    <polyline points="20 6 9 17 4 12"/>
-                                </svg>
-                                <span>Saved</span>
+                                <small>(you)</small>
                             }
-                            else
-                            {
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="12" y1="5" x2="12" y2="19"/>
-                                    <line x1="5" y1="12" x2="19" y2="12"/>
-                                </svg>
-                                <span>Save seed</span>
-                            }
-                        </button>
-                    </span>
+                        </span>
+                        <span class="tile-count">@player.TileCount</span>
+                    </div>
                 }
             </div>
+
+            @* The server sends the seed only at game over: it rebuilds every rack. *@
+            @if (!string.IsNullOrEmpty(_gameState.DistributionSeed))
+            {
+                <span class="meta-chip seed-chip" title="Distribution seed">
+                    Seed:&nbsp;<strong>@_gameState.DistributionSeed</strong>
+                    <button type="button"
+                            class="seed-replay-btn @(_seedSaved ? "saved" : "")"
+                            title="Save this seed to the lobby so you can replay the same game"
+                            disabled="@_seedSaved"
+                            @onclick="OnSaveSeed">
+                        @if (_seedSaved)
+                        {
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span>Saved</span>
+                        }
+                        else
+                        {
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            <span>Save seed</span>
+                        }
+                    </button>
+                </span>
+            }
             <div class="game-id" title="Game code">#@_gameState.GameId</div>
         </header>
-
-        <!-- Players bar -->
-        <div class="players-bar">
-            @foreach (var (player, index) in _gameState.Players.Select((p, i) => (p, i)))
-            {
-                var isCurrent = index == _gameState.CurrentPlayerIndex && !_gameState.IsGameOver;
-                var isMe = player.Name == PlayerName;
-                <!-- The tiles a player lays fly onto the board out of their chip — unless they
-                     come from my own play zone. -->
-                <div class="player-chip @(isCurrent ? "current" : "") @(isMe ? "me" : "")"
-                     data-anim-origin="@(isCurrent ? "mover" : null)">
-                    @if (isCurrent)
-                    {
-                        <span class="active-pulse" aria-hidden="true"></span>
-                    }
-                    <span class="player-name">
-                        @player.Name
-                        @if (isMe)
-                        {
-                            <small>(you)</small>
-                        }
-                    </span>
-                    <span class="tile-count" title="Tiles in rack">@player.TileCount</span>
-                </div>
-            }
-        </div>
 
         @if (_gameState.IsGameOver)
         {
             <div class="game-over">
-                <div class="trophy">🏆</div>
+                <span class="trophy" aria-hidden="true">🏆</span>
                 <h2>@_gameState.WinnerName won the game!</h2>
                 <div class="game-over-actions">
                     <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)"
                             title="Replay the winning move">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                              stroke-width="2">
                             <polyline points="1 4 1 10 7 10"/>
                             <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
                         </svg>
-                        Replay animation
+                        <span>Replay</span>
                     </button>
                     <button class="btn-back-lobby" @onclick="@(() => Navigation.NavigateTo("/lobby"))">
                         Back to lobby
@@ -127,7 +138,7 @@ else
         }
         else
         {
-            <!-- Turn status banner -->
+            <!-- Turn status: one thin line. -->
             <div class="turn-banner @(IsMyTurn ? "my-turn" : "waiting")">
                 @if (AwaitingMyConfirmation)
                 {
@@ -147,17 +158,21 @@ else
                     <span class="dot-pulse" aria-hidden="true"></span>
                     <span class="turn-banner-text">Waiting for @CurrentPlayerName…</span>
                 }
-                @* The one replay control while the game runs (review mode included), so it
-                   never moves around; the game-over panel takes its place at the end. *@
-                <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)"
-                        title="Replay the last move">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                         stroke-width="2">
-                        <polyline points="1 4 1 10 7 10"/>
-                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-                    </svg>
-                    Replay animation
-                </button>
+                @* Review mode already offers this next to "Next player". Everywhere else —
+                   while an AI plays, and once that move has landed — the last board story
+                   stays replayable from here. *@
+                @if (!AwaitingMyConfirmation)
+                {
+                    <button @onclick="OnReplayAnimation" class="btn-replay btn-replay-inline"
+                            disabled="@(!_canReplay || _isLoading)" title="Replay the last move">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2">
+                            <polyline points="1 4 1 10 7 10"/>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                        <span>Replay</span>
+                    </button>
+                }
             </div>
         }
 
@@ -181,12 +196,63 @@ else
             </div>
         }
 
-        <!-- My rack section -->
+        <!-- Hand dock: stuck to the bottom. Top to bottom: play zone (only while something
+             is selected), one toolbar line, the rack, the action row. The dock grows UPWARD,
+             so the rack and the buttons never move when the play zone appears: the table
+             above gives the room. -->
         @if (_rackTiles.Count > 0 && !_gameState.IsGameOver)
         {
-            <div class="my-rack-section @(IsMyTurn ? "active-turn" : "")">
-                <h3 class="rack-title">
-                    <span>Your tiles (@_rackTiles.Count)</span>
+            <div class="hand-dock @(IsMyTurn ? "active-turn" : "")">
+                <!-- Play zone: shows only the current selection. Hint fills that selection on
+                     demand; nothing is suggested until then. A tile picked here flies back to
+                     its stack. -->
+                @if (IsMyTurn && SelectedTilesForPlay.Any())
+                {
+                    <div class="play-zone">
+                        <div class="play-zone-label">To play · @SelectedTilesForPlay.Count</div>
+                        <div class="selected-tiles-display" data-anim-scope="selection">
+                            @foreach (var tile in SelectedTilesForPlay)
+                            {
+                                <div class="selected-tile-wrapper"
+                                     @onclick="() => OnSelectedTileClick(tile)">
+                                    <TileComponent Tile="tile" ShouldHighlight="false"/>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="rack-toolbar">
+                    <span class="rack-count">Your tiles · @_rackTiles.Count</span>
+                    <div class="rack-sort" role="group" aria-label="Sort tiles by">
+                        <span class="rack-sort-label">Sort</span>
+                        <button type="button" class="rack-sort-btn @(_rackSort == RackSort.Color ? "active" : "")"
+                                aria-pressed="@(_rackSort == RackSort.Color)"
+                                @onclick="() => SetRackSortAsync(RackSort.Color)">Color</button>
+                        <button type="button" class="rack-sort-btn @(_rackSort == RackSort.Value ? "active" : "")"
+                                aria-pressed="@(_rackSort == RackSort.Value)"
+                                @onclick="() => SetRackSortAsync(RackSort.Value)">Value</button>
+                    </div>
+                    @if (CanAct)
+                    {
+                        <button type="button" class="btn-hint @(_hintNoMove ? "no-move" : "")" @onclick="RequestHint"
+                                disabled="@(HintPending || _hintNoMove || _isLoading)"
+                                title="@(_hintNoMove ? "Nothing to play — draw a tile." : "Select the best tiles to play")">
+                            @if (HintPending)
+                            {
+                                <span class="solver-dot"></span>
+                                <span>Computing…</span>
+                            }
+                            else
+                            {
+                                <span>Hint</span>
+                            }
+                        </button>
+                    }
+                    @if (ShowDrawHint)
+                    {
+                        <span class="draw-hint">Nothing to play — draw a tile.</span>
+                    }
                     @if (AwaitingMyConfirmation)
                     {
                         <span class="keyboard-hint">
@@ -199,121 +265,65 @@ else
                             <kbd>Enter</kbd> play · <kbd>Esc</kbd> clear
                         </span>
                     }
-                </h3>
+                </div>
 
                 <!-- One rack for both states (readonly out of turn): keeping the same DOM
                      subtree across turn flips lets a draw's flight survive the re-render.
                      Enter-only scope: a drawn tile flies in from the pool and deselections
                      fly home, but internal reshuffles display instantly. -->
-                <div class="available-tiles-section">
-                    <div class="available-tiles-header">
-                        <h4>Available tiles</h4>
-                        <div class="rack-sort" role="group" aria-label="Sort tiles by">
-                            <span class="rack-sort-label">Sort by</span>
-                            <button type="button" class="rack-sort-btn @(_rackSort == RackSort.Color ? "active" : "")"
-                                    aria-pressed="@(_rackSort == RackSort.Color)"
-                                    @onclick="() => SetRackSortAsync(RackSort.Color)">Color</button>
-                            <button type="button" class="rack-sort-btn @(_rackSort == RackSort.Value ? "active" : "")"
-                                    aria-pressed="@(_rackSort == RackSort.Value)"
-                                    @onclick="() => SetRackSortAsync(RackSort.Value)">Value</button>
-                        </div>
-                    </div>
-                    <div class="tiles-container @(CanAct ? "" : "readonly")"
-                         data-anim-scope="rack" data-anim-enter-only data-anim-enter-from="pool">
-                        @foreach (var tileGroup in GetGroupedTiles())
-                        {
-                            var tileType = tileGroup.Key;
-                            var totalCount = tileGroup.Count();
-                            var selectedCount = GetSelectedCountForTile(tileType);
-                            var remainingCount = totalCount - selectedCount;
-                            var isFullySelected = remainingCount == 0;
+                <div class="tiles-container @(CanAct ? "" : "readonly")"
+                     data-anim-scope="rack" data-anim-enter-only data-anim-enter-from="pool">
+                    @foreach (var tileGroup in GetGroupedTiles())
+                    {
+                        var tileType = tileGroup.Key;
+                        var totalCount = tileGroup.Count();
+                        var selectedCount = GetSelectedCountForTile(tileType);
+                        var remainingCount = totalCount - selectedCount;
+                        var isFullySelected = remainingCount == 0;
 
-                            <div class="tile-stack @(isFullySelected ? "fully-selected" : "")"
-                                 @onclick="() => OnTileStackClick(tileType)">
-                                @if (remainingCount > 0)
+                        <div class="tile-stack @(isFullySelected ? "fully-selected" : "")"
+                             @onclick="() => OnTileStackClick(tileType)">
+                            @if (remainingCount > 0)
+                            {
+                                for (var i = 0; i < remainingCount; i++)
                                 {
-                                    for (var i = 0; i < remainingCount; i++)
-                                    {
-                                        var stackOffset = i * 3;
-                                        <div class="stacked-tile"
-                                             style="z-index: @(100 - i); transform: translate(@(stackOffset)px, @(-stackOffset)px);">
-                                            <TileComponent Tile="tileType" ShouldHighlight="false"/>
-                                        </div>
-                                    }
-                                    @if (remainingCount > 1)
-                                    {
-                                        <div class="count-indicator">@remainingCount</div>
-                                    }
-                                }
-                                else
-                                {
-                                    <!-- Not measured for animation, so selecting the last copy
-                                         flies to the selection instead of popping there. -->
-                                    <div class="stacked-tile greyed-out" data-anim-ignore>
+                                    var stackOffset = i * 3;
+                                    <div class="stacked-tile"
+                                         style="z-index: @(100 - i); transform: translate(@(stackOffset)px, @(-stackOffset)px);">
                                         <TileComponent Tile="tileType" ShouldHighlight="false"/>
                                     </div>
                                 }
-                            </div>
-                        }
-                    </div>
-                </div>
-
-                <!-- Play zone, BELOW the rack and always rendered at a stable height, so
-                     picking tiles never shifts the rack. Shows only the current selection.
-                     Hint fills that selection on demand; nothing is suggested until then. -->
-                <div class="selected-tiles-section play-zone">
-                    <div class="play-zone-header">
-                        <h4>
-                            Tiles to play@(SelectedTilesForPlay.Any() ? $" ({SelectedTilesForPlay.Count})" : "")
-                        </h4>
-                        @if (CanAct)
-                        {
-                            <button type="button" class="btn-hint @(_hintNoMove ? "no-move" : "")" @onclick="RequestHint"
-                                    disabled="@(HintPending || _hintNoMove || _isLoading)"
-                                    title="@(_hintNoMove ? "Nothing to play — draw a tile." : "Select the best tiles to play")">
-                                @if (HintPending)
+                                @if (remainingCount > 1)
                                 {
-                                    <span class="solver-dot"></span>
-                                    <span>Computing hint…</span>
+                                    <div class="count-indicator">@remainingCount</div>
                                 }
-                                else
-                                {
-                                    <span>Hint</span>
-                                }
-                            </button>
-                        }
-                    </div>
-                    <div class="selected-tiles-display" data-anim-scope="selection">
-                        @if (IsMyTurn && SelectedTilesForPlay.Any())
-                        {
-                            @foreach (var tile in SelectedTilesForPlay)
+                            }
+                            else
                             {
-                                <div class="selected-tile-wrapper"
-                                     @onclick="() => OnSelectedTileClick(tile)">
-                                    <TileComponent Tile="tile" ShouldHighlight="false"/>
+                                <!-- Not measured for animation, so selecting the last copy
+                                     flies to the selection instead of popping there. -->
+                                <div class="stacked-tile greyed-out" data-anim-ignore>
+                                    <TileComponent Tile="tileType" ShouldHighlight="false"/>
                                 </div>
                             }
-                        }
-                        else if (ShowDrawHint)
-                        {
-                            <div class="play-zone-placeholder">
-                                Nothing to play — draw a tile.
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="play-zone-placeholder">
-                                @(IsMyTurn ? "Click your tiles to select them — they land here." : "")
-                            </div>
-                        }
-                    </div>
+                        </div>
+                    }
                 </div>
 
-                <!-- Action buttons: always rendered (Draw disabled out of turn) so the
-                     section height never jumps between turns. -->
+                <!-- Action buttons: always one row of the same height (Draw disabled out of
+                     turn), so the dock never jumps between turns. -->
                 <div class="human-actions-buttons">
                     @if (AwaitingMyConfirmation)
                     {
+                        <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)"
+                                title="Replay the move">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2">
+                                <polyline points="1 4 1 10 7 10"/>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                            </svg>
+                            <span class="btn-label">Replay</span>
+                        </button>
                         <button @onclick="OnConfirmEndTurn" class="btn-play" disabled="@_isLoading">
                             @if (_isLoading)
                             {
@@ -322,7 +332,7 @@ else
                             }
                             else
                             {
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                      stroke-width="2">
                                     <polyline points="9 6 15 12 9 18"/>
                                 </svg>
@@ -332,12 +342,12 @@ else
                     }
                     else if (SelectedTilesForPlay.Any())
                     {
-                        <button @onclick="OnClearSelection" class="btn-clear" disabled="@_isLoading">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        <button @onclick="OnClearSelection" class="btn-clear" disabled="@_isLoading" title="Clear selection">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                  stroke-width="2">
                                 <path d="M18 6L6 18M6 6l12 12"/>
                             </svg>
-                            Clear
+                            <span class="btn-label">Clear</span>
                         </button>
                         <button @onclick="() => OnPlaySelection(autoContinue: false)" class="btn-play-review"
                                 disabled="@_isLoading"
@@ -349,12 +359,12 @@ else
                             }
                             else
                             {
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                      stroke-width="2">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                                     <circle cx="12" cy="12" r="3"/>
                                 </svg>
-                                <span>Play &amp; review</span>
+                                <span class="lbl-full">Play &amp; review</span><span class="lbl-short">Review</span>
                             }
                         </button>
                         <button @onclick="() => OnPlaySelection(autoContinue: true)" class="btn-play"
@@ -367,12 +377,12 @@ else
                             }
                             else
                             {
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                      stroke-width="2">
                                     <circle cx="12" cy="12" r="10"/>
                                     <polygon points="10,8 16,12 10,16 10,8"/>
                                 </svg>
-                                <span>Play &amp; continue</span>
+                                <span class="lbl-full">Play &amp; continue</span><span class="lbl-short">Play</span>
                             }
                         </button>
                     }
@@ -380,11 +390,11 @@ else
                     {
                         <button @onclick="OnDrawTile" class="btn-draw"
                                 disabled="@(!IsMyTurn || _isLoading || _gameState.TilePoolCount == 0)">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                  stroke-width="2">
                                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                             </svg>
-                            Draw (@_gameState.TilePoolCount remaining)
+                            <span>Draw <span class="btn-sub">· @_gameState.TilePoolCount left</span></span>
                         </button>
                     }
                 </div>
@@ -415,70 +425,73 @@ else
 }
 
 <style>
+    /* Layout: a flat page, no card. It is at least a screen tall so the dock sits at the
+       bottom even over an empty table; a crowded table makes the page scroll while the top
+       bar and the dock stay stuck. */
     .game-container {
-        /* No fixed column: on a wide monitor a 1300px card left the table
-           floating in empty space. It fills the area beside the sidebar. */
-        max-width: none;
-        margin: 12px;
-        padding: 16px 20px;
-        font-family: Arial, sans-serif;
-        background: #fff;
-        border-radius: 12px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-        outline: none;
-        transition: box-shadow 0.3s ease;
         display: flex;
         flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 100vh;
+        min-height: 100dvh;
+        font-family: Arial, sans-serif;
+        background: #fff;
+        outline: none;
         box-sizing: border-box;
-    }
-
-    /* Sidebar is beside the page from 641px up, so the card can take the
-       viewport height. Below that the menu stacks on top and the card
-       stays as tall as its content. 1.1rem is .content's top padding. */
-    @@media (min-width: 641px) {
-        .game-container {
-            min-height: calc(100vh - 1.1rem - 24px);
-        }
     }
 
     .game-container:has(.loading-state) {
         justify-content: center;
     }
 
-    .game-container.is-my-turn {
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(33, 150, 243, 0.18);
-    }
-
-    /* Compact header */
-    .game-header {
+    /* Top bar: one line on desktop. Players wrap under it on a phone. */
+    .game-topbar {
+        position: sticky;
+        top: 0;
+        z-index: 40;
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        gap: 12px;
+        gap: 6px 8px;
         flex-wrap: wrap;
-        padding: 6px 4px 14px 4px;
+        padding: 6px 10px;
+        background: rgba(255, 255, 255, 0.96);
+        backdrop-filter: blur(6px);
         border-bottom: 1px solid #eee;
-        margin-bottom: 14px;
     }
 
-    .game-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
+    .home-link {
+        display: inline-flex;
         align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        color: #555;
+        background: #f4f6f8;
+        border: 1px solid #e2e6ea;
+        flex-shrink: 0;
+    }
+
+    .home-link:hover {
+        color: #1565c0;
+        background: #e3f2fd;
+        border-color: #bbdefb;
     }
 
     .meta-chip {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 5px 10px;
-        font-size: 0.82rem;
+        gap: 5px;
+        padding: 0 9px;
+        height: 30px;
+        font-size: 0.8rem;
         color: #555;
         background: #f4f6f8;
         border: 1px solid #e2e6ea;
         border-radius: 999px;
         line-height: 1;
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     .meta-chip svg {
@@ -514,7 +527,7 @@ else
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        margin-left: -6px; /* cancels the chip's flex gap while collapsed */
+        margin-left: -5px; /* cancels the chip's flex gap while collapsed */
         border: none;
         border-radius: 999px;
         background: linear-gradient(135deg, #4caf50, #388e3c);
@@ -557,6 +570,7 @@ else
     }
 
     .game-id {
+        margin-left: auto;
         font-family: monospace;
         font-size: 0.78rem;
         color: #999;
@@ -576,44 +590,40 @@ else
         font-size: 1.1rem;
     }
 
-    /* Players bar */
+    /* Players: pills in the top bar */
     .players-bar {
         display: flex;
-        gap: 12px;
+        gap: 6px;
         flex-wrap: wrap;
-        justify-content: center;
-        padding: 12px;
-        background: linear-gradient(135deg, #f8f9fa, #ffffff);
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-        margin-bottom: 20px;
+        align-items: center;
     }
 
     .player-chip {
         position: relative;
-        display: flex;
+        display: inline-flex;
         align-items: center;
-        gap: 10px;
-        padding: 10px 16px;
-        background: #ffffff;
-        border: 2px solid #e0e0e0;
-        border-radius: 8px;
-        transition: all 0.3s ease;
-        min-width: 140px;
+        gap: 6px;
+        height: 30px;
+        padding: 0 4px 0 10px;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 999px;
+        transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+        max-width: 190px;
     }
 
     .player-chip.current {
         background: linear-gradient(135deg, #e8f5e9, #f1f8f4);
-        border: 2px solid #4caf50;
-        box-shadow: 0 3px 10px rgba(76, 175, 80, 0.2);
+        border-color: #4caf50;
+        box-shadow: 0 2px 6px rgba(76, 175, 80, 0.2);
     }
 
     .active-pulse {
         position: absolute;
-        top: -5px;
-        left: -5px;
-        width: 12px;
-        height: 12px;
+        top: -3px;
+        left: -3px;
+        width: 9px;
+        height: 9px;
         border-radius: 50%;
         background: #4caf50;
         box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.6);
@@ -622,7 +632,7 @@ else
 
     @@keyframes active-ring {
         0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.6); }
-        70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
+        70% { box-shadow: 0 0 0 8px rgba(76, 175, 80, 0); }
         100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
     }
 
@@ -636,30 +646,32 @@ else
     }
 
     .player-chip .player-name {
-        flex: 1;
         font-weight: 600;
         color: #333;
-        font-size: 1rem;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .player-chip .player-name small {
         font-weight: 400;
         color: #999;
-        font-size: 0.8rem;
+        font-size: 0.72rem;
     }
 
     .player-chip .tile-count {
-        display: flex;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 32px;
-        height: 32px;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 6px;
         background: linear-gradient(135deg, #e3f2fd, #bbdefb);
         color: #1565c0;
         font-weight: 700;
-        font-size: 0.95rem;
-        border-radius: 6px;
-        padding: 0 8px;
+        font-size: 0.8rem;
+        border-radius: 999px;
     }
 
     .player-chip.current .tile-count {
@@ -667,61 +679,50 @@ else
         color: #2e7d32;
     }
 
-    /* Game over */
+    /* Game over: one line above the table */
     .game-over {
-        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px 16px;
+        flex-wrap: wrap;
         background: linear-gradient(135deg, #f1f8e9, #fff8e1);
-        border: 2px solid #8bc34a;
-        border-radius: 12px;
-        padding: 24px 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 16px rgba(139, 195, 74, 0.18);
+        border-bottom: 1px solid #c5e1a5;
+        padding: 10px 16px;
     }
 
     .game-over .trophy {
-        font-size: 2.5rem;
+        font-size: 1.6rem;
         line-height: 1;
-        margin-bottom: 6px;
         animation: trophy-bounce 1.6s ease-in-out infinite;
     }
 
     @@keyframes trophy-bounce {
         0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-6px); }
+        50% { transform: translateY(-5px); }
     }
 
     .game-over h2 {
         color: #4caf50;
-        font-size: 1.6rem;
-        margin: 0 0 14px 0;
+        font-size: 1.15rem;
+        margin: 0;
     }
 
     .game-over-actions {
         display: flex;
-        justify-content: center;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
         flex-wrap: wrap;
     }
 
-    /* Smaller than the action buttons: it must not stretch the banner or shift the board. */
-    .turn-banner .btn-replay,
     .game-over .btn-replay {
         flex: none;
         min-width: 0;
     }
 
-    .turn-banner .btn-replay {
-        padding: 6px 12px;
-        font-size: 0.85rem;
-        gap: 6px;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(126, 87, 194, 0.25);
-    }
-
     .btn-back-lobby {
-        padding: 10px 22px;
-        font-size: 0.95rem;
+        padding: 8px 16px;
+        font-size: 0.9rem;
         font-weight: 600;
         color: #fff;
         background: linear-gradient(135deg, #2196f3, #1976d2);
@@ -737,30 +738,27 @@ else
         box-shadow: 0 6px 16px rgba(33, 150, 243, 0.4);
     }
 
-    /* Turn banner */
+    /* Turn banner: a thin strip */
     .turn-banner {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 12px;
+        gap: 6px 12px;
         flex-wrap: wrap;
-        padding: 10px 16px;
-        border-radius: 10px;
-        font-size: 0.95rem;
+        padding: 4px 12px;
+        min-height: 32px;
+        font-size: 0.85rem;
         font-weight: 600;
-        margin-bottom: 14px;
     }
 
     .turn-banner.my-turn {
-        background: linear-gradient(135deg, #e8f5e9, #f1f8f4);
+        background: #eef7ef;
         color: #2e7d32;
-        border: 1px solid #a5d6a7;
     }
 
     .turn-banner.waiting {
         background: #fff8e1;
         color: #ef6c00;
-        border: 1px solid #ffe0b2;
     }
 
     .turn-banner-text {
@@ -768,10 +766,23 @@ else
         align-items: center;
     }
 
+    /* Same control as the review row, shrunk so it never stretches the strip. (Scoped to
+       beat the shared button rule further down.) */
+    .turn-banner .btn-replay-inline {
+        flex: none;
+        min-width: 0;
+        height: 24px;
+        padding: 0 9px;
+        font-size: 0.75rem;
+        gap: 4px;
+        border-radius: 999px;
+        box-shadow: none;
+    }
+
     .dot-pulse {
         display: inline-block;
-        width: 10px;
-        height: 10px;
+        width: 9px;
+        height: 9px;
         border-radius: 50%;
         background: #ff9800;
         animation: solver-pulse 1.4s ease-in-out infinite;
@@ -790,17 +801,14 @@ else
         50% { opacity: 1; transform: scale(1.1); }
     }
 
-    /* Board */
-    /* Taller on top: the first row's lift lane (see SolutionComponent). The last row's
-       margin already spaces the bottom. */
+    /* Board: every spare pixel. Taller on top: the first row's lift lane (see
+       SolutionComponent). The last row's margin already spaces the bottom. */
     .solution-section {
         flex: 1 1 auto;
-        padding: 36px 20px 5px;
-        border: 2px solid #e0e0e0;
-        border-radius: 10px;
+        padding: 36px 8px 0;
         background-color: #f7f7f7;
         text-align: center;
-        min-height: 218px;
+        min-height: 160px;
     }
 
     /* Error */
@@ -808,8 +816,8 @@ else
         background: linear-gradient(135deg, #ffebee, #ffcdd2);
         border: 2px solid #f44336;
         border-radius: 10px;
-        padding: 15px;
-        margin: 15px 0;
+        padding: 10px 14px;
+        margin: 8px 10px;
         display: flex;
         align-items: center;
         gap: 10px;
@@ -841,37 +849,50 @@ else
         }
     }
 
-    /* My rack section */
-    .my-rack-section {
+    /* Hand dock */
+    .hand-dock {
         position: sticky;
-        bottom: 12px;
+        bottom: 0;
         z-index: 50;
-        background: linear-gradient(135deg, #f5f5f5, #fafafa);
-        border: 2px solid #e0e0e0;
-        border-radius: 15px;
-        padding: 16px 20px;
-        margin: 20px 0 0 0;
-        text-align: center;
-        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 6px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+        background: #fafafa;
+        border-top: 2px solid #e0e0e0;
+        box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
     }
 
-    .my-rack-section.active-turn {
-        background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
-        border: 2px solid #2196f3;
-        box-shadow: 0 -4px 20px rgba(33, 150, 243, 0.2);
+    .hand-dock.active-turn {
+        background: linear-gradient(180deg, #eaf4fe, #f6f3fb);
+        border-top-color: #2196f3;
+        box-shadow: 0 -4px 16px rgba(33, 150, 243, 0.18);
     }
 
-    .rack-title {
-        color: #1976d2;
-        margin: 0 0 10px 0;
-        font-size: 1.05rem;
+    /* Toolbar: one line */
+    .rack-toolbar {
         display: flex;
         align-items: center;
-        justify-content: center;
-        gap: 8px;
+        gap: 6px 10px;
+        flex-wrap: wrap;
+        min-height: 26px;
+    }
+
+    .rack-count {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #1976d2;
+        white-space: nowrap;
+    }
+
+    .draw-hint {
+        font-size: 0.8rem;
+        color: #a5aeb6;
+        font-style: italic;
     }
 
     .keyboard-hint {
+        margin-left: auto;
         font-size: 0.72rem;
         color: #888;
         font-weight: 400;
@@ -879,6 +900,7 @@ else
         padding: 2px 8px;
         border-radius: 10px;
         border: 1px solid #e0e0e0;
+        white-space: nowrap;
     }
 
     .keyboard-hint kbd {
@@ -889,6 +911,74 @@ else
         padding: 0 4px;
         font-size: 0.7rem;
         color: #555;
+    }
+
+    .rack-sort {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .rack-sort-label {
+        font-size: 0.75rem;
+        color: #888;
+        margin-right: 2px;
+    }
+
+    .rack-sort-btn {
+        border: 1px solid #c5cae9;
+        background: #fff;
+        color: #3949ab;
+        border-radius: 999px;
+        padding: 2px 9px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1.2;
+        cursor: pointer;
+    }
+
+    .rack-sort-btn:hover {
+        background: #e8eaf6;
+    }
+
+    .rack-sort-btn.active {
+        background: #3949ab;
+        border-color: #3949ab;
+        color: #fff;
+    }
+
+    .btn-hint {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #c5cae9;
+        background: #fff;
+        color: #3949ab;
+        border-radius: 999px;
+        padding: 2px 11px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        line-height: 1.2;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    .btn-hint:hover:not(:disabled) {
+        background: #e8eaf6;
+    }
+
+    .btn-hint:disabled {
+        opacity: 0.7;
+        cursor: progress;
+    }
+
+    /* The hint said there is nothing to play: greyed out until the next turn. */
+    .btn-hint.no-move:disabled {
+        border-color: #e0e0e0;
+        background: #f5f5f5;
+        color: #9e9e9e;
+        opacity: 1;
+        cursor: not-allowed;
     }
 
     /* Spinner */
@@ -920,86 +1010,36 @@ else
         margin: 0 auto;
     }
 
-    /* Play zone (selected tiles / solver hint) — constant height below the rack */
-    .selected-tiles-section {
-        padding: 12px;
-        background-color: #f8f9fa;
-        border: 2px solid #e3f2fd;
+    /* Play zone: only while something is selected */
+    .play-zone {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 6px 8px 4px;
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px dashed #90caf9;
         border-radius: 10px;
-        margin: 10px 0;
     }
 
-    .selected-tiles-section h4 {
-        margin: 0;
-        color: #495057;
-        font-size: 0.95rem;
-        font-weight: 600;
+    .play-zone-label {
+        flex-shrink: 0;
+        padding-top: 4px;
+        width: 64px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        line-height: 1.2;
+        color: #1565c0;
         text-align: left;
     }
 
-    .play-zone-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-bottom: 4px;
-    }
-
-    .btn-hint {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        border: 1px solid #c5cae9;
-        background: #fff;
-        color: #3949ab;
-        border-radius: 999px;
-        padding: 4px 12px;
-        font-size: 0.78rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: background 0.15s ease;
-    }
-
-    .btn-hint:hover:not(:disabled) {
-        background: #e8eaf6;
-    }
-
-    .btn-hint:disabled {
-        opacity: 0.7;
-        cursor: progress;
-    }
-
-    /* The hint said there is nothing to play: greyed out until the next turn. */
-    .btn-hint.no-move:disabled {
-        border-color: #e0e0e0;
-        background: #f5f5f5;
-        color: #9e9e9e;
-        opacity: 1;
-        cursor: not-allowed;
-    }
-
     .selected-tiles-display {
+        flex: 1 1 auto;
         display: flex;
         flex-wrap: wrap;
-        gap: 5px;
-        min-height: 86px; /* one tile row + padding: the zone never collapses or jumps */
-        max-height: 170px;
-        overflow-y: auto;
-        padding: 8px 5px 5px 5px;
+        gap: 6px;
         align-items: flex-start;
         align-content: flex-start;
-    }
-
-    .play-zone-placeholder {
-        width: 100%;
-        min-height: 72px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #a5aeb6;
-        font-size: 0.85rem;
-        font-style: italic;
+        padding-top: 3px; /* room for the hover lift */
     }
 
     .selected-tile-wrapper {
@@ -1013,72 +1053,13 @@ else
         filter: grayscale(70%);
     }
 
-    /* Available tiles */
-    .available-tiles-section {
-        margin: 10px 0;
-    }
-
-    .available-tiles-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin: 0 0 8px 0;
-    }
-
-    .available-tiles-section h4 {
-        margin: 0;
-        color: #495057;
-        font-size: 0.95rem;
-        font-weight: 600;
-        text-align: left;
-    }
-
-    .rack-sort {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-    }
-
-    .rack-sort-label {
-        font-size: 0.78rem;
-        color: #888;
-        margin-right: 2px;
-    }
-
-    .rack-sort-btn {
-        border: 1px solid #c5cae9;
-        background: #fff;
-        color: #3949ab;
-        border-radius: 999px;
-        padding: 3px 10px;
-        font-size: 0.78rem;
-        font-weight: 600;
-        line-height: 1.2;
-        cursor: pointer;
-    }
-
-    .rack-sort-btn:hover {
-        background: #e8eaf6;
-    }
-
-    .rack-sort-btn.active {
-        background: #3949ab;
-        border-color: #3949ab;
-        color: #fff;
-    }
-
+    /* Rack: a bare grid, as many rows as it takes (no inner scroll: a tile flying home from
+       the play zone must not be clipped). Stack copies peek 3px up: hence the top padding. */
     .tiles-container {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-        gap: 8px;
-        padding: 12px;
-        background-color: #f8f9fa;
-        border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        max-height: 220px;
-        overflow-y: auto;
+        grid-template-columns: repeat(auto-fill, minmax(calc(var(--tile-w) + 10px), 1fr));
+        gap: 6px;
+        padding: 4px 0 0;
         align-content: start;
     }
 
@@ -1093,8 +1074,8 @@ else
     .tile-stack {
         position: relative;
         cursor: pointer;
-        min-width: 50px;
-        min-height: 70px;
+        min-width: var(--tile-w);
+        min-height: var(--tile-h);
         display: flex;
         justify-content: center;
         align-items: center;
@@ -1143,34 +1124,46 @@ else
         z-index: 200;
     }
 
-    /* Action buttons */
+    /* Action row: always ONE line of equal-height buttons, so swapping Draw ↔ Clear + Play
+       + Review never changes the row height. */
     .human-actions-buttons {
         display: flex;
-        gap: 16px;
+        gap: 8px;
         justify-content: center;
-        flex-wrap: wrap;
-        margin-top: 12px;
     }
 
     .btn-draw, .btn-play, .btn-clear, .btn-play-review, .btn-replay {
-        display: flex;
+        display: inline-flex;
         align-items: center;
-        gap: 10px;
-        padding: 12px 22px;
-        font-size: 1.05rem;
+        justify-content: center;
+        gap: 7px;
+        height: 40px;
+        padding: 0 16px;
+        font-size: 0.92rem;
         font-weight: 600;
         border: none;
-        border-radius: 10px;
+        border-radius: 9px;
         cursor: pointer;
-        transition: all 0.3s ease;
-        min-width: 150px;
-        justify-content: center;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+        flex: 1 1 0;
+        min-width: 0;
+        max-width: 240px;
+    }
+
+    .btn-draw .btn-sub {
+        font-weight: 400;
+        opacity: 0.85;
+    }
+
+    .lbl-short {
+        display: none;
     }
 
     .btn-draw {
         background: linear-gradient(135deg, #ff9800, #f57c00);
         color: white;
-        box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
+        box-shadow: 0 3px 10px rgba(255, 152, 0, 0.3);
     }
 
     .btn-draw:hover {
@@ -1188,7 +1181,7 @@ else
     .btn-play {
         background: linear-gradient(135deg, #4caf50, #388e3c);
         color: white;
-        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        box-shadow: 0 3px 10px rgba(76, 175, 80, 0.3);
     }
 
     .btn-play:hover {
@@ -1204,9 +1197,10 @@ else
     }
 
     .btn-clear {
+        flex: 0 1 auto;
         background: linear-gradient(135deg, #6c757d, #545b62);
         color: white;
-        box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+        box-shadow: 0 3px 10px rgba(108, 117, 125, 0.3);
     }
 
     .btn-clear:hover {
@@ -1219,7 +1213,7 @@ else
     .btn-play-review {
         background: linear-gradient(135deg, #2196f3, #1976d2);
         color: white;
-        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+        box-shadow: 0 3px 10px rgba(33, 150, 243, 0.3);
     }
 
     .btn-play-review:hover {
@@ -1237,13 +1231,21 @@ else
     .btn-replay {
         background: linear-gradient(135deg, #7e57c2, #5e35b1);
         color: white;
-        box-shadow: 0 4px 12px rgba(126, 87, 194, 0.3);
+        box-shadow: 0 3px 10px rgba(126, 87, 194, 0.3);
+    }
+
+    .human-actions-buttons .btn-replay {
+        flex: 0 1 auto;
     }
 
     .btn-replay:hover {
         background: linear-gradient(135deg, #5e35b1, #512da8);
         transform: translateY(-2px);
         box-shadow: 0 6px 16px rgba(126, 87, 194, 0.4);
+    }
+
+    .turn-banner .btn-replay-inline:hover {
+        transform: none;
     }
 
     .btn-replay:disabled {
@@ -1257,14 +1259,53 @@ else
         transform: translateY(0);
     }
 
-    /* Narrow screens: keep the buttons on ONE row (they fit side by side down to ~330px),
-       so swapping Draw ↔ Clear+Play+Review never changes the row height and never shifts
-       the rack. */
-    @@media (max-width: 768px) {
+    /* Phones: no keyboard, shorter words, icon-only secondary buttons. */
+    @@media (max-width: 640px) {
+        .keyboard-hint,
+        .rack-sort-label {
+            display: none;
+        }
+
+        .game-topbar {
+            gap: 6px;
+            padding: 6px 8px;
+        }
+
+        .player-chip {
+            max-width: 140px;
+        }
+
+        .hand-dock {
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        .play-zone-label {
+            display: none;
+        }
+    }
+
+    @@media (max-width: 480px) {
+        .chip-label,
+        .game-id,
+        .btn-label,
+        .lbl-full,
+        .btn-draw .btn-sub {
+            display: none;
+        }
+
+        .lbl-short {
+            display: inline;
+        }
+
         .btn-draw, .btn-play, .btn-clear, .btn-play-review, .btn-replay {
-            min-width: 100px;
-            flex: 1 1 0;
-            max-width: 240px;
+            padding: 0 12px;
+            font-size: 0.88rem;
+        }
+
+        .btn-clear, .human-actions-buttons .btn-replay {
+            flex: 0 0 44px;
+            padding: 0;
         }
     }
 

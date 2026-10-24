@@ -1,5 +1,4 @@
 @inherits LayoutComponentBase
-@inject IConfiguration Configuration
 
 <div class="page">
     <input type="checkbox" id="sidebar-collapse" class="sidebar-collapse-input" hidden/>
@@ -20,10 +19,7 @@
     </main>
 </div>
 
-@if (!string.IsNullOrWhiteSpace(_testCommit))
-{
-    <div class="test-site-badge" title="@_testCommit">Site de test · @_testCommit</div>
-}
+<TestSiteBadge/>
 
 <div id="blazor-error-ui">
     An unhandled error has occurred.
@@ -31,10 +27,3 @@
     <a class="dismiss">🗙</a>
 </div>
 
-@code {
-    // Posé seulement sur le site de test (TestSite__Commit, deploy/docker-compose.test.yml) :
-    // branche et commit déployés. Absent en production, donc pas de bandeau.
-    private string? _testCommit;
-
-    protected override void OnInitialized() => _testCommit = Configuration["TestSite:Commit"];
-}
