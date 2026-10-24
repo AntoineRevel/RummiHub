@@ -142,7 +142,7 @@ else
             <div class="turn-banner @(IsMyTurn ? "my-turn" : "waiting")">
                 @if (AwaitingMyConfirmation)
                 {
-                    <span class="turn-banner-text">Move played — watch it land, replay it, then pass the turn.</span>
+                    <span class="turn-banner-text">Move played — replay it, then pass the turn.</span>
                 }
                 else if (_gameState.AwaitingConfirmation)
                 {
@@ -425,15 +425,13 @@ else
 }
 
 <style>
-    /* Layout: a flat page, no card. It is at least a screen tall so the dock sits at the
-       bottom even over an empty table; a crowded table makes the page scroll while the top
-       bar and the dock stay stuck. */
+    /* Layout: a flat page, no card. It fills the layout's screen-tall column so the dock
+       sits at the bottom even over an empty table; a crowded table makes the page scroll
+       while the top bar and the dock stay stuck. */
     .game-container {
         display: flex;
         flex-direction: column;
         flex: 1 1 auto;
-        min-height: 100vh;
-        min-height: 100dvh;
         font-family: Arial, sans-serif;
         background: #fff;
         outline: none;
@@ -1278,6 +1276,18 @@ else
         .hand-dock {
             padding-left: 8px;
             padding-right: 8px;
+        }
+
+        .turn-banner {
+            font-size: 0.8rem;
+            padding: 3px 8px;
+            min-height: 28px;
+        }
+
+        /* 8 tiles per row on a 390px phone: a 14-tile rack is two rows. */
+        .tiles-container {
+            grid-template-columns: repeat(auto-fill, minmax(var(--tile-w), 1fr));
+            gap: 4px;
         }
 
         .play-zone-label {

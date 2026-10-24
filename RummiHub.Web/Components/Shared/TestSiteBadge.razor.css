@@ -15,3 +15,18 @@
     text-overflow: ellipsis;
     pointer-events: none;
 }
+
+.test-site-strip {
+    flex: none;
+    height: 16px;
+    line-height: 16px;
+    padding: 0 10px;
+    background: rgba(214, 51, 132, 0.85);
+    color: #fff;
+    font-size: 0.7rem;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
