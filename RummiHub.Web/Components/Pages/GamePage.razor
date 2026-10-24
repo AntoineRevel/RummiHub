@@ -281,9 +281,10 @@ else
                                 for (var i = 0; i < remainingCount; i++)
                                 {
                                     var stackOffset = i * 3;
+                                    <!-- The tile I just drew stays lit on top of its stack. -->
                                     <div class="stacked-tile"
                                          style="z-index: @(100 - i); transform: translate(@(stackOffset)px, @(-stackOffset)px);">
-                                        <TileComponent Tile="tileType" ShouldHighlight="false"/>
+                                        <TileComponent Tile="tileType" ShouldHighlight="@(i == 0 && tileType.Equals(_drawnTile))"/>
                                     </div>
                                 }
                                 @if (remainingCount > 1)
@@ -393,22 +394,6 @@ else
                 </div>
             </div>
         }
-    </div>
-}
-
-<!-- Toast for drawn tile -->
-@if (_showDrawnTileToast && _drawnTile != null)
-{
-    <div class="toast-notification drawn-tile-toast">
-        <div class="toast-header">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
-            <span>Tile drawn!</span>
-        </div>
-        <div class="toast-content">
-            <TileComponent Tile="_drawnTile.Value" ShouldHighlight="false"/>
-        </div>
     </div>
 }
 
@@ -1284,69 +1269,6 @@ else
         .btn-clear, .human-actions-buttons .btn-replay {
             flex: 0 0 44px;
             padding: 0;
-        }
-    }
-
-    /* Toast */
-    .toast-notification {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #4caf50, #66bb6a);
-        color: white;
-        border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(76, 175, 80, 0.4);
-        padding: 16px;
-        min-width: 280px;
-        max-width: 400px;
-        z-index: 9999;
-        animation: slideInToast 0.3s ease-out;
-        border: 2px solid rgba(255, 255, 255, 0.2);
-        backdrop-filter: blur(8px);
-    }
-
-    .toast-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 12px;
-        font-weight: 600;
-        font-size: 14px;
-    }
-
-    .toast-header svg {
-        flex-shrink: 0;
-        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-    }
-
-    .toast-content {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 8px;
-        padding: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    @@keyframes slideInToast {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-
-    @@media (max-width: 768px) {
-        .toast-notification {
-            top: 10px;
-            right: 10px;
-            left: 10px;
-            min-width: auto;
-            max-width: none;
         }
     }
 </style>

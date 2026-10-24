@@ -377,14 +377,14 @@ function move(el, keyframes, { delay = 0, duration, elevate = false, lands = fal
 }
 
 // The hand answers at once: picks fly to the play zone, deselections back to their stack,
-// a drawn tile comes out of the pool.
+// a drawn tile comes out of the pool (and pulses once it lands, being highlighted).
 function playHand(hand) {
     hand.forEach((item, i) => {
         const delay = i * HAND_STAGGER_MS;
         if (item.dx === undefined) {
             const flight = item.origin ? tempo.flightMs : tempo.popMs;
             move(item.tile.el, placeFrames(startOf(item), { flight }),
-                 { delay, duration: flight, elevate: true });
+                 { delay, duration: flight, elevate: true, lands: true });
         } else if (item.tile.from.scope !== item.tile.scope) {
             move(item.tile.el, placeFrames(startOf(item), { flight: tempo.moveMs }),
                  { delay, duration: tempo.moveMs, elevate: true });

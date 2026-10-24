@@ -2,7 +2,7 @@ html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
-/* Tile size, shared by every tile on screen (board, rack, play zone, toast). Phones get
+/* Tile size, shared by every tile on screen (board, rack, play zone). Phones get
    smaller tiles so a 14-tile rack fits in two rows and the table shows more sets. */
 :root {
     --tile-w: 50px;
