@@ -135,16 +135,7 @@
             @if (_gameStarted)
             {
                 <div class="game-started">
-                    <p class="started-text">
-                        @if (_openBlocked)
-                        {
-                            <text>The game has started. Your browser did not open it by itself — open it from here.</text>
-                        }
-                        else
-                        {
-                            <text>The game has started in a new tab.</text>
-                        }
-                    </p>
+                    <p class="started-text">The game has started in a new tab.</p>
                     @* Real links, not a button calling window.open over the circuit: by the time
                        that call reaches the browser the tap no longer counts as a user gesture,
                        and Safari blocks the tab. A link is never blocked. *@
@@ -155,10 +146,7 @@
                         </svg>
                         Open the game
                     </a>
-                    <p class="hint">
-                        Closing the game tab brings you back here.
-                        Cannot open tabs? <a href="@_gameUrl" data-enhance-nav="false">Play in this tab</a>.
-                    </p>
+                    <p class="hint">Closing the game tab brings you back here.</p>
                 </div>
             }
             else if (_isHost)
@@ -170,7 +158,7 @@
                     </svg>
                     Add AI player
                 </button>
-                <button class="btn-start" @onclick="StartGame" disabled="@(_players.Count < 2)">
+                <button class="btn-start" @ref="_startButton" @onclick="StartGame" disabled="@(_players.Count < 2)">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
                         <polygon points="10,8 16,12 10,16 10,8" fill="currentColor" stroke="none"/>
@@ -534,11 +522,6 @@
 
     .game-started a.btn-start {
         text-decoration: none;
-    }
-
-    .game-started .hint a {
-        color: #f57c00;
-        font-weight: 600;
     }
 
     .started-text {

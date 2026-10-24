@@ -19,10 +19,38 @@ export function load(gameId) {
     return sessionStorage.getItem(prefix + gameId);
 }
 
+// Tab opened, still blank, by the host's click on Start, waiting for the game URL.
+let pendingTab = null;
+
+// Safari only lets a page open a tab inside the click itself, and the Start click reaches
+// the server before the game exists. So the click opens a blank tab right away, here in the
+// browser, and openGame points it at the game once the server has started it.
+export function armStart(button) {
+    if (button.dataset.armed) return;
+    button.dataset.armed = "1";
+    button.addEventListener("click", () => {
+        if (!pendingTab || pendingTab.closed)
+            pendingTab = window.open("", "_blank");
+    });
+}
+
+// Start failed: the blank tab has nothing to show.
+export function discardPendingTab() {
+    if (pendingTab && !pendingTab.closed) pendingTab.close();
+    pendingTab = null;
+}
+
 // Opens the game in a new tab; the lobby stays behind, so closing the game brings the
-// player back to it. Returns false when the browser blocked the tab (no user gesture, which
-// Safari requires for every window.open): the lobby then shows links for the player to tap.
+// player back to it. A player who did not click Start has no gesture to open a tab with, and
+// browsers then block it (Safari always does): the game takes over this tab instead, so it
+// opens everywhere without touching any popup setting. Back returns to the lobby.
 export function openGame(url) {
-    const tab = window.open(url, "_blank");
-    return tab !== null;
+    if (pendingTab && !pendingTab.closed) {
+        pendingTab.location.href = url;
+        pendingTab = null;
+        return;
+    }
+    pendingTab = null;
+    if (window.open(url, "_blank") === null)
+        location.assign(url);
 }
