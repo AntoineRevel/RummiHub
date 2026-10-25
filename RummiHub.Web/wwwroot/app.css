@@ -2,6 +2,12 @@ html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
+/* No double-tap zoom: mobile browsers would otherwise hold each tap a moment to see
+   whether a second one follows, which delays every tile pick. Pinch zoom still works. */
+html {
+    touch-action: manipulation;
+}
+
 /* Tile size, shared by every tile on screen (board, rack, play zone). Phones get
    smaller tiles so a 14-tile rack fits in two rows and the table shows more sets. */
 :root {

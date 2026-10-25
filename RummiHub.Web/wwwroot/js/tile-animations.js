@@ -79,6 +79,9 @@ const live = new Set();  // every animation not finished yet, for reset/fast-for
 const mover = new WeakMap(); // element → the animation moving it (at most one at a time)
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
+// iOS Safari only applies :active (the tap feedback on tiles) when a touch listener exists.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 // A resize reflows the whole page; the next render must re-snapshot, not "animate" it.
 window.addEventListener('resize', () => reset());
 
