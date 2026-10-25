@@ -153,9 +153,10 @@ function collect(root) {
         origins[el.dataset.animOrigin] = { x: x + el.offsetWidth / 2, y: y + el.offsetHeight / 2 };
     }
 
-    const tiles = [], sets = [], setIndexOf = new Map();
+    const tiles = [], sets = [], setIndexOf = new Map(), scopes = {};
     for (const scopeEl of root.querySelectorAll('[data-anim-scope]')) {
         const scope = scopeEl.dataset.animScope || 'default';
+        scopes[scope] = { el: scopeEl, h: scopeEl.offsetHeight };
         const enterOnly = scopeEl.hasAttribute('data-anim-enter-only');
         const staged = scopeEl.hasAttribute('data-anim-staged');
         const enterFrom = scopeEl.dataset.animEnterFrom ?? null;
@@ -177,7 +178,7 @@ function collect(root) {
             if (setIndex >= 0) sets[setIndex].tiles.push(tile);
         }
     }
-    return { tiles, sets, origins };
+    return { tiles, sets, origins, scopes };
 }
 
 // Plain-data copy of a snapshot: fresh tile objects (no DOM refs, no matching flags),
@@ -187,7 +188,8 @@ function toPlainData(snap) {
         ({ type, scope, setIndex, x, y, sx, sy }));
     const sets = snap.sets.map(() => ({ tiles: [] }));
     for (const tile of tiles) if (tile.setIndex >= 0) sets[tile.setIndex].tiles.push(tile);
-    return { tiles, sets, origins: { ...snap.origins } };
+    const scopes = Object.fromEntries(Object.entries(snap.scopes ?? {}).map(([k, v]) => [k, { h: v.h }]));
+    return { tiles, sets, origins: { ...snap.origins }, scopes };
 }
 
 function store(snap) {
@@ -383,7 +385,7 @@ function move(el, keyframes, { delay = 0, duration, elevate = false, lands = fal
 // a drawn tile comes out of the pool (and pulses once it lands, being highlighted).
 // A container a tile flew out of closes its gap only once that tile has landed: first the
 // tile leaves, the hole shows, then its neighbours slide in — not the other way round.
-function playHand(hand) {
+function playHand(hand, snap, prev) {
     const departedAt = new Map(); // scope → when its last departing tile lands
     hand.forEach((item, i) => {
         if (item.dx === undefined || item.tile.from.scope === item.tile.scope) return;
@@ -391,6 +393,7 @@ function playHand(hand) {
         const scope = item.tile.from.scope;
         departedAt.set(scope, Math.max(departedAt.get(scope) ?? 0, lands));
     });
+    holdHeights(departedAt, snap, prev);
     hand.forEach((item, i) => {
         const delay = i * HAND_STAGGER_MS;
         if (item.dx === undefined) {
@@ -409,6 +412,27 @@ function playHand(hand) {
             ], { delay: Math.max(delay, closesGap), duration: tempo.moveMs });
         }
     });
+}
+
+// A container a tile left that lost a row keeps its old height until its tiles have closed
+// the gap, then folds down: otherwise the frame would shrink at once, leaving the tiles still
+// waiting to move up sticking out of it. Heights are border-box (Bootstrap's reset).
+function holdHeights(departedAt, snap, prev) {
+    for (const [scope, closesGap] of departedAt) {
+        const now = snap.scopes[scope], before = prev.scopes?.[scope];
+        if (!now || !before || before.h - now.h < 1) continue;
+        mover.get(now.el)?.cancel();
+        const anim = now.el.animate([
+            { minHeight: `${before.h}px`, easing: FLIGHT_EASING },
+            { minHeight: `${now.h}px` },
+        ], { delay: closesGap + tempo.moveMs, duration: tempo.moveMs, fill: 'backwards' });
+        mover.set(now.el, anim);
+        live.add(anim);
+        anim.finished.catch(() => { /* cancelled */ }).finally(() => {
+            live.delete(anim);
+            if (mover.get(now.el) === anim) mover.delete(now.el);
+        });
+    }
 }
 
 // Interval between `count` staggered starts: `step`, squeezed so first to last never
@@ -541,7 +565,7 @@ function run() {
     // Board first: a runaway backlog fast-forwards in tell(), which must not swallow the
     // hand's fresh moves.
     if (tell(story)) replayFrom = prevClean;
-    playHand(hand);
+    playHand(hand, snap, prevClean);
 }
 
 // True once a board story has been played and can be run again — a review, an AI move, a win.
