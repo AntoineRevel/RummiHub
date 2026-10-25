@@ -777,6 +777,18 @@ public partial class GamePage : IAsyncDisposable
         StateHasChanged();
     }
 
+    // Each selected tile with its copy number (0 for the first 7♦, 1 for the second…).
+    private IEnumerable<(Tile Tile, int Copy)> SelectedTilesWithCopy()
+    {
+        var seen = new Dictionary<Tile, int>();
+        foreach (var tile in SelectedTilesForPlay)
+        {
+            var copy = seen.GetValueOrDefault(tile);
+            seen[tile] = copy + 1;
+            yield return (tile, copy);
+        }
+    }
+
     private int GetSelectedCountForTile(Tile tileType) =>
         SelectedTilesForPlay.Count(t => t.Equals(tileType));
 

@@ -204,9 +204,11 @@ else
                     <div class="play-zone">
                         <div class="play-zone-label">To play · @SelectedTilesForPlay.Count</div>
                         <div class="selected-tiles-display" data-anim-scope="selection">
-                            @foreach (var tile in SelectedTilesForPlay)
+                            @* Keyed by copy: removing a tile drops its own wrapper instead of
+                               shifting every later tile's content into its neighbour's. *@
+                            @foreach (var (tile, copy) in SelectedTilesWithCopy())
                             {
-                                <div class="selected-tile-wrapper"
+                                <div class="selected-tile-wrapper" @key="(tile, copy)"
                                      @onclick="() => OnSelectedTileClick(tile)">
                                     <TileComponent Tile="tile" ShouldHighlight="false"/>
                                 </div>

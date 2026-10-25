@@ -1,6 +1,6 @@
 // Tile animations — a whole-page FLIP pass that tells every move as a short, causal story.
 //
-// After every Blazor render, animate() measures every tile inside the [data-anim-scope]
+// Whenever Blazor patches the page, run() measures every tile inside the [data-anim-scope]
 // containers and diffs against the previous render. Matching runs at two levels:
 //   1. Board sets ([data-anim-set]) are paired prev↔next by maximal multiset overlap of
 //      their tile types (mirroring the server's BoardAlignment/BoardPacing); their common
@@ -83,7 +83,7 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 window.addEventListener('resize', () => reset());
 
 // A hidden tab renders no frames: finish everything so nothing replays as a ghost show
-// when the player comes back (renders meanwhile just snapshot, see animate()).
+// when the player comes back (renders meanwhile just snapshot, see run()).
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) fastForward();
 });
@@ -478,9 +478,37 @@ function tell(story) {
 // showing whose turn it is, so an opponent's move plays out before my side changes.
 const boardIdleIn = () => Math.max(0, Math.ceil(boardBusyUntil - performance.now()));
 
+// Runs the FLIP pass right when Blazor patches the DOM: a MutationObserver callback is a
+// microtask, so it runs before the browser paints the new layout. Waiting for the server's
+// after-render call instead costs a network round trip, during which the final layout is
+// already on screen: tiles jump to their new spot, then back to the old one to glide.
+// Our own writes (inline z-index, data-landed) are not watched, so they never re-trigger it.
+let observer = null;
+
+function watch() {
+    observer = new MutationObserver(() => run());
+    observer.observe(document.body, {
+        childList: true, subtree: true, characterData: true,
+        attributes: true, attributeFilter: ['class', 'data-tile-type'],
+    });
+}
+
+// Called by the server after every render: the observer has normally animated that render
+// already; this only catches up on a change it has not delivered yet, then says how long
+// the board keeps moving.
 export function animate() {
+    if (!observer) {
+        watch();
+        run();
+    } else if (observer.takeRecords().length > 0) {
+        run();
+    }
+    return boardIdleIn();
+}
+
+function run() {
     const root = document.querySelector('.game-container');
-    if (!root) { last = null; return 0; }
+    if (!root) { last = null; return; }
 
     const snap = collect(root);
 
@@ -488,7 +516,7 @@ export function animate() {
     // nobody watching: show everything as-is; animations start from the NEXT change.
     if (!last || last.tiles.length === 0 || reducedMotion.matches || document.hidden) {
         store(snap);
-        return boardIdleIn();
+        return;
     }
 
     // Kept clean (matching flags prev) so the board story can be replayed on demand.
@@ -500,7 +528,6 @@ export function animate() {
     // hand's fresh moves.
     if (tell(story)) replayFrom = prevClean;
     playHand(hand);
-    return boardIdleIn();
 }
 
 // True once a board story has been played and can be run again — a review, an AI move, a win.
