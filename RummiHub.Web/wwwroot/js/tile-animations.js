@@ -1,6 +1,6 @@
 // Tile animations — a whole-page FLIP pass that tells every move as a short, causal story.
 //
-// After every Blazor render, animate() measures every tile inside the [data-anim-scope]
+// Whenever Blazor patches the page, run() measures every tile inside the [data-anim-scope]
 // containers and diffs against the previous render. Matching runs at two levels:
 //   1. Board sets ([data-anim-set]) are paired prev↔next by maximal multiset overlap of
 //      their tile types (mirroring the server's BoardAlignment/BoardPacing); their common
@@ -79,11 +79,14 @@ const live = new Set();  // every animation not finished yet, for reset/fast-for
 const mover = new WeakMap(); // element → the animation moving it (at most one at a time)
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
+// iOS Safari only applies :active (the tap feedback on tiles) when a touch listener exists.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 // A resize reflows the whole page; the next render must re-snapshot, not "animate" it.
 window.addEventListener('resize', () => reset());
 
 // A hidden tab renders no frames: finish everything so nothing replays as a ghost show
-// when the player comes back (renders meanwhile just snapshot, see animate()).
+// when the player comes back (renders meanwhile just snapshot, see run()).
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) fastForward();
 });
@@ -150,9 +153,10 @@ function collect(root) {
         origins[el.dataset.animOrigin] = { x: x + el.offsetWidth / 2, y: y + el.offsetHeight / 2 };
     }
 
-    const tiles = [], sets = [], setIndexOf = new Map();
+    const tiles = [], sets = [], setIndexOf = new Map(), scopes = {};
     for (const scopeEl of root.querySelectorAll('[data-anim-scope]')) {
         const scope = scopeEl.dataset.animScope || 'default';
+        scopes[scope] = { el: scopeEl, h: scopeEl.offsetHeight };
         const enterOnly = scopeEl.hasAttribute('data-anim-enter-only');
         const staged = scopeEl.hasAttribute('data-anim-staged');
         const enterFrom = scopeEl.dataset.animEnterFrom ?? null;
@@ -174,7 +178,7 @@ function collect(root) {
             if (setIndex >= 0) sets[setIndex].tiles.push(tile);
         }
     }
-    return { tiles, sets, origins };
+    return { tiles, sets, origins, scopes };
 }
 
 // Plain-data copy of a snapshot: fresh tile objects (no DOM refs, no matching flags),
@@ -184,7 +188,8 @@ function toPlainData(snap) {
         ({ type, scope, setIndex, x, y, sx, sy }));
     const sets = snap.sets.map(() => ({ tiles: [] }));
     for (const tile of tiles) if (tile.setIndex >= 0) sets[tile.setIndex].tiles.push(tile);
-    return { tiles, sets, origins: { ...snap.origins } };
+    const scopes = Object.fromEntries(Object.entries(snap.scopes ?? {}).map(([k, v]) => [k, { h: v.h }]));
+    return { tiles, sets, origins: { ...snap.origins }, scopes };
 }
 
 function store(snap) {
@@ -378,7 +383,17 @@ function move(el, keyframes, { delay = 0, duration, elevate = false, lands = fal
 
 // The hand answers at once: picks fly to the play zone, deselections back to their stack,
 // a drawn tile comes out of the pool (and pulses once it lands, being highlighted).
-function playHand(hand) {
+// A container a tile flew out of closes its gap only once that tile has landed: first the
+// tile leaves, the hole shows, then its neighbours slide in — not the other way round.
+function playHand(hand, snap, prev) {
+    const departedAt = new Map(); // scope → when its last departing tile lands
+    hand.forEach((item, i) => {
+        if (item.dx === undefined || item.tile.from.scope === item.tile.scope) return;
+        const lands = i * HAND_STAGGER_MS + tempo.moveMs;
+        const scope = item.tile.from.scope;
+        departedAt.set(scope, Math.max(departedAt.get(scope) ?? 0, lands));
+    });
+    holdHeights(departedAt, snap, prev);
     hand.forEach((item, i) => {
         const delay = i * HAND_STAGGER_MS;
         if (item.dx === undefined) {
@@ -389,12 +404,35 @@ function playHand(hand) {
             move(item.tile.el, placeFrames(startOf(item), { flight: tempo.moveMs }),
                  { delay, duration: tempo.moveMs, elevate: true });
         } else {
+            // Held on its old spot (fill: backwards) until the gap it closes is empty.
+            const closesGap = departedAt.get(item.tile.scope) ?? 0;
             move(item.tile.el, [
                 { translate: `${item.dx}px ${item.dy}px`, easing: FLIGHT_EASING },
                 { translate: '0px 0px' },
-            ], { delay, duration: tempo.moveMs });
+            ], { delay: Math.max(delay, closesGap), duration: tempo.moveMs });
         }
     });
+}
+
+// A container a tile left that lost a row keeps its old height until its tiles have closed
+// the gap, then folds down: otherwise the frame would shrink at once, leaving the tiles still
+// waiting to move up sticking out of it. Heights are border-box (Bootstrap's reset).
+function holdHeights(departedAt, snap, prev) {
+    for (const [scope, closesGap] of departedAt) {
+        const now = snap.scopes[scope], before = prev.scopes?.[scope];
+        if (!now || !before || before.h - now.h < 1) continue;
+        mover.get(now.el)?.cancel();
+        const anim = now.el.animate([
+            { minHeight: `${before.h}px`, easing: FLIGHT_EASING },
+            { minHeight: `${now.h}px` },
+        ], { delay: closesGap + tempo.moveMs, duration: tempo.moveMs, fill: 'backwards' });
+        mover.set(now.el, anim);
+        live.add(anim);
+        anim.finished.catch(() => { /* cancelled */ }).finally(() => {
+            live.delete(anim);
+            if (mover.get(now.el) === anim) mover.delete(now.el);
+        });
+    }
 }
 
 // Interval between `count` staggered starts: `step`, squeezed so first to last never
@@ -478,9 +516,37 @@ function tell(story) {
 // showing whose turn it is, so an opponent's move plays out before my side changes.
 const boardIdleIn = () => Math.max(0, Math.ceil(boardBusyUntil - performance.now()));
 
+// Runs the FLIP pass right when Blazor patches the DOM: a MutationObserver callback is a
+// microtask, so it runs before the browser paints the new layout. Waiting for the server's
+// after-render call instead costs a network round trip, during which the final layout is
+// already on screen: tiles jump to their new spot, then back to the old one to glide.
+// Our own writes (inline z-index, data-landed) are not watched, so they never re-trigger it.
+let observer = null;
+
+function watch() {
+    observer = new MutationObserver(() => run());
+    observer.observe(document.body, {
+        childList: true, subtree: true, characterData: true,
+        attributes: true, attributeFilter: ['class', 'data-tile-type'],
+    });
+}
+
+// Called by the server after every render: the observer has normally animated that render
+// already; this only catches up on a change it has not delivered yet, then says how long
+// the board keeps moving.
 export function animate() {
+    if (!observer) {
+        watch();
+        run();
+    } else if (observer.takeRecords().length > 0) {
+        run();
+    }
+    return boardIdleIn();
+}
+
+function run() {
     const root = document.querySelector('.game-container');
-    if (!root) { last = null; return 0; }
+    if (!root) { last = null; return; }
 
     const snap = collect(root);
 
@@ -488,7 +554,7 @@ export function animate() {
     // nobody watching: show everything as-is; animations start from the NEXT change.
     if (!last || last.tiles.length === 0 || reducedMotion.matches || document.hidden) {
         store(snap);
-        return boardIdleIn();
+        return;
     }
 
     // Kept clean (matching flags prev) so the board story can be replayed on demand.
@@ -499,8 +565,7 @@ export function animate() {
     // Board first: a runaway backlog fast-forwards in tell(), which must not swallow the
     // hand's fresh moves.
     if (tell(story)) replayFrom = prevClean;
-    playHand(hand);
-    return boardIdleIn();
+    playHand(hand, snap, prevClean);
 }
 
 // True once a board story has been played and can be run again — a review, an AI move, a win.

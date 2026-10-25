@@ -204,9 +204,11 @@ else
                     <div class="play-zone">
                         <div class="play-zone-label">To play · @SelectedTilesForPlay.Count</div>
                         <div class="selected-tiles-display" data-anim-scope="selection">
-                            @foreach (var tile in SelectedTilesForPlay)
+                            @* Keyed by copy: removing a tile drops its own wrapper instead of
+                               shifting every later tile's content into its neighbour's. *@
+                            @foreach (var (tile, copy) in SelectedTilesWithCopy())
                             {
-                                <div class="selected-tile-wrapper"
+                                <div class="selected-tile-wrapper" @key="(tile, copy)"
                                      @onclick="() => OnSelectedTileClick(tile)">
                                     <TileComponent Tile="tile" ShouldHighlight="false"/>
                                 </div>
@@ -1002,7 +1004,14 @@ else
     .selected-tile-wrapper {
         position: relative;
         cursor: pointer;
-        transition: opacity 0.2s ease, filter 0.2s ease;
+        transition: opacity 0.2s ease, filter 0.2s ease, transform 0.08s ease;
+    }
+
+    /* Instant feedback under the finger: the tap still makes a round trip to the server
+       before the tile moves, so the tile answers the touch itself meanwhile. */
+    .selected-tile-wrapper:active,
+    .tiles-container:not(.readonly) .tile-stack:active {
+        transform: scale(0.9);
     }
 
     /* Mouse only: a touch screen keeps :hover on the last tapped spot, and Blazor reuses
@@ -1035,6 +1044,7 @@ else
     .tile-stack {
         position: relative;
         cursor: pointer;
+        transition: transform 0.08s ease;
         min-width: var(--tile-w);
         min-height: var(--tile-h);
         display: flex;
