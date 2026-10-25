@@ -1005,9 +1005,13 @@ else
         transition: opacity 0.2s ease, filter 0.2s ease;
     }
 
-    .selected-tile-wrapper:hover {
-        opacity: 0.5;
-        filter: grayscale(70%);
+    /* Mouse only: a touch screen keeps :hover on the last tapped spot, and Blazor reuses
+       that wrapper for the next tile once the tapped one leaves, which then looks greyed. */
+    @@media (hover: hover) {
+        .selected-tile-wrapper:hover {
+            opacity: 0.5;
+            filter: grayscale(70%);
+        }
     }
 
     /* Rack: a bare grid, as many rows as it takes (no inner scroll: a tile flying home from
@@ -1045,8 +1049,10 @@ else
         transition: transform 0.2s ease;
     }
 
-    .tile-stack:hover .stacked-tile {
-        transform: translate(0, 0) !important;
+    @@media (hover: hover) {
+        .tile-stack:hover .stacked-tile {
+            transform: translate(0, 0) !important;
+        }
     }
 
     .tile-stack.fully-selected {
@@ -1054,8 +1060,10 @@ else
         cursor: pointer;
     }
 
-    .tile-stack.fully-selected:hover {
-        opacity: 0.7;
+    @@media (hover: hover) {
+        .tile-stack.fully-selected:hover {
+            opacity: 0.7;
+        }
     }
 
     .stacked-tile.greyed-out {
