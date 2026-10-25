@@ -378,7 +378,16 @@ function move(el, keyframes, { delay = 0, duration, elevate = false, lands = fal
 
 // The hand answers at once: picks fly to the play zone, deselections back to their stack,
 // a drawn tile comes out of the pool (and pulses once it lands, being highlighted).
+// A container a tile flew out of closes its gap only once that tile has landed: first the
+// tile leaves, the hole shows, then its neighbours slide in — not the other way round.
 function playHand(hand) {
+    const departedAt = new Map(); // scope → when its last departing tile lands
+    hand.forEach((item, i) => {
+        if (item.dx === undefined || item.tile.from.scope === item.tile.scope) return;
+        const lands = i * HAND_STAGGER_MS + tempo.moveMs;
+        const scope = item.tile.from.scope;
+        departedAt.set(scope, Math.max(departedAt.get(scope) ?? 0, lands));
+    });
     hand.forEach((item, i) => {
         const delay = i * HAND_STAGGER_MS;
         if (item.dx === undefined) {
@@ -389,10 +398,12 @@ function playHand(hand) {
             move(item.tile.el, placeFrames(startOf(item), { flight: tempo.moveMs }),
                  { delay, duration: tempo.moveMs, elevate: true });
         } else {
+            // Held on its old spot (fill: backwards) until the gap it closes is empty.
+            const closesGap = departedAt.get(item.tile.scope) ?? 0;
             move(item.tile.el, [
                 { translate: `${item.dx}px ${item.dy}px`, easing: FLIGHT_EASING },
                 { translate: '0px 0px' },
-            ], { delay, duration: tempo.moveMs });
+            ], { delay: Math.max(delay, closesGap), duration: tempo.moveMs });
         }
     });
 }
