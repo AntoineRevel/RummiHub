@@ -1,0 +1,29 @@
+# Mises à jour proposées en PR chaque semaine. Les correctifs de sécurité
+# (alertes Dependabot) arrivent en plus, dès leur publication.
+# Les PR de Dependabot passent les tests mais ne vont pas sur le site de test :
+# GitHub ne leur donne pas les secrets de déploiement (pr.yml, job test-site).
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      # Aspire et .NET bougent ensemble : une PR pour toutes leurs mises à jour.
+      dotnet:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Images épinglées de deploy/docker-compose.yml (caddy, redis, aspire-dashboard).
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

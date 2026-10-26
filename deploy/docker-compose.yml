@@ -21,8 +21,17 @@ x-dotnet-env: &dotnet-env
 
 services:
   caddy:
-    image: caddy:2-alpine
+    # Version épinglée : une mise à jour est un commit visible (Dependabot la propose).
+    image: caddy:2.11.7-alpine
     restart: unless-stopped
+    # Tourne en root (image officielle) : on ne lui laisse que l'ouverture des ports
+    # 80/443, et aucun gain de privilèges (setuid, capacités de fichier).
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
     logging: *logging
     depends_on:
       webfrontend:
@@ -196,7 +205,7 @@ services:
   # et n'accepte que les envois qui portent OTLP_API_KEY.
   # Aucun service n'en dépend : arrêté ou absent, l'export échoue en silence.
   aspire-dashboard:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.1
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.2
     restart: unless-stopped
     logging: *logging
     # Interface : connexion par jeton, tiré au démarrage et écrit dans le journal du

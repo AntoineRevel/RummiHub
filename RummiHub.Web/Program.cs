@@ -9,6 +9,9 @@ using RummiHub.Web.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// No "Server: Kestrel" header: it only tells a scanner what runs behind Caddy.
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
+
 // Set by deploy/docker-compose.yml. Caddy is the only public listener and terminates TLS.
 var trustForwardedHeaders = string.Equals(
     builder.Configuration["ASPNETCORE_FORWARDEDHEADERS_ENABLED"],
@@ -48,6 +51,10 @@ if (string.IsNullOrEmpty(solverKey) && !builder.Environment.IsDevelopment())
 builder.AddServiceDefaults();
 
 builder.AddRedisClient("cache");
+
+// Secure flag whenever the request is HTTPS (behind Caddy too, once forwarded headers
+// have set the scheme). Plain-HTTP local runs keep a cookie the browser sends back.
+builder.Services.AddAntiforgery(options => options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

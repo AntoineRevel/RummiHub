@@ -30,16 +30,18 @@ jobs:
         run: |
           echo 'Refused: pick a branch in "Use workflow from", not a tag.' >&2
           exit 1
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
       - run: dotnet test RummiHub.slnx
 
   test-site:
     needs: test
-    # Les PR venues d'un fork n'ont pas les secrets.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    # Les PR venues d'un fork, comme celles de Dependabot, n'ont pas les secrets.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     # Un déploiement de test à la fois ; celui en cours n'est jamais annulé.
@@ -51,7 +53,7 @@ jobs:
       # pointe de la branche, que le VPS peut récupérer et que le bandeau nomme.
       SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SHA }}
           fetch-depth: 0
