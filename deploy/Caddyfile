@@ -3,7 +3,23 @@
 	admin off
 }
 
+# En-têtes de sécurité, posés sur chaque site. « defer » : appliqués après la réponse
+# du webfrontend, pour remplacer son HSTS (30 j) et retirer son Server: Kestrel.
+# includeSubDomains : www et test sont aussi en HTTPS seulement.
+(securite) {
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		-Server
+		-Via
+	}
+}
+
 {$DOMAIN} {
+	import securite
 	encode gzip
 	# Nom du conteneur, pas « webfrontend » : sur le réseau rummihub-edge, Docker donne
 	# aussi ce nom de service au webfrontend du site de test, et Caddy y envoyait alors
@@ -18,6 +34,7 @@
 }
 
 www.{$DOMAIN} {
+	import securite
 	redir https://{$DOMAIN}{uri} permanent
 }
 
@@ -26,6 +43,7 @@ www.{$DOMAIN} {
 # refaite toutes les 5 s : un déploiement de test ne recharge pas ce Caddy, et
 # une pile de test arrêtée ne casse pas les autres sites (502 sur ce nom seul).
 test.{$DOMAIN} {
+	import securite
 	encode gzip
 	header X-Robots-Tag "noindex, nofollow"
 	reverse_proxy {
