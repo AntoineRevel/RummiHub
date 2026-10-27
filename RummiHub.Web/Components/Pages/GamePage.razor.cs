@@ -37,6 +37,7 @@ public partial class GamePage : IAsyncDisposable
     /// <summary>The asked-for hint has no tiles. Shown only while the play zone is empty.</summary>
     private bool _hintNoMove;
     private bool _seedSaved;
+    private bool _seedCopied;
     private bool _loadingAutoContinue;
     private string? _seatToken;
     private bool _hubStartRequested;
@@ -665,6 +666,10 @@ public partial class GamePage : IAsyncDisposable
     /// <summary>Saved from this tab, or by anyone at the table (the list is shared).</summary>
     private bool SeedSaved => _seedSaved || _gameState is { SeedSaved: true };
 
+    private string SeedChipTitle =>
+        _gameState?.DistributionSeed
+        ?? "A seed is 64 hexadecimal characters (32 bytes) and deals the same tiles. The game code only joins this room. This seed is shown here, and on the lobby list, when the game ends.";
+
     private async Task OnSaveSeed()
     {
         if (_hubConnection is null || SeedSaved) return;
@@ -686,6 +691,7 @@ public partial class GamePage : IAsyncDisposable
         try
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", seed);
+            _seedCopied = true;
         }
         catch (Exception ex)
         {

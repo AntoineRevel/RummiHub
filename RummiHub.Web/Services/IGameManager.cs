@@ -6,7 +6,8 @@ public interface IGameManager
 {
     /// <summary>
     /// Creates a game dealt from <paramref name="distributionSeed"/>, or from a fresh random seed
-    /// when empty. Throws <see cref="ArgumentException"/> (message for the player) on a malformed seed.
+    /// when empty. Throws <see cref="ArgumentException"/> (message for the player) on a malformed
+    /// seed, and when an 8-character value is a game code of a room still held by this server.
     /// </summary>
     Game CreateGame(string playerName, string connectionId, string? distributionSeed = null);
 

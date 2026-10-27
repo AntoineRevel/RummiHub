@@ -144,7 +144,9 @@ public sealed class SeedStoreTests : IDisposable
     [Theory]
     [InlineData(" AAAA aaaa ", "aaaaaaaa")]
     [InlineData("15E005A3", "15e005a3")]
-    public void TryNormalize_DropsWhitespace_AndLowercases(string input, string expected)
+    [InlineData("15e0-05a3", "15e005a3")]
+    [InlineData("15e0–05a3", "15e005a3")]
+    public void TryNormalize_DropsWhitespaceDashes_AndLowercases(string input, string expected)
     {
         DistributionSeeds.TryNormalize(input, out var seed, out var error).Should().BeTrue();
         seed.Should().Be(expected);
@@ -164,5 +166,24 @@ public sealed class SeedStoreTests : IDisposable
     {
         DistributionSeeds.TryNormalize("ggggggggg", out _, out var error).Should().BeFalse();
         error.Should().Contain("0-9");
+    }
+
+    [Fact]
+    public void TryNormalize_AGroupedSixtyFour_IsTheSameSeed()
+    {
+        var grouped = string.Join("-", Enumerable.Range(0, 8).Select(i => SeedA.Substring(i * 8, 8)));
+
+        DistributionSeeds.TryNormalize(grouped.ToUpperInvariant(), out var seed, out var error).Should().BeTrue();
+        seed.Should().Be(SeedA);
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void Abbreviate_FitsInsideACard_AndKeepsALegacySeedWhole()
+    {
+        DistributionSeeds.Abbreviate("15e005a3").Should().Be("15e005a3");
+        DistributionSeeds.Abbreviate(SeedA).Should().Be($"{SeedA[..8]}…{SeedA[^4..]}");
+        DistributionSeeds.Describe(SeedA).Should().Contain("32 bytes");
+        DistributionSeeds.GameCodePastedMessage("e4fc4fab").Should().Contain("game code").And.Contain("64");
     }
 }

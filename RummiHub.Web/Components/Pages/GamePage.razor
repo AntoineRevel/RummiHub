@@ -80,13 +80,14 @@ else
 
             @* The seed can be saved at any time, but the server sends its value only at game
                over (it rebuilds every rack), and the lobby lists it only then too. *@
-            <span class="meta-chip seed-chip"
-                  title="@(_gameState.DistributionSeed is { } fullSeed ? $"Seed: {fullSeed}" : "This game's seed: saved to the lobby list, shown there when the game ends")">
+            <span class="meta-chip seed-chip" title="@SeedChipTitle">
                 <span class="chip-label">Seed</span>
                 @if (_gameState.DistributionSeed is { } seed)
                 {
-                    <button type="button" class="seed-value" title="Copy the seed (@seed.Length characters)" @onclick="OnCopySeed">
-                        @DistributionSeeds.Abbreviate(seed)
+                    <span class="seed-abbr" title="@seed">@DistributionSeeds.Abbreviate(seed)</span>
+                    <span class="chip-label" title="@DistributionSeeds.Describe(seed)">@DistributionSeeds.SizeLabel(seed)</span>
+                    <button type="button" class="seed-copy" title="@seed" @onclick="OnCopySeed">
+                        @(_seedCopied ? "Copied" : "Copy")
                     </button>
                 }
                 <button type="button"
@@ -119,6 +120,17 @@ else
             <div class="game-over">
                 <span class="trophy" aria-hidden="true">🏆</span>
                 <h2>@_gameState.WinnerName won the game!</h2>
+                @if (_gameState.DistributionSeed is { } overSeed)
+                {
+                    <p class="game-over-seed">
+                        <span class="seed-abbr" title="@overSeed">@DistributionSeeds.Abbreviate(overSeed)</span>
+                        <span title="@DistributionSeeds.Describe(overSeed)">@DistributionSeeds.SizeLabel(overSeed)</span>
+                        <button type="button" class="seed-copy" title="@overSeed" @onclick="OnCopySeed">
+                            @(_seedCopied ? "Copied" : "Copy")
+                        </button>
+                        <span class="seed-note">The same seed deals the same tiles. The game code only joins a room.</span>
+                    </p>
+                }
                 <div class="game-over-actions">
                     <button @onclick="OnReplayAnimation" class="btn-replay" disabled="@(!_canReplay || _isLoading)"
                             title="Replay the winning move">
@@ -481,15 +493,48 @@ else
         position: relative;
     }
 
-    .seed-chip .seed-value {
-        padding: 0;
-        border: none;
-        background: none;
-        color: #555;
+    .seed-chip .seed-abbr {
         font-family: monospace;
-        font-size: inherit;
         font-weight: 700;
-        cursor: copy;
+        color: #555;
+        max-width: 9rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .seed-chip .seed-copy,
+    .game-over-seed .seed-copy {
+        padding: 2px 8px;
+        border: 1px solid #c5d0da;
+        border-radius: 999px;
+        background: #fff;
+        color: #1565c0;
+        font-size: 0.72rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .game-over-seed {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 6px 8px;
+        margin: 0 0 12px;
+        color: #555;
+        font-size: 0.85rem;
+    }
+
+    .game-over-seed .seed-abbr {
+        font-family: monospace;
+        font-weight: 700;
+        color: #1565c0;
+    }
+
+    .game-over-seed .seed-note {
+        flex-basis: 100%;
+        color: #888;
+        font-size: 0.78rem;
     }
 
     /* Always shown: a phone has no hover to reveal it. */

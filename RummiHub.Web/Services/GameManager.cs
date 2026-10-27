@@ -80,8 +80,9 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
     /// <summary>
     /// Empty means "deal from a fresh CSPRNG seed". Anything else must be a well-formed seed
     /// (<see cref="DistributionSeeds.TryNormalize"/>), picked from the list or pasted.
+    /// An 8-character value that is a room still held here is a game code, not a seed.
     /// </summary>
-    private static string ResolveDistributionSeed(string? requested, out bool chosen)
+    private string ResolveDistributionSeed(string? requested, out bool chosen)
     {
         chosen = !string.IsNullOrWhiteSpace(requested);
         if (!chosen)
@@ -89,6 +90,9 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
         if (!DistributionSeeds.TryNormalize(requested, out var seed, out var error))
             throw new ArgumentException(error);
+
+        if (seed.Length == DistributionSeeds.LegacyLength && _games.ContainsKey(seed))
+            throw new ArgumentException(DistributionSeeds.GameCodePastedMessage(seed));
 
         return seed;
     }
