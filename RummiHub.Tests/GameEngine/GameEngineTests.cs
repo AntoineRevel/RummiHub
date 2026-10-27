@@ -58,7 +58,7 @@ public class GameEngineTests
         var engine = new GameEngine();
         var names = Enumerable.Range(1, 8).Select(i => $"P{i}").ToList();
 
-        var act = () => engine.Initialize(names, "audit-seed");
+        var act = () => engine.Initialize(names, TestSeeds.Of("audit-seed"));
 
         act.Should().Throw<ArgumentOutOfRangeException>();
         engine.Players.Should().BeEmpty();
@@ -68,8 +68,8 @@ public class GameEngineTests
     [Fact]
     public void Initialize_WithSameSeed_IsDeterministic()
     {
-        var engine1 = CreateEngine(seed: "test-seed");
-        var engine2 = CreateEngine(seed: "test-seed");
+        var engine1 = CreateEngine(seed: TestSeeds.Of("test-seed"));
+        var engine2 = CreateEngine(seed: TestSeeds.Of("test-seed"));
 
         var rack1 = engine1.Players[0].Rack.GetAllTilesIncludingJokers().ToList();
         var rack2 = engine2.Players[0].Rack.GetAllTilesIncludingJokers().ToList();
@@ -80,10 +80,10 @@ public class GameEngineTests
     [Fact]
     public void Initialize_ClearsStateOnReinit()
     {
-        var engine = CreateEngine(seed: "seed-a");
+        var engine = CreateEngine(seed: TestSeeds.Of("seed-a"));
         var rack1 = engine.Players[0].Rack.GetAllTilesIncludingJokers().ToList();
 
-        engine.Initialize(["Alice", "Bob"], "seed-b");
+        engine.Initialize(["Alice", "Bob"], TestSeeds.Of("seed-b"));
         var rack2 = engine.Players[0].Rack.GetAllTilesIncludingJokers().ToList();
 
         rack1.Should().NotBeEquivalentTo(rack2, o => o.WithStrictOrdering());
@@ -105,7 +105,7 @@ public class GameEngineTests
     {
         var engine = new GameEngine();
 
-        engine.Initialize(["Human", "Bot"], "seed", autoPlayers: [false, true]);
+        engine.Initialize(["Human", "Bot"], TestSeeds.Of("seed"), autoPlayers: [false, true]);
 
         engine.Players[0].IsAuto.Should().BeFalse();
         engine.Players[1].IsAuto.Should().BeTrue();
@@ -123,7 +123,7 @@ public class GameEngineTests
     public void SolveRequests_NameTheGameTurnAndSeat()
     {
         var engine = new GameEngine { GameId = "f40b52ef" };
-        engine.Initialize(["Alice", "Bob"], "seed");
+        engine.Initialize(["Alice", "Bob"], TestSeeds.Of("seed"));
         engine.AdvanceToNextPlayer();
 
         engine.BuildSolveRequest().RequestId.Should().Be("game-f40b52ef-t0-p1");
@@ -200,7 +200,7 @@ public class GameEngineTests
     [Fact]
     public void ApplySolveResult_RemovesTilesFromRack()
     {
-        var engine = CreateEngine(seed: "stable");
+        var engine = CreateEngine(seed: TestSeeds.Of("stable"));
         var player = engine.CurrentPlayer;
         var playedTile = player.Rack.Tiles[0];
         var rackBefore = player.Rack.Tiles.Count;
@@ -225,7 +225,7 @@ public class GameEngineTests
     [Fact]
     public void ApplySolveResult_FirstPlay_SetsHasPlayedTrue()
     {
-        var engine = CreateEngine(seed: "stable");
+        var engine = CreateEngine(seed: TestSeeds.Of("stable"));
         var player = engine.CurrentPlayer;
         player.HasPlayed.Should().BeFalse();
 
@@ -246,7 +246,7 @@ public class GameEngineTests
     [Fact]
     public void ApplySolveResult_FirstPlay_MergesWithExistingBoard()
     {
-        var engine = CreateEngine(seed: "stable");
+        var engine = CreateEngine(seed: TestSeeds.Of("stable"));
         var existing = new ValidSet([new Tile(1, TileColor.Blue), new Tile(2, TileColor.Blue), new Tile(3, TileColor.Blue)]);
         engine.Board.Sets.Add(existing);
 
@@ -269,7 +269,7 @@ public class GameEngineTests
     [Fact]
     public void ApplySolveResult_EmptyRack_SetsIsGameOver()
     {
-        var engine = CreateEngine(seed: "stable");
+        var engine = CreateEngine(seed: TestSeeds.Of("stable"));
         var player = engine.CurrentPlayer;
 
         // Empty the rack manually (tiles then jokers)

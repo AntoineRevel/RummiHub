@@ -72,7 +72,7 @@ public sealed partial class FileSeedStore : ISeedStore
 
     public void Add(string seed, DateTimeOffset? hiddenUntil = null)
     {
-        if (!DistributionSeeds.IsGenerated(seed))
+        if (!DistributionSeeds.IsValid(seed))
             return;
 
         Change(seeds =>
@@ -115,7 +115,7 @@ public sealed partial class FileSeedStore : ISeedStore
         var file = JsonSerializer.Deserialize<SeedFile>(File.ReadAllText(_path), JsonOptions);
         // The test site runs any branch and writes here too: keep only well-formed entries.
         return (file?.Seeds ?? [])
-            .Where(s => s is not null && DistributionSeeds.IsGenerated(s.Seed))
+            .Where(s => s is not null && DistributionSeeds.IsValid(s.Seed))
             .DistinctBy(s => s.Seed)
             .OrderByDescending(s => s.AddedAt)
             .ToList();

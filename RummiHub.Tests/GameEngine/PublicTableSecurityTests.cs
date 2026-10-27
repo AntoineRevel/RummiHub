@@ -144,7 +144,7 @@ public class PublicTableSecurityTests
     public void GeneratedSeed_ReplaysTheSameDeal()
     {
         var seed = DistributionSeeds.Create();
-        DistributionSeeds.IsGenerated(seed).Should().BeTrue();
+        DistributionSeeds.IsValid(seed).Should().BeTrue();
 
         var first = new GameEngine();
         var second = new GameEngine();
@@ -155,18 +155,30 @@ public class PublicTableSecurityTests
     }
 
     [Fact]
-    public void ConfiguredSeed_KeepsTheDealItWasSavedWith()
+    public void ASavedSeed_AlwaysDealsTheSameTiles()
     {
-        DistributionSeeds.IsGenerated("15e005a3").Should().BeFalse();
-
+        // Pinned: changing the shuffle would change the game every saved seed replays.
         var engine = new GameEngine();
-        engine.Initialize(["Alice", "Bob"], "15e005a3");
+        engine.Initialize(["Alice", "Bob"], TestSeeds.Of("pinned"));
 
         string.Join(", ", engine.Players[0].Rack.GetAllTilesIncludingJokers()).Should().Be(
-            "Mango 12, Blue 13, Red 9, Blue 13, Red 8, Black 2, Blue 12, Mango 12, Mango 3, " +
-            "Black 6, Black 9, Mango 4, Black 11, Red 9");
+            "Red 8, Black 8, Mango 6, Blue 1, Red 2, Black 7, Mango 10, Blue 4, Blue 8, Blue 12, " +
+            "Mango 2, Red 6, Mango 1, Blue 1");
         string.Join(", ", Enumerable.Range(0, 5).Select(_ => engine.DrawTile())).Should().Be(
-            "Mango 5, Red 10, Black 8, Mango 10, Black 4");
+            "Blue 7, Blue 3, Blue 10, Red 13, Blue 9");
+    }
+
+    [Theory]
+    [InlineData("15e005a3")]
+    [InlineData("audit-seed")]
+    public void Initialize_RefusesASeedThatIsNot64Hex(string seed)
+    {
+        var engine = new GameEngine();
+
+        var act = () => engine.Initialize(["Alice", "Bob"], seed);
+
+        act.Should().Throw<ArgumentException>();
+        engine.Players.Should().BeEmpty();
     }
 
     [Theory]
@@ -174,9 +186,9 @@ public class PublicTableSecurityTests
     [InlineData("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789")]
     [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde")]
     [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg")]
-    public void IsGenerated_RejectsOtherShapes(string seed)
+    public void IsValid_RejectsOtherShapes(string seed)
     {
-        DistributionSeeds.IsGenerated(seed).Should().BeFalse();
+        DistributionSeeds.IsValid(seed).Should().BeFalse();
     }
 
     [Fact]

@@ -16,11 +16,8 @@ public static class DistributionSeeds
     public static string Create() =>
         Convert.ToHexString(RandomNumberGenerator.GetBytes(EntropyBytes)).ToLowerInvariant();
 
-    /// <summary>
-    /// True for the shape <see cref="Create"/> produces (64 lowercase hex characters). Such a
-    /// seed is dealt from its full 256 bits.
-    /// </summary>
-    public static bool IsGenerated(string? seed) => seed is { Length: Length } && IsLowerHex(seed);
+    /// <summary>True for the shape <see cref="Create"/> produces: 64 lowercase hex characters.</summary>
+    public static bool IsValid(string? seed) => seed is { Length: Length } && IsLowerHex(seed);
 
     /// <summary>
     /// Reads a typed or pasted seed. Spaces and dashes (a seed copied in groups) are dropped
