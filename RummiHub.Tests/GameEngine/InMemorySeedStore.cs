@@ -9,21 +9,9 @@ internal sealed class InMemorySeedStore : ISeedStore
 
     public IReadOnlyList<SavedSeed> GetAll() => Seeds.ToList();
 
-    public void Add(string seed, DateTimeOffset? hiddenUntil = null)
+    public void Add(string seed)
     {
-        var old = Seeds.FirstOrDefault(s => s.Seed == seed);
-        if (old is not null)
-        {
-            Seeds.Remove(old);
-            if (old.HiddenUntil is null) hiddenUntil = null;
-        }
-
-        Seeds.Insert(0, new SavedSeed(seed, DateTimeOffset.UtcNow, hiddenUntil));
-    }
-
-    public void Reveal(string seed)
-    {
-        var i = Seeds.FindIndex(s => s.Seed == seed);
-        if (i >= 0) Seeds[i] = Seeds[i] with { HiddenUntil = null };
+        Seeds.RemoveAll(s => s.Seed == seed);
+        Seeds.Insert(0, new SavedSeed(seed, DateTimeOffset.UtcNow));
     }
 }

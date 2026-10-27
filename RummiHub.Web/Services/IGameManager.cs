@@ -16,17 +16,11 @@ public interface IGameManager
     /// </summary>
     Player? AddAiPlayer(string gameId);
 
-    /// <summary>The lobby seed list, most recently added first, without the hidden ones.</summary>
+    /// <summary>The lobby seed list, most recently added first.</summary>
     IReadOnlyList<SavedSeed> GetSeedList();
 
-    /// <summary>
-    /// Adds the game's seed to the lobby list, at any time. While the game runs the seed stays
-    /// off the lobby (it rebuilds every rack) until <see cref="RevealSeed"/>.
-    /// </summary>
+    /// <summary>Adds the game's seed to the lobby list, at any time; it shows there at once.</summary>
     void SaveSeed(Game game);
-
-    /// <summary>Shows on the lobby a seed this game hid: called when the game ends or is removed.</summary>
-    void RevealSeed(Game game);
 
     Game? GetGame(string gameId);
 

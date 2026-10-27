@@ -74,7 +74,7 @@ public class GameManagerTests
     }
 
     [Fact]
-    public void CreateGame_WithAPastedSeed_AddsItToTheList_HiddenUntilTheGameEnds()
+    public void CreateGame_WithAPastedSeed_AddsItToTheList()
     {
         var store = new InMemorySeedStore();
         var manager = CreateManager(store);
@@ -83,11 +83,6 @@ public class GameManagerTests
 
         game.DistributionSeed.Should().Be(SeedA);
         game.SeedSaved.Should().BeTrue();
-        store.Seeds.Should().ContainSingle(s => s.Seed == SeedA && s.HiddenUntil != null);
-        manager.GetSeedList().Should().BeEmpty();
-
-        manager.RevealSeed(game);
-
         manager.GetSeedList().Select(s => s.Seed).Should().Equal(SeedA);
     }
 
@@ -133,7 +128,7 @@ public class GameManagerTests
     }
 
     [Fact]
-    public void SaveSeed_DuringPlay_HidesItFromTheLobby_UntilTheGameIsRemoved()
+    public void SaveSeed_DuringPlay_ListsItAtOnce()
     {
         var store = new InMemorySeedStore();
         var manager = CreateManager(store);
@@ -145,21 +140,6 @@ public class GameManagerTests
         manager.SaveSeed(game);
 
         game.SeedSaved.Should().BeTrue();
-        store.Seeds.Should().ContainSingle(s => s.Seed == game.DistributionSeed && s.HiddenUntil != null);
-        manager.GetSeedList().Should().BeEmpty();
-
-        manager.RevealSeed(game);
-
         manager.GetSeedList().Select(s => s.Seed).Should().Equal(game.DistributionSeed);
-    }
-
-    [Fact]
-    public void GetSeedList_ShowsAHiddenSeedOnceItsDelayHasPassed()
-    {
-        var store = new InMemorySeedStore();
-        store.Seeds.Add(new SavedSeed(SeedA, DateTimeOffset.UtcNow.AddDays(-2), DateTimeOffset.UtcNow.AddMinutes(-1)));
-        store.Seeds.Add(new SavedSeed(SeedB, DateTimeOffset.UtcNow.AddDays(-3), DateTimeOffset.UtcNow.AddHours(1)));
-
-        CreateManager(store).GetSeedList().Select(s => s.Seed).Should().Equal(SeedA);
     }
 }

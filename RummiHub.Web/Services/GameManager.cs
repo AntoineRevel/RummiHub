@@ -5,41 +5,20 @@ namespace RummiHub.Web.Services;
 
 public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedStore) : IGameManager
 {
-    /// <summary>
-    /// How long a seed added while its game runs stays off the lobby when this server cannot
-    /// reveal it at the end (restarted in between).
-    /// </summary>
-    public static readonly TimeSpan SeedHiddenWhilePlaying = TimeSpan.FromHours(24);
-
     private readonly ConcurrentDictionary<string, Game> _games = new();
 
     /// <summary>Short, unique-enough identifier used for game seeds and player ids.</summary>
     private static string NewShortId() => Guid.NewGuid().ToString("N")[..8];
 
-    public IReadOnlyList<SavedSeed> GetSeedList()
-    {
-        var now = DateTimeOffset.UtcNow;
-        return seedStore.GetAll().Where(s => s.IsVisible(now)).ToList();
-    }
+    public IReadOnlyList<SavedSeed> GetSeedList() => seedStore.GetAll();
 
     public void SaveSeed(Game game)
     {
         if (game.DistributionSeed is not { } seed)
             return;
 
-        var running = game.Engine is not { IsGameOver: true };
-        seedStore.Add(seed, running ? DateTimeOffset.UtcNow + SeedHiddenWhilePlaying : null);
-        game.SeedHiddenInList = running;
+        seedStore.Add(seed);
         game.SeedSaved = true;
-    }
-
-    public void RevealSeed(Game game)
-    {
-        if (!game.SeedHiddenInList || game.DistributionSeed is not { } seed)
-            return;
-
-        game.SeedHiddenInList = false;
-        seedStore.Reveal(seed);
     }
 
     public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null)
@@ -163,7 +142,6 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
             _games.TryRemove(game.Id, out _);
             LogGameRemoved(game.Id);
-            RevealSeed(game);
 
             return true;
         }

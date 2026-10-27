@@ -53,26 +53,14 @@ public sealed class SeedStoreTests : IDisposable
     }
 
     [Fact]
-    public void Add_HiddenOverAVisibleSeed_KeepsItVisible()
+    public void AFileWithTheOldHiddenUntilField_StillReadsEverySeed()
     {
-        var store = CreateStore();
-        store.Add(SeedA);
+        Directory.CreateDirectory(Path.GetDirectoryName(SeedsFile)!);
+        File.WriteAllText(SeedsFile, $$"""
+            { "seeds": [ { "seed": "{{SeedA}}", "addedAt": "2026-10-27T15:42:27Z", "hiddenUntil": "2026-10-28T15:42:27Z" } ] }
+            """);
 
-        store.Add(SeedA, _time.GetUtcNow().AddHours(24));
-
-        store.GetAll().Single().HiddenUntil.Should().BeNull();
-    }
-
-    [Fact]
-    public void Reveal_ShowsAHiddenSeed()
-    {
-        var store = CreateStore();
-        store.Add(SeedA, _time.GetUtcNow().AddHours(24));
-        store.GetAll().Single().IsVisible(_time.GetUtcNow()).Should().BeFalse();
-
-        store.Reveal(SeedA);
-
-        CreateStore().GetAll().Single().IsVisible(_time.GetUtcNow()).Should().BeTrue();
+        CreateStore().GetAll().Select(s => s.Seed).Should().Equal(SeedA);
     }
 
     [Fact]
