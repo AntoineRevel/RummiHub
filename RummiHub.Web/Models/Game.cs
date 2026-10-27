@@ -24,12 +24,6 @@ public class Game
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string? DistributionSeed { get; set; }
 
-    /// <summary>
-    /// The seed, once the game is over. During play it stays on the server: a seed rebuilds
-    /// the whole deal, every rack and the draw order included.
-    /// </summary>
-    public string? RevealedDistributionSeed => Engine is { IsGameOver: true } ? DistributionSeed : null;
-
     /// <summary>The seed is on the lobby list (saved from this game, picked or pasted).</summary>
     public bool SeedSaved { get; set; }
 

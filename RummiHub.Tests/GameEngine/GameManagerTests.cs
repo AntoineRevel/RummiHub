@@ -142,4 +142,18 @@ public class GameManagerTests
         game.SeedSaved.Should().BeTrue();
         manager.GetSeedList().Select(s => s.Seed).Should().Equal(game.DistributionSeed);
     }
+
+    [Fact]
+    public void RemoveSeed_TakesAPastedFormOffTheList()
+    {
+        var store = new InMemorySeedStore();
+        store.Add(SeedA);
+        store.Add(SeedB);
+        var manager = CreateManager(store);
+
+        manager.RemoveSeed(" " + SeedA.ToUpperInvariant());
+        manager.RemoveSeed("not-a-seed");
+
+        manager.GetSeedList().Select(s => s.Seed).Should().Equal(SeedB);
+    }
 }

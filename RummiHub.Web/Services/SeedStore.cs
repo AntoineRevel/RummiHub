@@ -16,6 +16,9 @@ public interface ISeedStore
 
     /// <summary>Puts the seed at the top of the list, dated now. A seed already listed moves up.</summary>
     void Add(string seed);
+
+    /// <summary>Takes the seed off the list. No-op if absent.</summary>
+    void Remove(string seed);
 }
 
 /// <summary>
@@ -70,6 +73,12 @@ public sealed partial class FileSeedStore : ISeedStore
             return true;
         });
         LogSeedSaved(seed);
+    }
+
+    public void Remove(string seed)
+    {
+        Change(seeds => seeds.RemoveAll(s => s.Seed == seed) > 0);
+        LogSeedRemoved(seed);
     }
 
     private List<SavedSeed> Read()
@@ -131,6 +140,9 @@ public sealed partial class FileSeedStore : ISeedStore
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} added to the seed list")]
     private partial void LogSeedSaved(string seed);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} removed from the seed list")]
+    private partial void LogSeedRemoved(string seed);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Could not read the seed list {Path}")]
     private partial void LogReadFailed(Exception ex, string path);

@@ -64,6 +64,20 @@ public sealed class SeedStoreTests : IDisposable
     }
 
     [Fact]
+    public void Remove_TakesTheSeedOffTheList_ForEveryStoreOnTheFile()
+    {
+        var store = CreateStore();
+        store.Add(SeedA);
+        _time.Advance(TimeSpan.FromMinutes(1));
+        store.Add(SeedB);
+
+        CreateStore().Remove(SeedA);
+        store.Remove(SeedC);
+
+        store.GetAll().Select(s => s.Seed).Should().Equal(SeedB);
+    }
+
+    [Fact]
     public void Add_IgnoresAMalformedSeed()
     {
         var store = CreateStore();

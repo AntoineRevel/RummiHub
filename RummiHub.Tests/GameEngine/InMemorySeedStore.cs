@@ -14,4 +14,6 @@ internal sealed class InMemorySeedStore : ISeedStore
         Seeds.RemoveAll(s => s.Seed == seed);
         Seeds.Insert(0, new SavedSeed(seed, DateTimeOffset.UtcNow));
     }
+
+    public void Remove(string seed) => Seeds.RemoveAll(s => s.Seed == seed);
 }

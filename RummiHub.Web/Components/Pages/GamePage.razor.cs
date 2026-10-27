@@ -667,8 +667,7 @@ public partial class GamePage : IAsyncDisposable
     private bool SeedSaved => _seedSaved || _gameState is { SeedSaved: true };
 
     private string SeedChipTitle =>
-        _gameState?.DistributionSeed
-        ?? "This game's seed: Save seed adds it to the lobby list; its value shows here when the game ends.";
+        _gameState?.DistributionSeed ?? "This game's seed";
 
     private async Task OnSaveSeed()
     {

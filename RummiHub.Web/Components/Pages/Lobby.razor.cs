@@ -267,6 +267,22 @@ public partial class Lobby
             ? error
             : null;
 
+    private bool IsListedSeed => _seedChoice is not (RandomSeed or PasteSeed);
+
+    /// <summary>Asks first: a removed seed is gone for production and the test site alike.</summary>
+    private async Task RemoveSelectedSeed()
+    {
+        if (_hubConnection is null || !IsListedSeed)
+            return;
+
+        var seed = _seedChoice;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Remove the seed {DistributionSeeds.Abbreviate(seed)} from the list?"))
+            return;
+
+        _seedChoice = RandomSeed;
+        await _hubConnection.SendAsync(HubEvents.RemoveSeed, seed);
+    }
+
     private bool CanCreate =>
         !string.IsNullOrWhiteSpace(_playerName) && (_seedChoice != PasteSeed || ChosenSeed is not null);
 

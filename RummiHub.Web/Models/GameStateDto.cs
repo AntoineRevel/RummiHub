@@ -10,7 +10,7 @@ public record GameStateDto
     public required string GameId { get; init; }
     public string? DistributionSeed { get; init; }
 
-    /// <summary>The game's seed is on the lobby list (its value may still be hidden).</summary>
+    /// <summary>The game's seed is on the lobby list.</summary>
     public bool SeedSaved { get; init; }
     public required List<PlayerInfoDto> Players { get; init; }
     public required int CurrentPlayerIndex { get; init; }

@@ -38,10 +38,16 @@ public partial class GameHub(
         await Clients.Caller.SendAsync(HubEvents.SeedList, seeds);
     }
 
+    /// <summary>Takes a seed off the lobby list, then sends the caller the new list.</summary>
+    public async Task RemoveSeed(string seed)
+    {
+        gameManager.RemoveSeed(seed ?? string.Empty);
+        await GetSeedList();
+    }
+
     /// <summary>
     /// Adds the game's distribution seed to the lobby seed list so it can be replayed later.
-    /// Allowed at any time, and listed at once. The in-game chip still shows the value only
-    /// at game over.
+    /// Allowed at any time, and listed at once.
     /// </summary>
     public async Task SaveSeed(string gameId)
     {
@@ -532,9 +538,10 @@ public partial class GameHub(
         return new GameStateDto
         {
             GameId = game.Id,
-            // Every player in the group receives this DTO: seat secrets stay off it, and the
-            // seed (which rebuilds every rack and the draw order) only appears at game over.
-            DistributionSeed = game.RevealedDistributionSeed,
+            // Every player in the group receives this DTO: seat secrets stay off it. The seed is
+            // on it from the start (it is on the lobby list too once saved), even though it
+            // rebuilds every rack and the draw order.
+            DistributionSeed = game.DistributionSeed,
             SeedSaved = game.SeedSaved,
             Players = engine.Players.Select(p => new PlayerInfoDto
             {

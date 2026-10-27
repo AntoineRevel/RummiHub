@@ -192,34 +192,6 @@ public class PublicTableSecurityTests
     }
 
     [Fact]
-    public void Seed_StaysHiddenUntilTheGameIsOver()
-    {
-        var seed = DistributionSeeds.Create();
-        var engine = new GameEngine();
-        engine.Initialize(["Alice", "Bob"], seed);
-        var game = new Game { DistributionSeed = seed, Engine = engine };
-
-        game.RevealedDistributionSeed.Should().BeNull();
-
-        // Alice goes out with her last three tiles.
-        var lastTiles = new List<Tile> { new(11, TileColor.Blue), new(11, TileColor.Red), new(11, TileColor.Black) };
-        engine.CurrentPlayer.Rack = new Set(lastTiles);
-        var board = new Solution { IsValid = true };
-        board.Sets.Add(new ValidSet(lastTiles.ToArray()));
-        engine.ApplySolveResult(new SolveResponse
-        {
-            RequestId = "last-move",
-            Found = true,
-            Score = 33,
-            NewBoard = board,
-            TilesToPlay = lastTiles
-        });
-
-        engine.IsGameOver.Should().BeTrue();
-        game.RevealedDistributionSeed.Should().Be(seed);
-    }
-
-    [Fact]
     public void PlayAttempts_AreThrottledPerSeat()
     {
         var game = new Game();
