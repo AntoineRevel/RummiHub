@@ -4,6 +4,10 @@ namespace RummiHub.Web.Services;
 
 public interface IGameManager
 {
+    /// <summary>
+    /// Creates a game dealt from <paramref name="distributionSeed"/>, or from a fresh random seed
+    /// when empty. Throws <see cref="ArgumentException"/> (message for the player) on a malformed seed.
+    /// </summary>
     Game CreateGame(string playerName, string connectionId, string? distributionSeed = null);
 
     /// <summary>
@@ -12,19 +16,17 @@ public interface IGameManager
     /// </summary>
     Player? AddAiPlayer(string gameId);
 
-    IReadOnlyList<string> GetAvailableGameIds();
+    /// <summary>The lobby seed list, most recently added first, without the hidden ones.</summary>
+    IReadOnlyList<SavedSeed> GetSeedList();
 
     /// <summary>
-    /// Saves a distribution seed to the lobby seed list so players can replay the same
-    /// game later. Returns true if it was newly added (false if blank or already present).
+    /// Adds the game's seed to the lobby list, at any time. While the game runs the seed stays
+    /// off the lobby (it rebuilds every rack) until <see cref="RevealSeed"/>.
     /// </summary>
-    bool AddSeed(string seed);
+    void SaveSeed(Game game);
 
-    /// <summary>
-    /// True when <paramref name="seed"/> is a safe token already known to the server
-    /// (configured replay list or a seed saved from a game this process dealt).
-    /// </summary>
-    bool IsKnownDistributionSeed(string? seed);
+    /// <summary>Shows on the lobby a seed this game hid: called when the game ends or is removed.</summary>
+    void RevealSeed(Game game);
 
     Game? GetGame(string gameId);
 

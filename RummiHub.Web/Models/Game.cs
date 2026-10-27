@@ -30,6 +30,12 @@ public class Game
     /// </summary>
     public string? RevealedDistributionSeed => Engine is { IsGameOver: true } ? DistributionSeed : null;
 
+    /// <summary>The seed is on the lobby list (saved from this game, picked or pasted).</summary>
+    public bool SeedSaved { get; set; }
+
+    /// <summary>This game put its seed on the list hidden; reveal it when the game ends.</summary>
+    public bool SeedHiddenInList { get; set; }
+
     private List<Player> Players { get; } = [];
     public bool IsStarted { get; set; }
     public string HostConnectionId { get; init; } = string.Empty;

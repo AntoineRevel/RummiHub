@@ -30,16 +30,18 @@ public partial class GameHub(
 
     // ========== LOBBY PHASE ==========
 
-    public async Task GetAvailableGameIds()
+    public async Task GetSeedList()
     {
-        var ids = gameManager.GetAvailableGameIds();
-        await Clients.Caller.SendAsync(HubEvents.AvailableGameIds, ids);
+        var seeds = gameManager.GetSeedList()
+            .Select(s => new SeedListItemDto(s.Seed, s.AddedAt))
+            .ToList();
+        await Clients.Caller.SendAsync(HubEvents.SeedList, seeds);
     }
 
     /// <summary>
-    /// Saves the game's distribution seed to the lobby seed list so the caller can easily
-    /// replay the same game later. Triggered from the in-game header once the game is over:
-    /// the seed rebuilds the whole deal, so it is not published while the game runs.
+    /// Adds the game's distribution seed to the lobby seed list so it can be replayed later.
+    /// Allowed at any time; while the game runs the lobby does not show it yet (the seed
+    /// rebuilds every rack), and the caller only learns it was saved, not its value.
     /// </summary>
     public async Task SaveSeed(string gameId)
     {
@@ -47,17 +49,22 @@ public partial class GameHub(
         {
             gameId = gameId?.Trim() ?? string.Empty;
             var game = gameManager.GetGame(gameId);
-            // Only a seated connection may publish the seed, and the value is the one the
+            // Only a seated connection may save the seed, and the value is the one the
             // server dealt — never a string supplied by the caller.
             if (game == null || !game.HasConnection(Context.ConnectionId))
                 return;
 
-            var seed = game.RevealedDistributionSeed;
-            if (string.IsNullOrWhiteSpace(seed))
-                return;
+            await game.ActionLock.WaitAsync();
+            try
+            {
+                gameManager.SaveSeed(game);
+            }
+            finally
+            {
+                game.ActionLock.Release();
+            }
 
-            gameManager.AddSeed(seed);
-            await Clients.Caller.SendAsync(HubEvents.SeedSaved, seed);
+            await Clients.Caller.SendAsync(HubEvents.SeedSaved);
         }
         catch (Exception ex)
         {
@@ -76,13 +83,13 @@ public partial class GameHub(
                 return;
             }
 
-            // The second argument is a distribution seed, not a game id. Only seeds the
-            // server already knows (configured replays, or seeds saved from a dealt game)
-            // are accepted. Anything else is refused — the client does not choose the shuffle.
+            // The second argument is a distribution seed, not a game id: empty deals from a
+            // fresh random seed, anything else must be a well-formed seed (picked or pasted).
             var requestedSeed = gameId?.Trim();
-            if (!string.IsNullOrEmpty(requestedSeed) && !gameManager.IsKnownDistributionSeed(requestedSeed))
+            if (!string.IsNullOrEmpty(requestedSeed)
+                && !DistributionSeeds.TryNormalize(requestedSeed, out _, out var seedError))
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, "That distribution seed is not available.");
+                await Clients.Caller.SendAsync(HubEvents.Error, seedError);
                 return;
             }
 
@@ -537,6 +544,7 @@ public partial class GameHub(
             // Every player in the group receives this DTO: seat secrets stay off it, and the
             // seed (which rebuilds every rack and the draw order) only appears at game over.
             DistributionSeed = game.RevealedDistributionSeed,
+            SeedSaved = game.SeedSaved,
             Players = engine.Players.Select(p => new PlayerInfoDto
             {
                 Name = p.Name,
@@ -571,6 +579,8 @@ public partial class GameHub(
         var engine = game.Engine!;
         engine.AdvanceToNextPlayer();
         SeatBoard(game);
+        if (engine.IsGameOver)
+            gameManager.RevealSeed(game);
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);

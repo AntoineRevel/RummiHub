@@ -1,6 +1,7 @@
 @page "/game/{GameId}"
 @using RummiHub.Web.Models
 @using RummiHub.Web.Components.Layout
+@using RummiHub.Web.Services
 @layout GameLayout
 @rendermode InteractiveServer
 @implements IAsyncDisposable
@@ -77,34 +78,39 @@ else
                 }
             </div>
 
-            @* The server sends the seed only at game over: it rebuilds every rack. *@
-            @if (!string.IsNullOrEmpty(_gameState.DistributionSeed))
-            {
-                <span class="meta-chip seed-chip" title="Distribution seed">
-                    Seed:&nbsp;<strong>@_gameState.DistributionSeed</strong>
-                    <button type="button"
-                            class="seed-replay-btn @(_seedSaved ? "saved" : "")"
-                            title="Save this seed to the lobby so you can replay the same game"
-                            disabled="@_seedSaved"
-                            @onclick="OnSaveSeed">
-                        @if (_seedSaved)
-                        {
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            <span>Saved</span>
-                        }
-                        else
-                        {
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="12" y1="5" x2="12" y2="19"/>
-                                <line x1="5" y1="12" x2="19" y2="12"/>
-                            </svg>
-                            <span>Save seed</span>
-                        }
+            @* The seed can be saved at any time, but the server sends its value only at game
+               over (it rebuilds every rack), and the lobby lists it only then too. *@
+            <span class="meta-chip seed-chip"
+                  title="@(_gameState.DistributionSeed is { } fullSeed ? $"Seed: {fullSeed}" : "This game's seed: saved to the lobby list, shown there when the game ends")">
+                <span class="chip-label">Seed</span>
+                @if (_gameState.DistributionSeed is { } seed)
+                {
+                    <button type="button" class="seed-value" title="Copy the seed (@seed.Length characters)" @onclick="OnCopySeed">
+                        @DistributionSeeds.Abbreviate(seed)
                     </button>
-                </span>
-            }
+                }
+                <button type="button"
+                        class="seed-replay-btn @(SeedSaved ? "saved" : "")"
+                        title="Add this game's seed to the lobby list to replay the same deal"
+                        disabled="@SeedSaved"
+                        @onclick="OnSaveSeed">
+                    @if (SeedSaved)
+                    {
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        <span>Saved</span>
+                    }
+                    else
+                    {
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        <span>Save</span>
+                    }
+                </button>
+            </span>
             <div class="game-id" title="Game code">#@_gameState.GameId</div>
         </header>
 
@@ -475,18 +481,23 @@ else
         position: relative;
     }
 
-    .seed-chip strong {
+    .seed-chip .seed-value {
+        padding: 0;
+        border: none;
+        background: none;
         color: #555;
         font-family: monospace;
-        user-select: all;
+        font-size: inherit;
+        font-weight: 700;
+        cursor: copy;
     }
 
-    /* Reveals on hover/focus of the seed chip: saves the seed to the lobby for a replay. */
+    /* Always shown: a phone has no hover to reveal it. */
     .seed-replay-btn {
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        margin-left: -5px; /* cancels the chip's flex gap while collapsed */
+        padding: 4px 9px;
         border: none;
         border-radius: 999px;
         background: linear-gradient(135deg, #4caf50, #388e3c);
@@ -496,22 +507,6 @@ else
         line-height: 1;
         cursor: pointer;
         white-space: nowrap;
-        overflow: hidden;
-        max-width: 0;
-        padding: 4px 0;
-        opacity: 0;
-        pointer-events: none;
-        transition: max-width 0.25s ease, padding 0.25s ease, margin-left 0.25s ease, opacity 0.2s ease;
-    }
-
-    .seed-chip:hover .seed-replay-btn,
-    .seed-chip:focus-within .seed-replay-btn,
-    .seed-replay-btn.saved {
-        max-width: 130px;
-        margin-left: 0;
-        padding: 4px 9px;
-        opacity: 1;
-        pointer-events: auto;
     }
 
     .seed-replay-btn:hover {

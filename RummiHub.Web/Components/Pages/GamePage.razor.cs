@@ -328,7 +328,7 @@ public partial class GamePage : IAsyncDisposable
             ApplyOptimal(tiles);
         });
 
-        Handle<string>(HubEvents.SeedSaved, _ => _seedSaved = true);
+        hub.On(HubEvents.SeedSaved, () => InvokeAsync(() => { _seedSaved = true; StateHasChanged(); }));
 
         Handle<List<Tile>>(HubEvents.RackUpdated, rack =>
         {
@@ -662,9 +662,12 @@ public partial class GamePage : IAsyncDisposable
         }
     }
 
+    /// <summary>Saved from this tab, or by anyone at the table (the list is shared).</summary>
+    private bool SeedSaved => _seedSaved || _gameState is { SeedSaved: true };
+
     private async Task OnSaveSeed()
     {
-        if (_hubConnection is null || _seedSaved) return;
+        if (_hubConnection is null || SeedSaved) return;
 
         try
         {
@@ -673,6 +676,20 @@ public partial class GamePage : IAsyncDisposable
         catch (Exception ex)
         {
             _error = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task OnCopySeed()
+    {
+        if (_gameState?.DistributionSeed is not { } seed) return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", seed);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not copy the seed: {ex.Message}";
         }
     }
 

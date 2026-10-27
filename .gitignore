@@ -40,3 +40,6 @@ deploy/.env.test
 # OS
 .DS_Store
 Thumbs.db
+
+# Lobby seed list in local runs (GameOptions:SeedsFile)
+RummiHub.Web/App_Data/

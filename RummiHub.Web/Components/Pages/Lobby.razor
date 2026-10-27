@@ -2,6 +2,7 @@
 @page "/lobby"
 @rendermode InteractiveServer
 @implements IAsyncDisposable
+@using RummiHub.Web.Services
 @inject Microsoft.AspNetCore.Hosting.Server.IServer Server
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -49,23 +50,42 @@
                        @onkeydown="HandleKeyDown" />
             </div>
 
-            @if (_availableGameIds.Count > 0 && string.IsNullOrWhiteSpace(_joinGameId))
+            @if (string.IsNullOrWhiteSpace(_joinGameId))
             {
                 <div class="form-group">
                     <label for="seedSelect">Distribution seed</label>
-                    <select id="seedSelect" class="form-control" @bind="_selectedGameId">
-                        <option value="">— Random —</option>
-                        @foreach (var id in _availableGameIds)
+                    @* Most recently added first. A seed fixes the whole deal: replaying one
+                       deals the same racks and draw order. *@
+                    <select id="seedSelect" class="form-control" @bind="_seedChoice">
+                        <option value="@RandomSeed">— Random —</option>
+                        <option value="@PasteSeed">Paste a seed…</option>
+                        @foreach (var item in _seeds)
                         {
-                            <option value="@id">@id</option>
+                            <option value="@item.Seed">@SeedOptionLabel(item)</option>
                         }
                     </select>
+                    @if (_seedChoice == PasteSeed)
+                    {
+                        <input id="seedPaste"
+                               type="text"
+                               class="form-control seed-input @(PasteError is null ? "" : "invalid")"
+                               placeholder="Paste a seed here"
+                               autocomplete="off"
+                               spellcheck="false"
+                               maxlength="200"
+                               @bind="_pastedSeed"
+                               @bind:event="oninput"
+                               @onkeydown="HandleKeyDown" />
+                        <small class="seed-help @(PasteError is null ? "" : "invalid")">
+                            @(PasteError ?? $"{DistributionSeeds.Length} characters, 0-9 and a-f (older seeds: {DistributionSeeds.LegacyLength}). It joins the list.")
+                        </small>
+                    }
                 </div>
             }
 
             <button class="btn-action @(string.IsNullOrWhiteSpace(_joinGameId) ? "btn-create" : "btn-join")"
                     @onclick="HandleAction"
-                    disabled="@string.IsNullOrWhiteSpace(_playerName)">
+                    disabled="@(string.IsNullOrWhiteSpace(_joinGameId) ? !CanCreate : string.IsNullOrWhiteSpace(_playerName))">
                 @if (string.IsNullOrWhiteSpace(_joinGameId))
                 {
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -92,11 +112,14 @@
                     <span class="info-label">Game code</span>
                     <strong class="info-value">@_gameId</strong>
                 </div>
-                @if (!string.IsNullOrEmpty(_selectedGameId))
+                @if (_gameSeed is not null)
                 {
-                    <div class="info-row">
-                        <span class="info-label">Seed</span>
-                        <strong class="info-value seed-value">@_selectedGameId</strong>
+                    <div class="seed-row">
+                        <span class="info-label">Seed <small>(@_gameSeed.Length characters)</small></span>
+                        <button type="button" class="seed-copy" title="Copy the seed" @onclick="CopySeed">
+                            @(_seedCopied ? "Copied!" : "Copy")
+                        </button>
+                        <strong class="seed-value">@_gameSeed</strong>
                     </div>
                 }
             </div>
@@ -357,8 +380,54 @@
         letter-spacing: 0.03em;
     }
 
+    /* A 64-character seed does not fit on one line: it wraps under its label. */
+    .seed-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 6px 12px;
+    }
+
+    .seed-row small {
+        color: #aaa;
+    }
+
     .seed-value {
+        grid-column: 1 / -1;
+        font-family: monospace;
+        font-size: 0.9rem;
         color: #1976d2;
+        overflow-wrap: anywhere;
+        user-select: all;
+    }
+
+    .seed-copy {
+        padding: 3px 12px;
+        font-size: 0.8rem;
+        font-family: inherit;
+        color: #1976d2;
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 20px;
+        cursor: pointer;
+    }
+
+    .seed-input {
+        font-family: monospace;
+        font-size: 0.85rem;
+    }
+
+    .seed-input.invalid {
+        border-color: #e57373;
+    }
+
+    .seed-help {
+        color: #999;
+        font-size: 0.8rem;
+    }
+
+    .seed-help.invalid {
+        color: #c62828;
     }
 
     .invite-link {

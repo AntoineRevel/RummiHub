@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Options;
 using RummiHub.Core.Contracts;
 using RummiHub.Web.Components;
 using RummiHub.Web.Services;
@@ -67,7 +68,15 @@ builder.Services.AddSignalR()
     });
 builder.Services.Configure<GameOptions>(builder.Configuration.GetSection("GameOptions"));
 builder.Services.Configure<SolverApiOptions>(builder.Configuration.GetSection(SolverApiOptions.SectionName));
-builder.Services.AddSingleton<ISeedStore, AppSettingsSeedStore>();
+builder.Services.AddSingleton<ISeedStore>(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<GameOptions>>().Value;
+    return new FileSeedStore(
+        Path.Combine(builder.Environment.ContentRootPath, options.SeedsFile),
+        options.PredefinedIds,
+        TimeProvider.System,
+        sp.GetRequiredService<ILogger<FileSeedStore>>());
+});
 var benchAccess = SolverBenchAccess.From(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(benchAccess);
 builder.Services.AddSingleton<IGameManager, GameManager>();

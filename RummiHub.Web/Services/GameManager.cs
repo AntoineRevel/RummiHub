@@ -1,59 +1,50 @@
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Options;
 using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
-public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptions> options, ISeedStore seedStore) : IGameManager
+public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedStore) : IGameManager
 {
-    private readonly ConcurrentDictionary<string, Game> _games = new();
+    /// <summary>
+    /// How long a seed added while its game runs stays off the lobby when this server cannot
+    /// reveal it at the end (restarted in between).
+    /// </summary>
+    public static readonly TimeSpan SeedHiddenWhilePlaying = TimeSpan.FromHours(24);
 
-    /// <summary>Distribution seeds saved at runtime (e.g. from the in-game "replay" button).</summary>
-    private readonly ConcurrentDictionary<string, byte> _savedSeeds = new();
+    private readonly ConcurrentDictionary<string, Game> _games = new();
 
     /// <summary>Short, unique-enough identifier used for game seeds and player ids.</summary>
     private static string NewShortId() => Guid.NewGuid().ToString("N")[..8];
 
-    public IReadOnlyList<string> GetAvailableGameIds()
+    public IReadOnlyList<SavedSeed> GetSeedList()
     {
-        return options.Value.PredefinedIds
-            .Concat(_savedSeeds.Keys)
-            .Select(id => id?.Trim() ?? string.Empty)
-            .Where(DistributionSeeds.IsSafe)
-            .Distinct()
-            .Where(id => !_games.ContainsKey(id))
-            .ToList();
+        var now = DateTimeOffset.UtcNow;
+        return seedStore.GetAll().Where(s => s.IsVisible(now)).ToList();
     }
 
-    public bool IsKnownDistributionSeed(string? seed)
+    public void SaveSeed(Game game)
     {
-        seed = seed?.Trim() ?? string.Empty;
-        if (!DistributionSeeds.IsSafe(seed))
-            return false;
+        if (game.DistributionSeed is not { } seed)
+            return;
 
-        return options.Value.PredefinedIds.Any(id => string.Equals(id?.Trim(), seed, StringComparison.Ordinal))
-               || _savedSeeds.ContainsKey(seed);
+        var running = game.Engine is not { IsGameOver: true };
+        seedStore.Add(seed, running ? DateTimeOffset.UtcNow + SeedHiddenWhilePlaying : null);
+        game.SeedHiddenInList = running;
+        game.SeedSaved = true;
     }
 
-    public bool AddSeed(string seed)
+    public void RevealSeed(Game game)
     {
-        seed = seed?.Trim() ?? string.Empty;
-        if (!DistributionSeeds.IsSafe(seed))
-            return false;
+        if (!game.SeedHiddenInList || game.DistributionSeed is not { } seed)
+            return;
 
-        if (!_savedSeeds.TryAdd(seed, 0))
-            return false;
-
-        // File persistence is Development-only; production keeps the seed in memory.
-        seedStore.Persist(seed);
-
-        LogSeedSaved(seed);
-        return true;
+        game.SeedHiddenInList = false;
+        seedStore.Reveal(seed);
     }
 
     public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null)
     {
-        var seed = ResolveDistributionSeed(distributionSeed);
+        var seed = ResolveDistributionSeed(distributionSeed, out var chosen);
 
         var game = new Game
         {
@@ -72,25 +63,34 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
         if (!game.AddPlayer(player))
             throw new InvalidOperationException("Could not seat the host.");
 
+        // A pasted seed joins the list. One picked from the list stays where it is.
+        if (chosen)
+        {
+            if (seedStore.GetAll().Any(s => s.Seed == seed))
+                game.SeedSaved = true;
+            else
+                SaveSeed(game);
+        }
+
         _games[game.Id] = game;
         LogGameCreated(game.Id, playerName);
         return game;
     }
 
     /// <summary>
-    /// Empty means "deal from a fresh CSPRNG seed". Anything else must already be on the
-    /// server list; a client-invented seed is refused before a game is stored.
+    /// Empty means "deal from a fresh CSPRNG seed". Anything else must be a well-formed seed
+    /// (<see cref="DistributionSeeds.TryNormalize"/>), picked from the list or pasted.
     /// </summary>
-    private string ResolveDistributionSeed(string? requested)
+    private static string ResolveDistributionSeed(string? requested, out bool chosen)
     {
-        requested = requested?.Trim() ?? string.Empty;
-        if (requested.Length == 0)
+        chosen = !string.IsNullOrWhiteSpace(requested);
+        if (!chosen)
             return DistributionSeeds.Create();
 
-        if (!IsKnownDistributionSeed(requested))
-            throw new ArgumentException("Distribution seed is not in the server list.");
+        if (!DistributionSeeds.TryNormalize(requested, out var seed, out var error))
+            throw new ArgumentException(error);
 
-        return requested;
+        return seed;
     }
 
     /// <summary>
@@ -163,6 +163,7 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 
             _games.TryRemove(game.Id, out _);
             LogGameRemoved(game.Id);
+            RevealSeed(game);
 
             return true;
         }
@@ -216,7 +217,4 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Engine initialized for game {GameId} with {PlayerCount} players")]
     private partial void LogEngineInitialized(string gameId, int playerCount);
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} saved to the lobby list")]
-    private partial void LogSeedSaved(string seed);
 }

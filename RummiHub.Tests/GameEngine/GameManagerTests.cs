@@ -1,27 +1,18 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Tests.GameEngineTests;
 
 public class GameManagerTests
 {
-    private sealed class RecordingSeedStore : ISeedStore
-    {
-        public List<string> Persisted { get; } = [];
-        public void Persist(string seed) => Persisted.Add(seed);
-    }
-
-    private static GameManager CreateManager() =>
-        new(NullLogger<GameManager>.Instance, Options.Create(new GameOptions()), new RecordingSeedStore());
-
-    private static GameManager CreateManager(params string[] predefinedIds) =>
-        new(NullLogger<GameManager>.Instance,
-            Options.Create(new GameOptions { PredefinedIds = predefinedIds.ToList() }), new RecordingSeedStore());
+    private static GameManager CreateManager() => CreateManager(new InMemorySeedStore());
 
     private static GameManager CreateManager(ISeedStore seedStore) =>
-        new(NullLogger<GameManager>.Instance, Options.Create(new GameOptions()), seedStore);
+        new(NullLogger<GameManager>.Instance, seedStore);
+
+    private static readonly string SeedA = new('a', DistributionSeeds.Length);
+    private static readonly string SeedB = new('b', DistributionSeeds.Length);
 
     [Fact]
     public void AddAiPlayer_AddsAutoSeatWithUniqueName()
@@ -83,77 +74,91 @@ public class GameManagerTests
     }
 
     [Fact]
-    public void AddSeed_MakesSeedAvailableInLobbyList()
+    public void CreateGame_WithAPastedSeed_AddsItToTheList_HiddenUntilTheGameEnds()
     {
-        var manager = CreateManager();
+        var store = new InMemorySeedStore();
+        var manager = CreateManager(store);
 
-        manager.AddSeed("replay-me").Should().BeTrue();
+        var game = manager.CreateGame("Alice", "conn-1", "  " + SeedA.ToUpperInvariant() + " ");
 
-        manager.GetAvailableGameIds().Should().Contain("replay-me");
+        game.DistributionSeed.Should().Be(SeedA);
+        game.SeedSaved.Should().BeTrue();
+        store.Seeds.Should().ContainSingle(s => s.Seed == SeedA && s.HiddenUntil != null);
+        manager.GetSeedList().Should().BeEmpty();
+
+        manager.RevealSeed(game);
+
+        manager.GetSeedList().Select(s => s.Seed).Should().Equal(SeedA);
     }
 
     [Fact]
-    public void AddSeed_IsIdempotent_AndListedOnce()
+    public void CreateGame_WithAListedSeed_LeavesTheListAsIs()
     {
-        var manager = CreateManager();
+        var store = new InMemorySeedStore();
+        store.Add(SeedA);
+        store.Add(SeedB);
+        var manager = CreateManager(store);
 
-        manager.AddSeed("dup").Should().BeTrue();
-        manager.AddSeed("dup").Should().BeFalse();
+        var game = manager.CreateGame("Alice", "conn-1", SeedA);
 
-        manager.GetAvailableGameIds().Where(id => id == "dup").Should().HaveCount(1);
-    }
-
-    [Fact]
-    public void AddSeed_TrimsWhitespace()
-    {
-        var manager = CreateManager();
-
-        manager.AddSeed("  spaced  ").Should().BeTrue();
-
-        manager.GetAvailableGameIds().Should().Contain("spaced");
+        game.SeedSaved.Should().BeTrue();
+        manager.GetSeedList().Select(s => s.Seed).Should().Equal(SeedB, SeedA);
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void AddSeed_ReturnsFalse_WhenBlank(string seed)
+    [InlineData("abc")]
+    [InlineData("not-a-seed")]
+    public void CreateGame_RefusesAMalformedSeed_AndSaysTheExpectedLength(string seed)
     {
-        var manager = CreateManager();
-
-        manager.AddSeed(seed).Should().BeFalse();
-        manager.GetAvailableGameIds().Should().BeEmpty();
-    }
-
-    [Fact]
-    public void GetAvailableGameIds_UnionsPredefinedAndSavedSeeds()
-    {
-        var manager = CreateManager("predef-1", "predef-2");
-
-        manager.AddSeed("saved-1");
-
-        manager.GetAvailableGameIds().Should().BeEquivalentTo(["predef-1", "predef-2", "saved-1"]);
-    }
-
-    [Fact]
-    public void AddSeed_PersistsSeed_WhenNewlyAdded()
-    {
-        var store = new RecordingSeedStore();
+        var store = new InMemorySeedStore();
         var manager = CreateManager(store);
 
-        manager.AddSeed("  spaced  ").Should().BeTrue();
+        var act = () => manager.CreateGame("Alice", "conn-1", seed);
 
-        store.Persisted.Should().Equal("spaced");
+        act.Should().Throw<ArgumentException>();
+        store.Seeds.Should().BeEmpty();
     }
 
     [Fact]
-    public void AddSeed_DoesNotPersist_WhenDuplicate()
+    public void CreateGame_WithARandomSeed_DoesNotListIt()
     {
-        var store = new RecordingSeedStore();
+        var store = new InMemorySeedStore();
         var manager = CreateManager(store);
 
-        manager.AddSeed("dup").Should().BeTrue();
-        manager.AddSeed("dup").Should().BeFalse();
+        var game = manager.CreateGame("Alice", "conn-1");
 
-        store.Persisted.Should().Equal("dup");
+        game.SeedSaved.Should().BeFalse();
+        store.Seeds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SaveSeed_DuringPlay_HidesItFromTheLobby_UntilTheGameIsRemoved()
+    {
+        var store = new InMemorySeedStore();
+        var manager = CreateManager(store);
+        var game = manager.CreateGame("Alice", "conn-1");
+        manager.AddAiPlayer(game.Id);
+        game.IsStarted = true;
+        manager.InitializeEngine(game.Id).Should().BeTrue();
+
+        manager.SaveSeed(game);
+
+        game.SeedSaved.Should().BeTrue();
+        store.Seeds.Should().ContainSingle(s => s.Seed == game.DistributionSeed && s.HiddenUntil != null);
+        manager.GetSeedList().Should().BeEmpty();
+
+        manager.RevealSeed(game);
+
+        manager.GetSeedList().Select(s => s.Seed).Should().Equal(game.DistributionSeed);
+    }
+
+    [Fact]
+    public void GetSeedList_ShowsAHiddenSeedOnceItsDelayHasPassed()
+    {
+        var store = new InMemorySeedStore();
+        store.Seeds.Add(new SavedSeed(SeedA, DateTimeOffset.UtcNow.AddDays(-2), DateTimeOffset.UtcNow.AddMinutes(-1)));
+        store.Seeds.Add(new SavedSeed(SeedB, DateTimeOffset.UtcNow.AddDays(-3), DateTimeOffset.UtcNow.AddHours(1)));
+
+        CreateManager(store).GetSeedList().Select(s => s.Seed).Should().Equal(SeedA);
     }
 }
