@@ -32,6 +32,9 @@ logs/
 secrets.json
 appsettings.Development.json
 
+# Local seed catalog written in Development. Production uses a Docker volume.
+RummiHub.Web/data/
+
 # Docker — never commit a filled-in environment file
 .env
 deploy/.env

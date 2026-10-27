@@ -23,7 +23,10 @@ public partial class Lobby
     private string _playerName = string.Empty;
     private List<string> _players = [];
     private List<string> _availableGameIds = [];
-    private string _selectedGameId = string.Empty;
+    private string _seedText = string.Empty;
+    private string _pendingSeed = string.Empty;
+    private string _displayedSeed = string.Empty;
+    private string? _copiedValue;
     private ElementReference _nameInput;
     private ElementReference _startButton;
     private bool _startArmed;
@@ -34,6 +37,39 @@ public partial class Lobby
     private string? _gameUrl;
     /// <summary>This tab's seat secret, handed to the game tab in <see cref="_gameUrl"/>'s fragment.</summary>
     private string? _seatToken;
+
+    private string? _seedFieldError
+    {
+        get
+        {
+            var parsed = DistributionSeeds.Parse(_seedText);
+            return parsed.Kind switch
+            {
+                SeedInputKind.Empty or SeedInputKind.Generated => null,
+                SeedInputKind.Legacy when _availableGameIds.Contains(parsed.Normalized) => null,
+                SeedInputKind.Legacy => DistributionSeeds.LegacyNotListedMessage(parsed.Normalized),
+                _ => parsed.Error
+            };
+        }
+    }
+
+    private string _seedMeter
+    {
+        get
+        {
+            var parsed = DistributionSeeds.Parse(_seedText);
+            return parsed.Kind switch
+            {
+                SeedInputKind.Empty => "64 hexadecimal characters",
+                SeedInputKind.Generated => "64 / 64",
+                SeedInputKind.Legacy => DistributionSeeds.Describe(parsed.Normalized),
+                _ => $"{DistributionSeeds.CompactLength(_seedText)} / 64"
+            };
+        }
+    }
+
+    private bool IsPicked(string seed) =>
+        DistributionSeeds.Parse(_seedText).Normalized == seed && seed.Length > 0;
 
     private static readonly string[] DefaultNames =
     [
@@ -70,6 +106,45 @@ public partial class Lobby
             await _hubConnection.DisposeAsync();
     }
 
+    private void PickSeed(string seed) => _seedText = seed;
+
+    private async Task CopyText(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", value);
+            _copiedValue = value;
+            StateHasChanged();
+
+            _inviteCopiedResetCts?.Cancel();
+            _inviteCopiedResetCts?.Dispose();
+            _inviteCopiedResetCts = new CancellationTokenSource();
+            var token = _inviteCopiedResetCts.Token;
+            _ = ResetCopiedAsync(token);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not copy: {ex.Message}";
+        }
+    }
+
+    private async Task ResetCopiedAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(2000, token);
+            _copiedValue = null;
+            _inviteCopied = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer copy reset the timer.
+        }
+    }
+
     private async Task CopyInviteLink()
     {
         if (string.IsNullOrEmpty(_gameId)) return;
@@ -79,31 +154,18 @@ public partial class Lobby
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
             _inviteCopied = true;
+            _copiedValue = null;
             StateHasChanged();
 
             _inviteCopiedResetCts?.Cancel();
             _inviteCopiedResetCts?.Dispose();
             _inviteCopiedResetCts = new CancellationTokenSource();
             var token = _inviteCopiedResetCts.Token;
-            _ = ResetInviteCopiedAsync(token);
+            _ = ResetCopiedAsync(token);
         }
         catch (Exception ex)
         {
             _error = $"Could not copy invite link: {ex.Message}";
-        }
-    }
-
-    private async Task ResetInviteCopiedAsync(CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(2000, token);
-            _inviteCopied = false;
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (OperationCanceledException)
-        {
-            // A newer copy reset the timer.
         }
     }
 
@@ -143,6 +205,7 @@ public partial class Lobby
         _hubConnection.On<string, IEnumerable<string>>(HubEvents.GameCreated, (gameId, players) =>
         {
             _gameId = gameId;
+            _displayedSeed = _pendingSeed;
             _players = players.ToList();
             _isHost = true;
             _error = null;
@@ -243,11 +306,24 @@ public partial class Lobby
 
     private async Task CreateGame()
     {
-        if (_hubConnection is not null)
+        if (_hubConnection is null) return;
+
+        if (_seedFieldError is not null)
         {
-            var seed = string.IsNullOrWhiteSpace(_selectedGameId) ? null : _selectedGameId;
-            await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, seed);
+            _error = _seedFieldError;
+            return;
         }
+
+        var parsed = DistributionSeeds.Parse(_seedText);
+        var seed = parsed.Kind switch
+        {
+            SeedInputKind.Generated => parsed.Normalized,
+            SeedInputKind.Legacy => parsed.Normalized,
+            _ => null
+        };
+        _pendingSeed = seed ?? "";
+        _error = null;
+        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, seed);
     }
 
     private async Task JoinGame()

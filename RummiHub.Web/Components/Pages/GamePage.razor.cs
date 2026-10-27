@@ -37,6 +37,9 @@ public partial class GamePage : IAsyncDisposable
     /// <summary>The asked-for hint has no tiles. Shown only while the play zone is empty.</summary>
     private bool _hintNoMove;
     private bool _seedSaved;
+    private bool _seedSaving;
+    private bool _seedCopied;
+    private string? _seedError;
     private bool _loadingAutoContinue;
     private string? _seatToken;
     private bool _hubStartRequested;
@@ -273,6 +276,9 @@ public partial class GamePage : IAsyncDisposable
         void Handle<T>(string method, Action<T> apply) =>
             hub.On<T>(method, value => InvokeAsync(() => { apply(value); StateHasChanged(); }));
 
+        void Handle2<T1, T2>(string method, Action<T1, T2> apply) =>
+            hub.On<T1, T2>(method, (a, b) => InvokeAsync(() => { apply(a, b); StateHasChanged(); }));
+
         void Handle3<T1, T2, T3>(string method, Action<T1, T2, T3> apply) =>
             hub.On<T1, T2, T3>(method, (a, b, c) => InvokeAsync(() => { apply(a, b, c); StateHasChanged(); }));
 
@@ -328,7 +334,22 @@ public partial class GamePage : IAsyncDisposable
             ApplyOptimal(tiles);
         });
 
-        Handle<string>(HubEvents.SeedSaved, _ => _seedSaved = true);
+        Handle2<string, string>(HubEvents.SeedSaved, (status, error) =>
+        {
+            _seedSaving = false;
+            if (status is "added" or "already")
+            {
+                _seedSaved = true;
+                _seedError = null;
+                return;
+            }
+
+            _seedError = status == "unavailable"
+                ? "The shared seed list is unavailable. Try again in a moment."
+                : string.IsNullOrWhiteSpace(error)
+                    ? "This seed could not be added to the list."
+                    : error;
+        });
 
         Handle<List<Tile>>(HubEvents.RackUpdated, rack =>
         {
@@ -664,15 +685,38 @@ public partial class GamePage : IAsyncDisposable
 
     private async Task OnSaveSeed()
     {
-        if (_hubConnection is null || _seedSaved) return;
+        if (_hubConnection is null || _seedSaved || _seedSaving) return;
 
+        _seedSaving = true;
+        _seedError = null;
         try
         {
             await _hubConnection.SendAsync(HubEvents.SaveSeed, GameId);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _error = $"Error: {ex.Message}";
+            _seedSaving = false;
+            _seedError = "Could not add the seed. Try again.";
+        }
+    }
+
+    private async Task CopyDistributionSeed()
+    {
+        var seed = _gameState?.DistributionSeed;
+        if (string.IsNullOrEmpty(seed)) return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", seed);
+            _seedCopied = true;
+            StateHasChanged();
+            await Task.Delay(2000);
+            _seedCopied = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception)
+        {
+            _seedError = "Could not copy the seed.";
         }
     }
 

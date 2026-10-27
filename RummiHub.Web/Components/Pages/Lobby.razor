@@ -49,17 +49,57 @@
                        @onkeydown="HandleKeyDown" />
             </div>
 
-            @if (_availableGameIds.Count > 0 && string.IsNullOrWhiteSpace(_joinGameId))
+            @if (string.IsNullOrWhiteSpace(_joinGameId))
             {
                 <div class="form-group">
-                    <label for="seedSelect">Distribution seed</label>
-                    <select id="seedSelect" class="form-control" @bind="_selectedGameId">
-                        <option value="">— Random —</option>
-                        @foreach (var id in _availableGameIds)
-                        {
-                            <option value="@id">@id</option>
-                        }
-                    </select>
+                    <label for="seedInput">Distribution seed <span class="optional">(optional)</span></label>
+                    <p class="field-help">
+                        A seed fixes the deal: the same characters always deal the same tiles.
+                        A new seed is <strong>64 hexadecimal characters</strong> (0–9, a–f), 256 bits.
+                        A game code is separate — 8 characters, and it only joins a room.
+                    </p>
+                    <input id="seedInput"
+                           type="text"
+                           class="form-control seed-input @(_seedFieldError is null ? null : "invalid")"
+                           placeholder="Paste a 64-character seed"
+                           maxlength="128"
+                           spellcheck="false"
+                           autocomplete="off"
+                           autocapitalize="off"
+                           title="64 hexadecimal characters (0-9, a-f). The full value is used; spaces and dashes are ignored."
+                           @bind="_seedText"
+                           @bind:event="oninput"
+                           @onkeydown="HandleKeyDown" />
+                    <p class="seed-meter @(_seedFieldError is null ? null : "invalid")">@_seedMeter</p>
+                    @if (_seedFieldError is not null)
+                    {
+                        <p class="field-error">@_seedFieldError</p>
+                    }
+                </div>
+
+                <div class="form-group">
+                    <label>Proposed seeds <span class="optional">newest first</span></label>
+                    @if (_availableGameIds.Count == 0)
+                    {
+                        <p class="field-help">None yet. During a game, use Add seed to keep its deal.</p>
+                    }
+                    else
+                    {
+                        <ul class="seed-list">
+                            @foreach (var id in _availableGameIds)
+                            {
+                                <li class="seed-item @(IsPicked(id) ? "selected" : null)">
+                                    <button type="button" class="seed-pick" title="@id" @onclick="() => PickSeed(id)">
+                                        <span class="seed-abbr">@DistributionSeeds.Abbreviate(id)</span>
+                                        <span class="seed-meta" title="@DistributionSeeds.Describe(id)">@DistributionSeeds.SizeLabel(id)</span>
+                                    </button>
+                                    <button type="button" class="seed-copy" title="Copy the full seed" @onclick="() => CopyText(id)">
+                                        @(_copiedValue == id ? "Copied" : "Copy")
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
                 </div>
             }
 
@@ -92,12 +132,18 @@
                     <span class="info-label">Game code</span>
                     <strong class="info-value">@_gameId</strong>
                 </div>
-                @if (!string.IsNullOrEmpty(_selectedGameId))
+                @if (!string.IsNullOrEmpty(_displayedSeed))
                 {
-                    <div class="info-row">
+                    <div class="info-row seed-row">
                         <span class="info-label">Seed</span>
-                        <strong class="info-value seed-value">@_selectedGameId</strong>
+                        <span class="seed-display">
+                            <strong class="info-value seed-value" title="@_displayedSeed">@DistributionSeeds.Abbreviate(_displayedSeed)</strong>
+                            <button type="button" class="seed-copy" title="@_displayedSeed" @onclick="() => CopyText(_displayedSeed)">
+                                @(_copiedValue == _displayedSeed ? "Copied" : "Copy")
+                            </button>
+                        </span>
                     </div>
+                    <p class="field-help seed-help">@DistributionSeeds.Describe(_displayedSeed). Same tiles every time this seed is used.</p>
                 }
             </div>
 
@@ -343,22 +389,150 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
+        min-width: 0;
     }
 
     .info-label {
         font-size: 0.9rem;
         color: #888;
+        flex-shrink: 0;
     }
 
     .info-value {
         font-size: 1rem;
         color: #3a3a3a;
-        font-family: monospace;
+        font-family: ui-monospace, monospace;
         letter-spacing: 0.03em;
+        min-width: 0;
+    }
+
+    .seed-row {
+        align-items: center;
+    }
+
+    .seed-display {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
     }
 
     .seed-value {
         color: #1976d2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .seed-help {
+        margin: -4px 0 0 0;
+    }
+
+    .field-help {
+        margin: 0;
+        color: #888;
+        font-size: 0.82rem;
+        line-height: 1.4;
+    }
+
+    .field-error {
+        margin: 0;
+        color: #c62828;
+        font-size: 0.85rem;
+        line-height: 1.4;
+    }
+
+    .seed-input {
+        font-family: ui-monospace, monospace;
+        font-size: 0.92rem;
+    }
+
+    .seed-input.invalid {
+        border-color: #ef9a9a;
+    }
+
+    .seed-meter {
+        margin: 0;
+        color: #999;
+        font-size: 0.78rem;
+    }
+
+    .seed-meter.invalid {
+        color: #c62828;
+    }
+
+    .seed-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 220px;
+        overflow: auto;
+    }
+
+    .seed-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .seed-pick {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        background: #fff;
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+    }
+
+    .seed-pick:hover,
+    .seed-item.selected .seed-pick {
+        border-color: #2196f3;
+        background: #e3f2fd;
+    }
+
+    .seed-abbr {
+        font-family: ui-monospace, monospace;
+        color: #1976d2;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .seed-meta {
+        flex-shrink: 0;
+        color: #888;
+        font-size: 0.75rem;
+    }
+
+    .seed-copy {
+        flex-shrink: 0;
+        border: 1px solid #90caf9;
+        background: #e3f2fd;
+        color: #1976d2;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .seed-copy:hover {
+        background: #bbdefb;
     }
 
     .invite-link {

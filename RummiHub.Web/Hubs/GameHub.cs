@@ -32,14 +32,24 @@ public partial class GameHub(
 
     public async Task GetAvailableGameIds()
     {
-        var ids = gameManager.GetAvailableGameIds();
-        await Clients.Caller.SendAsync(HubEvents.AvailableGameIds, ids);
+        try
+        {
+            var ids = await gameManager.GetProposedSeedsAsync();
+            await Clients.Caller.SendAsync(HubEvents.AvailableGameIds, ids);
+        }
+        catch (SeedCatalogUnavailableException ex)
+        {
+            LogHubError(ex, nameof(GetAvailableGameIds), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.AvailableGameIds, Array.Empty<string>());
+            await Clients.Caller.SendAsync(HubEvents.Error,
+                "The proposed seed list is unavailable. You can still start a random game, or paste a 64-character seed.");
+        }
     }
 
     /// <summary>
-    /// Saves the game's distribution seed to the lobby seed list so the caller can easily
-    /// replay the same game later. Triggered from the in-game header once the game is over:
-    /// the seed rebuilds the whole deal, so it is not published while the game runs.
+    /// Adds the game's distribution seed to the shared list. Any seated player can do this
+    /// while the game is in progress. The value is the one the server dealt — never a string
+    /// supplied by the caller — and it is not sent back to the browser.
     /// </summary>
     public async Task SaveSeed(string gameId)
     {
@@ -47,21 +57,28 @@ public partial class GameHub(
         {
             gameId = gameId?.Trim() ?? string.Empty;
             var game = gameManager.GetGame(gameId);
-            // Only a seated connection may publish the seed, and the value is the one the
-            // server dealt — never a string supplied by the caller.
-            if (game == null || !game.HasConnection(Context.ConnectionId))
+            var seed = SeedPublication.ForSeatedPlayer(game, Context.ConnectionId);
+            if (seed is null)
                 return;
 
-            var seed = game.RevealedDistributionSeed;
-            if (string.IsNullOrWhiteSpace(seed))
-                return;
-
-            gameManager.AddSeed(seed);
-            await Clients.Caller.SendAsync(HubEvents.SeedSaved, seed);
+            var result = await gameManager.AddSeedAsync(seed);
+            var status = result.Status switch
+            {
+                SeedAddStatus.Added => "added",
+                SeedAddStatus.AlreadyPresent => "already",
+                _ => "rejected"
+            };
+            await Clients.Caller.SendAsync(HubEvents.SeedSaved, status, result.Error ?? "");
+        }
+        catch (SeedCatalogUnavailableException ex)
+        {
+            LogHubError(ex, nameof(SaveSeed), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.SeedSaved, "unavailable", "");
         }
         catch (Exception ex)
         {
             LogHubError(ex, nameof(SaveSeed), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.SeedSaved, "rejected", "");
         }
     }
 
@@ -76,22 +93,26 @@ public partial class GameHub(
                 return;
             }
 
-            // The second argument is a distribution seed, not a game id. Only seeds the
-            // server already knows (configured replays, or seeds saved from a dealt game)
-            // are accepted. Anything else is refused — the client does not choose the shuffle.
+            // The second argument is a distribution seed, not a game code. Empty deals at
+            // random. A 64-character hex seed may be pasted. An older short id must already
+            // be on the shared list.
             var requestedSeed = gameId?.Trim();
-            if (!string.IsNullOrEmpty(requestedSeed) && !gameManager.IsKnownDistributionSeed(requestedSeed))
-            {
-                await Clients.Caller.SendAsync(HubEvents.Error, "That distribution seed is not available.");
-                return;
-            }
-
-            var game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed);
+            var game = await gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed);
             var seatToken = game.GetPlayers().Single().SeatToken;
             await Groups.AddToGroupAsync(Context.ConnectionId, game.Id);
             // Seat secret goes to the creator only — never on the shared player list.
             await Clients.Caller.SendAsync(HubEvents.SeatIssued, game.Id, seatToken);
             await Clients.Caller.SendAsync(HubEvents.GameCreated, game.Id, game.GetPlayerNames());
+        }
+        catch (SeedInputException ex)
+        {
+            await Clients.Caller.SendAsync(HubEvents.Error, ex.Message);
+        }
+        catch (SeedCatalogUnavailableException ex)
+        {
+            LogHubError(ex, nameof(CreateGame), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.Error,
+                "The proposed seed list is unavailable, so an older short seed cannot be checked. A random game, or a pasted 64-character seed, still works.");
         }
         catch (Exception ex)
         {

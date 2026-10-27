@@ -30,7 +30,7 @@ RUN test -n "$ASSEMBLY" \
     && apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /var/rummihub/keys \
+    && mkdir -p /var/rummihub/keys /var/rummihub/seeds \
     && chown -R app:app /var/rummihub
 
 WORKDIR /app

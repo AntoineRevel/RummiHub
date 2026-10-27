@@ -1,59 +1,33 @@
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Options;
 using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
-public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptions> options, ISeedStore seedStore) : IGameManager
+public partial class GameManager(ILogger<GameManager> logger, ISeedCatalog seeds) : IGameManager
 {
     private readonly ConcurrentDictionary<string, Game> _games = new();
 
-    /// <summary>Distribution seeds saved at runtime (e.g. from the in-game "replay" button).</summary>
-    private readonly ConcurrentDictionary<string, byte> _savedSeeds = new();
-
-    /// <summary>Short, unique-enough identifier used for game seeds and player ids.</summary>
+    /// <summary>Short, unique-enough identifier used for game codes and player ids.</summary>
     private static string NewShortId() => Guid.NewGuid().ToString("N")[..8];
 
-    public IReadOnlyList<string> GetAvailableGameIds()
+    public async Task<IReadOnlyList<string>> GetProposedSeedsAsync(CancellationToken cancellationToken = default)
     {
-        return options.Value.PredefinedIds
-            .Concat(_savedSeeds.Keys)
-            .Select(id => id?.Trim() ?? string.Empty)
-            .Where(DistributionSeeds.IsSafe)
-            .Distinct()
-            .Where(id => !_games.ContainsKey(id))
-            .ToList();
+        var listed = await seeds.ListAsync(cancellationToken);
+        return listed.Select(entry => entry.Seed).ToList();
     }
 
-    public bool IsKnownDistributionSeed(string? seed)
+    public async Task<SeedAddResult> AddSeedAsync(string seed, CancellationToken cancellationToken = default)
     {
-        seed = seed?.Trim() ?? string.Empty;
-        if (!DistributionSeeds.IsSafe(seed))
-            return false;
-
-        return options.Value.PredefinedIds.Any(id => string.Equals(id?.Trim(), seed, StringComparison.Ordinal))
-               || _savedSeeds.ContainsKey(seed);
+        var result = await seeds.AddAsync(seed, cancellationToken);
+        if (result.Status == SeedAddStatus.Added)
+            LogSeedSaved(DistributionSeeds.Parse(seed).Normalized);
+        return result;
     }
 
-    public bool AddSeed(string seed)
+    public async Task<Game> CreateGame(string playerName, string connectionId, string? distributionSeed = null,
+        CancellationToken cancellationToken = default)
     {
-        seed = seed?.Trim() ?? string.Empty;
-        if (!DistributionSeeds.IsSafe(seed))
-            return false;
-
-        if (!_savedSeeds.TryAdd(seed, 0))
-            return false;
-
-        // File persistence is Development-only; production keeps the seed in memory.
-        seedStore.Persist(seed);
-
-        LogSeedSaved(seed);
-        return true;
-    }
-
-    public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null)
-    {
-        var seed = ResolveDistributionSeed(distributionSeed);
+        var seed = await ResolveDistributionSeedAsync(distributionSeed, cancellationToken);
 
         var game = new Game
         {
@@ -78,19 +52,25 @@ public partial class GameManager(ILogger<GameManager> logger, IOptions<GameOptio
     }
 
     /// <summary>
-    /// Empty means "deal from a fresh CSPRNG seed". Anything else must already be on the
-    /// server list; a client-invented seed is refused before a game is stored.
+    /// Empty means "deal from a fresh CSPRNG seed". A 64-character hex seed is accepted as
+    /// pasted. An older short id is accepted only when it is already on the shared list.
     /// </summary>
-    private string ResolveDistributionSeed(string? requested)
+    private async Task<string> ResolveDistributionSeedAsync(string? requested, CancellationToken cancellationToken)
     {
-        requested = requested?.Trim() ?? string.Empty;
-        if (requested.Length == 0)
-            return DistributionSeeds.Create();
-
-        if (!IsKnownDistributionSeed(requested))
-            throw new ArgumentException("Distribution seed is not in the server list.");
-
-        return requested;
+        var parsed = DistributionSeeds.Parse(requested);
+        switch (parsed.Kind)
+        {
+            case SeedInputKind.Empty:
+                return DistributionSeeds.Create();
+            case SeedInputKind.Generated:
+                return parsed.Normalized;
+            case SeedInputKind.Legacy:
+                if (await seeds.ContainsAsync(parsed.Normalized, cancellationToken))
+                    return parsed.Normalized;
+                throw new SeedInputException(DistributionSeeds.LegacyNotListedMessage(parsed.Normalized));
+            default:
+                throw new SeedInputException(parsed.Error);
+        }
     }
 
     /// <summary>

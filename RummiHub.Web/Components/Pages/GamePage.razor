@@ -77,33 +77,38 @@ else
                 }
             </div>
 
-            @* The server sends the seed only at game over: it rebuilds every rack. *@
-            @if (!string.IsNullOrEmpty(_gameState.DistributionSeed))
+            @* The seed value is sent only at game over: it rebuilds every rack. Adding it to the
+               shared list does not require the browser to see the characters. *@
+            @if (string.IsNullOrEmpty(_gameState.DistributionSeed))
             {
-                <span class="meta-chip seed-chip" title="Distribution seed">
-                    Seed:&nbsp;<strong>@_gameState.DistributionSeed</strong>
+                <button type="button"
+                        class="meta-chip seed-add-btn @(_seedSaved ? "saved" : "")"
+                        title="Add this game's seed to the proposed list. A seed is 64 hexadecimal characters (256 bits). The value stays hidden until the game ends, because it rebuilds every rack."
+                        disabled="@(_seedSaved || _seedSaving)"
+                        @onclick="OnSaveSeed">
+                    @(_seedSaved ? "Seed added" : "Add seed")
+                </button>
+            }
+            else
+            {
+                <span class="meta-chip seed-chip" title="@($"{_gameState.DistributionSeed} — {DistributionSeeds.Describe(_gameState.DistributionSeed)}. Same seed, same deal.")">
+                    <span class="chip-label" title="@DistributionSeeds.Describe(_gameState.DistributionSeed)">@DistributionSeeds.SizeLabel(_gameState.DistributionSeed)</span>
+                    <strong class="seed-abbr" title="@_gameState.DistributionSeed">@DistributionSeeds.Abbreviate(_gameState.DistributionSeed)</strong>
+                    <button type="button" class="seed-icon-btn" title="Copy the full seed" @onclick="CopyDistributionSeed">
+                        @(_seedCopied ? "Copied" : "Copy")
+                    </button>
                     <button type="button"
                             class="seed-replay-btn @(_seedSaved ? "saved" : "")"
-                            title="Save this seed to the lobby so you can replay the same game"
-                            disabled="@_seedSaved"
+                            title="Add this 64-character seed to the proposed list"
+                            disabled="@(_seedSaved || _seedSaving)"
                             @onclick="OnSaveSeed">
-                        @if (_seedSaved)
-                        {
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            <span>Saved</span>
-                        }
-                        else
-                        {
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="12" y1="5" x2="12" y2="19"/>
-                                <line x1="5" y1="12" x2="19" y2="12"/>
-                            </svg>
-                            <span>Save seed</span>
-                        }
+                        @(_seedSaved ? "Added" : "Add seed")
                     </button>
                 </span>
+            }
+            @if (!string.IsNullOrEmpty(_seedError))
+            {
+                <span class="seed-note">@_seedError</span>
             }
             <div class="game-id" title="Game code">#@_gameState.GameId</div>
         </header>
@@ -472,49 +477,60 @@ else
     }
 
     .seed-chip {
-        position: relative;
+        min-width: 0;
+        max-width: 100%;
     }
 
-    .seed-chip strong {
+    .seed-chip .seed-abbr {
+        font-family: ui-monospace, monospace;
         color: #555;
-        font-family: monospace;
-        user-select: all;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
-    /* Reveals on hover/focus of the seed chip: saves the seed to the lobby for a replay. */
+    .seed-add-btn {
+        cursor: pointer;
+        font-weight: 600;
+        color: #1b5e20;
+        background: #e8f5e9;
+        border-color: #a5d6a7;
+    }
+
+    .seed-add-btn:hover:not(:disabled) {
+        background: #c8e6c9;
+    }
+
+    .seed-add-btn.saved,
+    .seed-add-btn:disabled {
+        cursor: default;
+        opacity: 1;
+    }
+
+    .seed-icon-btn,
     .seed-replay-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        margin-left: -5px; /* cancels the chip's flex gap while collapsed */
         border: none;
         border-radius: 999px;
-        background: linear-gradient(135deg, #4caf50, #388e3c);
-        color: #fff;
         font-size: 0.72rem;
         font-weight: 600;
         line-height: 1;
         cursor: pointer;
         white-space: nowrap;
-        overflow: hidden;
-        max-width: 0;
-        padding: 4px 0;
-        opacity: 0;
-        pointer-events: none;
-        transition: max-width 0.25s ease, padding 0.25s ease, margin-left 0.25s ease, opacity 0.2s ease;
+        padding: 4px 8px;
     }
 
-    .seed-chip:hover .seed-replay-btn,
-    .seed-chip:focus-within .seed-replay-btn,
-    .seed-replay-btn.saved {
-        max-width: 130px;
-        margin-left: 0;
-        padding: 4px 9px;
-        opacity: 1;
-        pointer-events: auto;
+    .seed-icon-btn {
+        color: #1565c0;
+        background: #fff;
+        border: 1px solid #90caf9;
     }
 
-    .seed-replay-btn:hover {
+    .seed-replay-btn {
+        color: #fff;
+        background: linear-gradient(135deg, #4caf50, #388e3c);
+    }
+
+    .seed-replay-btn:hover:not(:disabled) {
         background: linear-gradient(135deg, #388e3c, #2e7d32);
     }
 
@@ -524,8 +540,9 @@ else
         background: linear-gradient(135deg, #66bb6a, #43a047);
     }
 
-    .seed-replay-btn svg {
-        flex-shrink: 0;
+    .seed-note {
+        color: #c62828;
+        font-size: 0.78rem;
     }
 
     .game-id {

@@ -1,7 +1,6 @@
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Web.Models;
@@ -11,29 +10,23 @@ namespace RummiHub.Tests.GameEngineTests;
 
 public class PublicTableSecurityTests
 {
-    private sealed class RecordingSeedStore : ISeedStore
+    private static GameManager CreateManager(params string[] predefinedIds)
     {
-        public List<string> Persisted { get; } = [];
-        public void Persist(string seed) => Persisted.Add(seed);
+        var dir = Directory.CreateTempSubdirectory("rummi-seeds-");
+        var catalog = new FileSeedCatalog(
+            Path.Combine(dir.FullName, "catalog.jsonl"),
+            predefinedIds,
+            NullLogger<FileSeedCatalog>.Instance);
+        return new GameManager(NullLogger<GameManager>.Instance, catalog);
     }
 
-    private static GameManager CreateManager(params string[] predefinedIds) =>
-        new(NullLogger<GameManager>.Instance,
-            Options.Create(new GameOptions { PredefinedIds = predefinedIds.ToList() }),
-            new RecordingSeedStore());
-
-    private static GameManager CreateManager(ISeedStore store, params string[] predefinedIds) =>
-        new(NullLogger<GameManager>.Instance,
-            Options.Create(new GameOptions { PredefinedIds = predefinedIds.ToList() }),
-            store);
-
     [Fact]
-    public void CreateGame_DrawsACryptographicSeed_WhenTheClientDoesNotAsk()
+    public async Task CreateGame_DrawsACryptographicSeed_WhenTheClientDoesNotAsk()
     {
         var manager = CreateManager();
 
-        var first = manager.CreateGame("Alice", "conn-1");
-        var second = manager.CreateGame("Alice", "conn-2");
+        var first = await manager.CreateGame("Alice", "conn-1");
+        var second = await manager.CreateGame("Alice", "conn-2");
 
         first.DistributionSeed.Should().MatchRegex("^[0-9a-f]{64}$");
         second.DistributionSeed.Should().MatchRegex("^[0-9a-f]{64}$");
@@ -41,51 +34,58 @@ public class PublicTableSecurityTests
     }
 
     [Fact]
-    public void CreateGame_RejectsAClientChosenSeed_AndDoesNotEchoIt()
+    public async Task CreateGame_RejectsAClientChosenSeed_AndDoesNotEchoIt()
     {
         var manager = CreateManager("15e005a3");
 
-        var act = () => manager.CreateGame("Alice", "conn-1", "attacker-chosen-seed");
+        var act = async () => await manager.CreateGame("Alice", "conn-1", "attacker-chosen-seed");
 
-        act.Should().Throw<ArgumentException>()
-            .Which.Message.Should().NotContain("attacker-chosen-seed");
-        manager.IsKnownDistributionSeed("attacker-chosen-seed").Should().BeFalse();
+        var error = await act.Should().ThrowAsync<ArgumentException>();
+        error.Which.Message.Should().NotContain("attacker-chosen-seed");
+        (await manager.GetProposedSeedsAsync()).Should().NotContain("attacker-chosen-seed");
     }
 
     [Fact]
-    public void CreateGame_AcceptsAPredefinedSeed_AndASeedSavedFromADealtGame()
+    public async Task CreateGame_AcceptsAListedLegacySeed_AndAPasted64HexSeed()
     {
         var manager = CreateManager("15e005a3");
+        var pasted = DistributionSeeds.Create().ToUpperInvariant();
 
-        manager.CreateGame("Alice", "conn-1", "15e005a3").DistributionSeed.Should().Be("15e005a3");
+        (await manager.CreateGame("Alice", "conn-1", "15e005a3")).DistributionSeed.Should().Be("15e005a3");
+        (await manager.CreateGame("Bob", "conn-2", pasted)).DistributionSeed.Should().Be(pasted.ToLowerInvariant());
 
-        manager.IsKnownDistributionSeed("replay-me").Should().BeFalse();
-        manager.AddSeed("replay-me").Should().BeTrue();
-        manager.CreateGame("Bob", "conn-2", "replay-me").DistributionSeed.Should().Be("replay-me");
+        var act = async () => await manager.CreateGame("Cara", "conn-3", "replay-me");
+        var error = await act.Should().ThrowAsync<SeedInputException>();
+        error.Which.Message.Should().NotContain("replay-me");
     }
 
     [Fact]
-    public void AddSeed_RejectsUnsafeTokens_AndDoesNotPersistThem()
+    public async Task AddSeed_RejectsUnsafeTokens_AndDoesNotPersistThem()
     {
-        var store = new RecordingSeedStore();
-        var manager = CreateManager(store);
+        var path = Directory.CreateTempSubdirectory("rummi-seeds-");
+        var catalog = new FileSeedCatalog(
+            Path.Combine(path.FullName, "catalog.jsonl"),
+            [],
+            NullLogger<FileSeedCatalog>.Instance);
+        var manager = new GameManager(NullLogger<GameManager>.Instance, catalog);
 
-        manager.AddSeed(new string('a', DistributionSeeds.MaxLength + 1)).Should().BeFalse();
-        manager.AddSeed("has space").Should().BeFalse();
-        manager.AddSeed("../appsettings").Should().BeFalse();
-        manager.AddSeed("ok_seed-1").Should().BeTrue();
+        (await manager.AddSeedAsync(new string('a', DistributionSeeds.MaxLength + 1))).Status
+            .Should().Be(SeedAddStatus.Invalid);
+        (await manager.AddSeedAsync("has space")).Status.Should().Be(SeedAddStatus.Invalid);
+        (await manager.AddSeedAsync("../appsettings")).Status.Should().Be(SeedAddStatus.Invalid);
+        (await manager.AddSeedAsync("ok_seed-1")).Status.Should().Be(SeedAddStatus.Invalid);
 
-        store.Persisted.Should().Equal("ok_seed-1");
-        manager.GetAvailableGameIds().Should().BeEquivalentTo(["ok_seed-1"]);
+        (await manager.GetProposedSeedsAsync()).Should().BeEmpty();
+        File.ReadAllText(Path.Combine(path.FullName, "catalog.jsonl")).Should().BeEmpty();
     }
 
     [Fact]
-    public void CreateGame_IssuesAnUnguessableSeatSecret_NotSharedAcrossSeatsOrGames()
+    public async Task CreateGame_IssuesAnUnguessableSeatSecret_NotSharedAcrossSeatsOrGames()
     {
         var manager = CreateManager();
-        var game = manager.CreateGame("Alice", "conn-a");
+        var game = await manager.CreateGame("Alice", "conn-a");
         var bob = manager.AddPlayer(game.Id, "Bob", "conn-b");
-        var other = manager.CreateGame("Alice", "conn-c");
+        var other = await manager.CreateGame("Alice", "conn-c");
 
         var alice = game.GetPlayers().Single(p => p.Name == "Alice");
         alice.SeatToken.Should().MatchRegex("^[0-9a-f]{64}$");
@@ -101,10 +101,10 @@ public class PublicTableSecurityTests
     }
 
     [Fact]
-    public void UpdatePlayerConnection_RequiresTheSeatSecret()
+    public async Task UpdatePlayerConnection_RequiresTheSeatSecret()
     {
         var manager = CreateManager();
-        var game = manager.CreateGame("Alice", "conn-1");
+        var game = await manager.CreateGame("Alice", "conn-1");
         var alice = game.GetPlayers().Single();
         var bob = manager.AddPlayer(game.Id, "Bob", "conn-2")!;
 
@@ -120,12 +120,12 @@ public class PublicTableSecurityTests
     }
 
     [Fact]
-    public void UpdatePlayerConnection_DoesNotAcceptAnotherGamesSecret_OrAnAiSeat()
+    public async Task UpdatePlayerConnection_DoesNotAcceptAnotherGamesSecret_OrAnAiSeat()
     {
         var manager = CreateManager();
-        var game = manager.CreateGame("Alice", "conn-1");
+        var game = await manager.CreateGame("Alice", "conn-1");
         var ai = manager.AddAiPlayer(game.Id)!;
-        var other = manager.CreateGame("Alice", "conn-2");
+        var other = await manager.CreateGame("Alice", "conn-2");
         var foreignToken = other.GetPlayers().Single().SeatToken;
 
         manager.UpdatePlayerConnection(game.Id, "Alice", foreignToken, "stolen").Should().BeFalse();
@@ -136,10 +136,10 @@ public class PublicTableSecurityTests
     }
 
     [Fact]
-    public void AddPlayer_EnforcesFourSeatsForHumansAndAi()
+    public async Task AddPlayer_EnforcesFourSeatsForHumansAndAi()
     {
         var manager = CreateManager();
-        var game = manager.CreateGame("Alice", "c1");
+        var game = await manager.CreateGame("Alice", "c1");
 
         manager.AddPlayer(game.Id, "Bob", "c2").Should().NotBeNull();
         manager.AddPlayer(game.Id, "Cara", "c3").Should().NotBeNull();
@@ -152,15 +152,15 @@ public class PublicTableSecurityTests
     }
 
     [Fact]
-    public void InitializeEngine_RefusesASinglePlayer_AndDealsAFullTable()
+    public async Task InitializeEngine_RefusesASinglePlayer_AndDealsAFullTable()
     {
         var manager = CreateManager();
-        var alone = manager.CreateGame("Alice", "c1");
+        var alone = await manager.CreateGame("Alice", "c1");
 
         manager.InitializeEngine(alone.Id).Should().BeFalse();
         alone.Engine.Should().BeNull();
 
-        var game = manager.CreateGame("Alice", "c1");
+        var game = await manager.CreateGame("Alice", "c1");
         manager.AddPlayer(game.Id, "Bob", "c2");
         manager.AddPlayer(game.Id, "Cara", "c3");
         manager.AddAiPlayer(game.Id);

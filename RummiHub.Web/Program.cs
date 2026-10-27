@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.HttpOverrides;
 using RummiHub.Core.Contracts;
 using RummiHub.Web.Components;
@@ -67,7 +68,42 @@ builder.Services.AddSignalR()
     });
 builder.Services.Configure<GameOptions>(builder.Configuration.GetSection("GameOptions"));
 builder.Services.Configure<SolverApiOptions>(builder.Configuration.GetSection(SolverApiOptions.SectionName));
-builder.Services.AddSingleton<ISeedStore, AppSettingsSeedStore>();
+builder.Services.Configure<SeedCatalogOptions>(builder.Configuration.GetSection(SeedCatalogOptions.SectionName));
+var seedOptions = builder.Configuration.GetSection(SeedCatalogOptions.SectionName).Get<SeedCatalogOptions>()
+                  ?? new SeedCatalogOptions();
+if (seedOptions.IsRemote)
+{
+    if (string.IsNullOrWhiteSpace(seedOptions.RemoteBaseAddress) || !SeedCatalogApi.IsKeyStrong(seedOptions.ApiKey))
+    {
+        throw new InvalidOperationException(
+            "SeedCatalog:Mode is Remote, so SeedCatalog:RemoteBaseAddress and a SeedCatalog:ApiKey of at least 32 characters are required.");
+    }
+
+    var remoteBase = seedOptions.RemoteBaseAddress.Trim();
+    if (!remoteBase.EndsWith('/'))
+        remoteBase += "/";
+
+    builder.Services.AddHttpClient(RemoteSeedCatalog.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(remoteBase);
+            client.Timeout = TimeSpan.FromSeconds(4);
+            client.DefaultRequestHeaders.Add(SeedCatalogApi.KeyHeader, seedOptions.ApiKey.Trim());
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+    builder.Services.AddSingleton<ISeedCatalog, RemoteSeedCatalog>();
+}
+else
+{
+    builder.Services.AddSingleton<ISeedCatalog>(sp =>
+    {
+        var environment = sp.GetRequiredService<IHostEnvironment>();
+        var path = SeedCatalogOptions.ResolvePath(seedOptions, environment);
+        var predefined = sp.GetRequiredService<IOptions<GameOptions>>().Value.PredefinedIds;
+        return new FileSeedCatalog(path, predefined, sp.GetRequiredService<ILogger<FileSeedCatalog>>());
+    });
+}
+
+builder.Services.AddSingleton<SeedCatalogRateGate>();
 var benchAccess = SolverBenchAccess.From(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(benchAccess);
 builder.Services.AddSingleton<IGameManager, GameManager>();
@@ -126,6 +162,10 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapHub<GameHub>("/hubs/game");
+if (!seedOptions.IsRemote && SeedCatalogApi.IsKeyStrong(seedOptions.ApiKey))
+    SeedCatalogApi.Map(app, seedOptions.ApiKey);
+else if (!seedOptions.IsRemote && !string.IsNullOrWhiteSpace(seedOptions.ApiKey))
+    app.Logger.LogWarning("Seed catalog API is off: SeedCatalog:ApiKey must be at least 32 characters.");
 app.MapDefaultEndpoints();
 
 app.Run();

@@ -25,8 +25,9 @@ public class Game
     public string? DistributionSeed { get; set; }
 
     /// <summary>
-    /// The seed, once the game is over. During play it stays on the server: a seed rebuilds
-    /// the whole deal, every rack and the draw order included.
+    /// The seed, once the game is over. During play the browser does not receive it: a seed
+    /// rebuilds the whole deal, every rack and the draw order included. A seated player can
+    /// still add it to the shared list without the value being sent down.
     /// </summary>
     public string? RevealedDistributionSeed => Engine is { IsGameOver: true } ? DistributionSeed : null;
 

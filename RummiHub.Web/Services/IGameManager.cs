@@ -4,7 +4,8 @@ namespace RummiHub.Web.Services;
 
 public interface IGameManager
 {
-    Game CreateGame(string playerName, string connectionId, string? distributionSeed = null);
+    Task<Game> CreateGame(string playerName, string connectionId, string? distributionSeed = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Adds an AI (auto-play) seat to a not-yet-started game. Returns null if the game is
@@ -12,19 +13,14 @@ public interface IGameManager
     /// </summary>
     Player? AddAiPlayer(string gameId);
 
-    IReadOnlyList<string> GetAvailableGameIds();
+    /// <summary>Proposed distribution seeds, newest first.</summary>
+    Task<IReadOnlyList<string>> GetProposedSeedsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Saves a distribution seed to the lobby seed list so players can replay the same
-    /// game later. Returns true if it was newly added (false if blank or already present).
+    /// Appends a distribution seed to the shared list. The value must be a 64-character
+    /// seed (or an older seed that is already listed).
     /// </summary>
-    bool AddSeed(string seed);
-
-    /// <summary>
-    /// True when <paramref name="seed"/> is a safe token already known to the server
-    /// (configured replay list or a seed saved from a game this process dealt).
-    /// </summary>
-    bool IsKnownDistributionSeed(string? seed);
+    Task<SeedAddResult> AddSeedAsync(string seed, CancellationToken cancellationToken = default);
 
     Game? GetGame(string gameId);
 
