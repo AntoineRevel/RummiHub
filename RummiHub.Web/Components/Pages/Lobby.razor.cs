@@ -31,7 +31,6 @@ public partial class Lobby
 
     /// <summary>The seed the game was created with, shown in the waiting room.</summary>
     private string? _gameSeed;
-    private string? _copiedValue;
 
     private const string RandomSeed = "";
     private const string PasteSeed = "paste";
@@ -268,27 +267,6 @@ public partial class Lobby
             ? error
             : null;
 
-    /// <summary>The line under the paste field: the error, or what a seed is.</summary>
-    private string PasteHelp
-    {
-        get
-        {
-            if (PasteError is { } error)
-                return error;
-            if (!DistributionSeeds.TryNormalize(_pastedSeed, out var seed, out _))
-                return "64 hexadecimal characters (32 bytes). Spaces, dashes and capitals are ignored. An 8-character game code only joins a room.";
-            if (seed.Length == DistributionSeeds.LegacyLength)
-                return "8 characters. If a room with this code is open, this is a game code — paste it in Game code. Otherwise it is an older seed and still deals the same tiles.";
-            return "64 hexadecimal characters (32 bytes). The same seed always deals the same tiles. It joins the list.";
-        }
-    }
-
-    private SeedListItemDto? SelectedListed => _seeds.FirstOrDefault(s => s.Seed == _seedChoice);
-
-    private string? SelectTitle => SelectedListed?.Seed;
-
-    private void PickListed(string seed) => _seedChoice = seed;
-
     private bool CanCreate =>
         !string.IsNullOrWhiteSpace(_playerName) && (_seedChoice != PasteSeed || ChosenSeed is not null);
 
@@ -302,25 +280,6 @@ public partial class Lobby
 
         _gameSeed = ChosenSeed;
         await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, _gameSeed);
-    }
-
-    private async Task CopySeed()
-    {
-        if (_gameSeed is not null)
-            await CopyText(_gameSeed);
-    }
-
-    private async Task CopyText(string value)
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", value);
-            _copiedValue = value;
-        }
-        catch (Exception ex)
-        {
-            _error = $"Could not copy the seed: {ex.Message}";
-        }
     }
 
     private async Task JoinGame()

@@ -15,8 +15,8 @@ public sealed class SeedStoreTests : IDisposable
 
     private string SeedsFile => Path.Combine(_dir.FullName, "seeds", "seeds.json");
 
-    private FileSeedStore CreateStore(params string[] initialSeeds) =>
-        new(SeedsFile, initialSeeds, _time, NullLogger<FileSeedStore>.Instance);
+    private FileSeedStore CreateStore() =>
+        new(SeedsFile, _time, NullLogger<FileSeedStore>.Instance);
 
     public void Dispose() => _dir.Delete(recursive: true);
 
@@ -87,19 +87,6 @@ public sealed class SeedStoreTests : IDisposable
     }
 
     [Fact]
-    public void BeforeTheFileExists_TheListIsTheInitialSeeds()
-    {
-        var store = CreateStore("15e005a3", "not-a-seed", "15e005a3");
-
-        store.GetAll().Select(s => s.Seed).Should().Equal("15e005a3");
-        File.Exists(SeedsFile).Should().BeFalse();
-
-        store.Add(SeedA);
-
-        CreateStore().GetAll().Select(s => s.Seed).Should().Equal(SeedA, "15e005a3");
-    }
-
-    [Fact]
     public void TwoStoresOnTheSameFile_SeeEachOthersSeeds()
     {
         var production = CreateStore();
@@ -141,16 +128,11 @@ public sealed class SeedStoreTests : IDisposable
         seeds.Select(s => s.Seed).Should().NotContain(0.ToString("x64"));
     }
 
-    [Theory]
-    [InlineData(" AAAA aaaa ", "aaaaaaaa")]
-    [InlineData("15E005A3", "15e005a3")]
-    [InlineData("15e0-05a3", "15e005a3")]
-    [InlineData("15e0–05a3", "15e005a3")]
-    public void TryNormalize_DropsWhitespaceDashes_AndLowercases(string input, string expected)
+    [Fact]
+    public void TryNormalize_RefusesAnEightCharacterValue()
     {
-        DistributionSeeds.TryNormalize(input, out var seed, out var error).Should().BeTrue();
-        seed.Should().Be(expected);
-        error.Should().BeNull();
+        DistributionSeeds.TryNormalize("15e005a3", out _, out var error).Should().BeFalse();
+        error.Should().Contain("64").And.Contain("8");
     }
 
     [Fact]
@@ -179,11 +161,8 @@ public sealed class SeedStoreTests : IDisposable
     }
 
     [Fact]
-    public void Abbreviate_FitsInsideACard_AndKeepsALegacySeedWhole()
+    public void Abbreviate_KeepsTheFirst8AndLast4Characters()
     {
-        DistributionSeeds.Abbreviate("15e005a3").Should().Be("15e005a3");
         DistributionSeeds.Abbreviate(SeedA).Should().Be($"{SeedA[..8]}…{SeedA[^4..]}");
-        DistributionSeeds.Describe(SeedA).Should().Contain("32 bytes");
-        DistributionSeeds.GameCodePastedMessage("e4fc4fab").Should().Contain("game code").And.Contain("64");
     }
 }

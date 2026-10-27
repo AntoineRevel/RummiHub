@@ -73,7 +73,6 @@ builder.Services.AddSingleton<ISeedStore>(sp =>
     var options = sp.GetRequiredService<IOptions<GameOptions>>().Value;
     return new FileSeedStore(
         Path.Combine(builder.Environment.ContentRootPath, options.SeedsFile),
-        options.PredefinedIds,
         TimeProvider.System,
         sp.GetRequiredService<ILogger<FileSeedStore>>());
 });

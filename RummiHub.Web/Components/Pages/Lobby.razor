@@ -54,18 +54,14 @@
             {
                 <div class="form-group">
                     <label for="seedSelect">Distribution seed</label>
-                    <p class="field-help">
-                        A seed is <strong>64 hexadecimal characters</strong> (32 bytes): the same seed always deals the same tiles.
-                        A game code is 8 characters and only joins a room.
-                    </p>
                     @* Most recently added first. A seed fixes the whole deal: replaying one
                        deals the same racks and draw order. *@
-                    <select id="seedSelect" class="form-control" title="@SelectTitle" @bind="_seedChoice">
+                    <select id="seedSelect" class="form-control" @bind="_seedChoice">
                         <option value="@RandomSeed">— Random —</option>
                         <option value="@PasteSeed">Paste a seed…</option>
-                        @if (SelectedListed is { } picked)
+                        @foreach (var item in _seeds)
                         {
-                            <option value="@picked.Seed">@SeedOptionLabel(picked)</option>
+                            <option value="@item.Seed">@SeedOptionLabel(item)</option>
                         }
                     </select>
                     @if (_seedChoice == PasteSeed)
@@ -77,29 +73,12 @@
                                autocomplete="off"
                                spellcheck="false"
                                maxlength="200"
-                               title="64 hexadecimal characters (0-9, a-f). Spaces, dashes and capitals are ignored."
                                @bind="_pastedSeed"
                                @bind:event="oninput"
                                @onkeydown="HandleKeyDown" />
-                        <small class="seed-help @(PasteError is null ? "" : "invalid")">@PasteHelp</small>
-                    }
-                    @if (_seeds.Count > 0)
-                    {
-                        <ul class="seed-list">
-                            @foreach (var item in _seeds)
-                            {
-                                <li class="seed-item @(_seedChoice == item.Seed ? "selected" : null)">
-                                    <button type="button" class="seed-pick" title="@item.Seed" @onclick="() => PickListed(item.Seed)">
-                                        <span class="seed-abbr" title="@item.Seed">@DistributionSeeds.Abbreviate(item.Seed)</span>
-                                        <span class="seed-meta" title="@DistributionSeeds.Describe(item.Seed)">@DistributionSeeds.SizeLabel(item.Seed)</span>
-                                        <span class="seed-when">@item.AddedAt.UtcDateTime.ToString("d MMM yyyy")</span>
-                                    </button>
-                                    <button type="button" class="seed-copy" title="@item.Seed" @onclick="() => CopyText(item.Seed)">
-                                        @(_copiedValue == item.Seed ? "Copied" : "Copy")
-                                    </button>
-                                </li>
-                            }
-                        </ul>
+                        <small class="seed-help @(PasteError is null ? "" : "invalid")">
+                            @(PasteError ?? $"{DistributionSeeds.Length} characters, 0-9 and a-f. It joins the list.")
+                        </small>
                     }
                 </div>
             }
@@ -135,15 +114,10 @@
                 </div>
                 @if (_gameSeed is not null)
                 {
-                    <div class="seed-row">
+                    <div class="info-row">
                         <span class="info-label">Seed</span>
-                        <span class="seed-abbr" title="@_gameSeed">@DistributionSeeds.Abbreviate(_gameSeed)</span>
-                        <span class="seed-meta" title="@DistributionSeeds.Describe(_gameSeed)">@DistributionSeeds.SizeLabel(_gameSeed)</span>
-                        <button type="button" class="seed-copy" title="@_gameSeed" @onclick="CopySeed">
-                            @(_copiedValue == _gameSeed ? "Copied" : "Copy")
-                        </button>
+                        <strong class="info-value seed-value" title="@_gameSeed">@DistributionSeeds.Abbreviate(_gameSeed)</strong>
                     </div>
-                    <p class="seed-help">@DistributionSeeds.Describe(_gameSeed). The same seed always deals the same tiles. A game code only joins a room.</p>
                 }
             </div>
 
@@ -403,94 +377,8 @@
         letter-spacing: 0.03em;
     }
 
-    /* The short form stays on one line. The full seed is the title, and Copy. */
-    .seed-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-width: 0;
-    }
-
-    .seed-abbr {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-family: monospace;
-        font-size: 0.9rem;
-        font-weight: 700;
+    .seed-value {
         color: #1976d2;
-    }
-
-    .seed-meta,
-    .seed-when {
-        flex-shrink: 0;
-        color: #888;
-        font-size: 0.75rem;
-    }
-
-    .seed-list {
-        list-style: none;
-        margin: 8px 0 0;
-        padding: 0;
-        max-height: 180px;
-        overflow: auto;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-    }
-
-    .seed-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 2px 8px;
-        border-bottom: 1px solid #f0f0f0;
-        min-width: 0;
-    }
-
-    .seed-item:last-child {
-        border-bottom: none;
-    }
-
-    .seed-item.selected {
-        background: #e3f2fd;
-    }
-
-    .seed-pick {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        border: none;
-        background: none;
-        cursor: pointer;
-        text-align: left;
-        font: inherit;
-        padding: 4px 0;
-    }
-
-    .seed-pick .seed-abbr {
-        flex: 1;
-    }
-
-    .seed-copy {
-        flex-shrink: 0;
-        padding: 3px 12px;
-        font-size: 0.8rem;
-        font-family: inherit;
-        color: #1976d2;
-        background: #e3f2fd;
-        border: 1px solid #90caf9;
-        border-radius: 20px;
-        cursor: pointer;
-    }
-
-    .field-help {
-        margin: 0 0 8px;
-        color: #777;
-        font-size: 0.8rem;
-        line-height: 1.35;
     }
 
     .seed-input {

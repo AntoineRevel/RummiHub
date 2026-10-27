@@ -105,35 +105,9 @@ public class GameManagerTests
         manager.GetSeedList().Select(s => s.Seed).Should().Equal(SeedB, SeedA);
     }
 
-    [Fact]
-    public void CreateGame_AcceptsALegacySeed_WhenItIsNotALiveGameCode()
-    {
-        var store = new InMemorySeedStore();
-        var manager = CreateManager(store);
-
-        var game = manager.CreateGame("Alice", "conn-1", "15E005A3");
-
-        game.DistributionSeed.Should().Be("15e005a3");
-        manager.GetSeedList().Should().BeEmpty();
-    }
-
-    [Fact]
-    public void CreateGame_ExplainsWhenAnEightCharacterValueIsALiveGameCode()
-    {
-        var store = new InMemorySeedStore();
-        var manager = CreateManager(store);
-        var live = manager.CreateGame("Alice", "conn-1");
-
-        var act = () => manager.CreateGame("Bob", "conn-2", live.Id.Insert(4, "-").ToUpperInvariant());
-
-        act.Should().Throw<ArgumentException>()
-            .WithMessage(DistributionSeeds.GameCodePastedMessage(live.Id));
-        store.Seeds.Should().BeEmpty();
-        manager.GetGame(live.Id).Should().NotBeNull();
-    }
-
     [Theory]
     [InlineData("abc")]
+    [InlineData("15e005a3")]
     [InlineData("not-a-seed")]
     public void CreateGame_RefusesAMalformedSeed_AndSaysTheExpectedLength(string seed)
     {

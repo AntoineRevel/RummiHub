@@ -100,12 +100,6 @@ public partial class GameHub(
             await Clients.Caller.SendAsync(HubEvents.SeatIssued, game.Id, seatToken);
             await Clients.Caller.SendAsync(HubEvents.GameCreated, game.Id, game.GetPlayerNames());
         }
-        catch (ArgumentException ex)
-        {
-            // A pasted game code, or a seed the normalizer refused on the second check.
-            LogHubError(ex, nameof(CreateGame), Context.ConnectionId);
-            await Clients.Caller.SendAsync(HubEvents.Error, ex.Message);
-        }
         catch (Exception ex)
         {
             LogHubError(ex, nameof(CreateGame), Context.ConnectionId);

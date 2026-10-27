@@ -668,7 +668,7 @@ public partial class GamePage : IAsyncDisposable
 
     private string SeedChipTitle =>
         _gameState?.DistributionSeed
-        ?? "A seed is 64 hexadecimal characters (32 bytes) and deals the same tiles. The game code only joins this room. This seed is shown here, and on the lobby list, when the game ends.";
+        ?? "This game's seed: shown here, and on the lobby list, when the game ends.";
 
     private async Task OnSaveSeed()
     {

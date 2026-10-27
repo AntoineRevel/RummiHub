@@ -52,9 +52,9 @@ public sealed class GameEngine
         var tiles = GenerateTiles();
         // A seed deals deterministically so a saved seed replays the same game. A seed the
         // server generated drives a SHA-256 stream: recovering it from a dealt rack means
-        // searching all 256 bits, not System.Random's 32-bit seed. Older replay ids (the
-        // configured list) keep the System.Random deal they were saved with. With no seed,
-        // the shuffle draws from a CSPRNG.
+        // searching all 256 bits, not System.Random's 32-bit seed. Any other string (the
+        // lobby only sends generated seeds; tests use short ones) gets a System.Random deal.
+        // With no seed, the shuffle draws from a CSPRNG.
         if (distributionSeed is null)
             ShuffleSecure(tiles);
         else if (DistributionSeeds.IsGenerated(distributionSeed))

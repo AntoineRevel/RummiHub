@@ -47,14 +47,12 @@ public sealed partial class FileSeedStore : ISeedStore
 
     private readonly Lock _gate = new();
     private readonly string _path;
-    private readonly IReadOnlyList<string> _initialSeeds;
     private readonly TimeProvider _time;
     private readonly ILogger<FileSeedStore> _logger;
 
-    public FileSeedStore(string path, IReadOnlyList<string> initialSeeds, TimeProvider time, ILogger<FileSeedStore> logger)
+    public FileSeedStore(string path, TimeProvider time, ILogger<FileSeedStore> logger)
     {
         _path = Path.GetFullPath(path);
-        _initialSeeds = initialSeeds;
         _time = time;
         _logger = logger;
     }
@@ -74,7 +72,7 @@ public sealed partial class FileSeedStore : ISeedStore
 
     public void Add(string seed, DateTimeOffset? hiddenUntil = null)
     {
-        if (!DistributionSeeds.IsValid(seed))
+        if (!DistributionSeeds.IsGenerated(seed))
             return;
 
         Change(seeds =>
@@ -109,27 +107,15 @@ public sealed partial class FileSeedStore : ISeedStore
             return true;
         });
 
-    /// <summary>
-    /// Before the file exists, the list is <see cref="GameOptions.PredefinedIds"/> (the seeds
-    /// the server offered before the shared list), dated when the server read them.
-    /// </summary>
     private List<SavedSeed> Read()
     {
         if (!File.Exists(_path))
-        {
-            var now = _time.GetUtcNow();
-            return _initialSeeds
-                .Select(s => s.Trim().ToLowerInvariant())
-                .Where(DistributionSeeds.IsValid)
-                .Distinct()
-                .Select(s => new SavedSeed(s, now))
-                .ToList();
-        }
+            return [];
 
         var file = JsonSerializer.Deserialize<SeedFile>(File.ReadAllText(_path), JsonOptions);
         // The test site runs any branch and writes here too: keep only well-formed entries.
         return (file?.Seeds ?? [])
-            .Where(s => s is not null && DistributionSeeds.IsValid(s.Seed))
+            .Where(s => s is not null && DistributionSeeds.IsGenerated(s.Seed))
             .DistinctBy(s => s.Seed)
             .OrderByDescending(s => s.AddedAt)
             .ToList();
