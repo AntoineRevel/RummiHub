@@ -33,15 +33,16 @@ public partial class GameHub(
     public async Task GetSeedList()
     {
         var seeds = gameManager.GetSeedList()
-            .Select(s => new SeedListItemDto(s.Seed, s.AddedAt))
+            .Select(s => new SeedListItemDto(
+                DistributionSeeds.ListId(s.Seed), DistributionSeeds.Abbreviate(s.Seed), s.AddedAt))
             .ToList();
         await Clients.Caller.SendAsync(HubEvents.SeedList, seeds);
     }
 
-    /// <summary>Takes a seed off the lobby list, then sends the caller the new list.</summary>
-    public async Task RemoveSeed(string seed)
+    /// <summary>Takes a seed off the lobby list by its list id, then sends the caller the new list.</summary>
+    public async Task RemoveSeed(string listId)
     {
-        gameManager.RemoveSeed(seed ?? string.Empty);
+        gameManager.RemoveSeed(listId ?? string.Empty);
         await GetSeedList();
     }
 
@@ -69,7 +70,11 @@ public partial class GameHub(
         }
     }
 
-    public async Task CreateGame(string playerName, string? gameId = null)
+    /// <summary>
+    /// Creates a game dealt from a pasted seed, from a listed one (named by its list id: the
+    /// lobby never holds a listed seed), or, with both empty, from a fresh random seed.
+    /// </summary>
+    public async Task CreateGame(string playerName, string? pastedSeed, string? listedSeedId)
     {
         try
         {
@@ -80,11 +85,18 @@ public partial class GameHub(
                 return;
             }
 
-            // The second argument is a distribution seed, not a game id: empty deals from a
-            // fresh random seed, anything else must be a well-formed seed (picked or pasted).
-            var requestedSeed = gameId?.Trim();
-            if (!string.IsNullOrEmpty(requestedSeed)
-                && !DistributionSeeds.TryNormalize(requestedSeed, out _, out var seedError))
+            var requestedSeed = pastedSeed?.Trim();
+            if (!string.IsNullOrWhiteSpace(listedSeedId))
+            {
+                requestedSeed = gameManager.FindListedSeed(listedSeedId.Trim());
+                if (requestedSeed is null)
+                {
+                    await Clients.Caller.SendAsync(HubEvents.Error, "That seed is no longer on the list.");
+                    return;
+                }
+            }
+            else if (!string.IsNullOrEmpty(requestedSeed)
+                     && !DistributionSeeds.TryNormalize(requestedSeed, out _, out var seedError))
             {
                 await Clients.Caller.SendAsync(HubEvents.Error, seedError);
                 return;
@@ -538,10 +550,11 @@ public partial class GameHub(
         return new GameStateDto
         {
             GameId = game.Id,
-            // Every player in the group receives this DTO: seat secrets stay off it. The seed is
-            // on it from the start (it is on the lobby list too once saved), even though it
-            // rebuilds every rack and the draw order.
-            DistributionSeed = game.DistributionSeed,
+            // Every player in the group receives this DTO: seat secrets stay off it, and so
+            // does the full seed until game over (it rebuilds every rack and the draw order).
+            // The short form identifies the game's seed from the start.
+            DistributionSeed = engine.IsGameOver ? game.DistributionSeed : null,
+            SeedShort = game.DistributionSeed is { } seed ? DistributionSeeds.Abbreviate(seed) : null,
             SeedSaved = game.SeedSaved,
             Players = engine.Players.Select(p => new PlayerInfoDto
             {

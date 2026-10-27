@@ -22,8 +22,11 @@ public interface IGameManager
     /// <summary>Adds the game's seed to the lobby list, at any time; it shows there at once.</summary>
     void SaveSeed(Game game);
 
-    /// <summary>Takes a seed off the lobby list (anyone may: there are no accounts).</summary>
-    void RemoveSeed(string seed);
+    /// <summary>The listed seed whose <see cref="DistributionSeeds.ListId"/> this is, or null.</summary>
+    string? FindListedSeed(string listId);
+
+    /// <summary>Takes a seed off the lobby list by its list id (anyone may: there are no accounts).</summary>
+    void RemoveSeed(string listId);
 
     Game? GetGame(string gameId);
 

@@ -62,7 +62,7 @@
                             <option value="@PasteSeed">Paste a seed…</option>
                             @foreach (var item in _seeds)
                             {
-                                <option value="@item.Seed">@SeedOptionLabel(item)</option>
+                                <option value="@item.Id">@SeedOptionLabel(item)</option>
                             }
                         </select>
                         @if (IsListedSeed)
@@ -124,7 +124,7 @@
                 {
                     <div class="info-row">
                         <span class="info-label">Seed</span>
-                        <strong class="info-value seed-value" title="@_gameSeed">@DistributionSeeds.Abbreviate(_gameSeed)</strong>
+                        <strong class="info-value seed-value">@_gameSeed</strong>
                     </div>
                 }
             </div>

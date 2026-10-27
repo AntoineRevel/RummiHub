@@ -144,16 +144,38 @@ public class GameManagerTests
     }
 
     [Fact]
-    public void RemoveSeed_TakesAPastedFormOffTheList()
+    public void RemoveSeed_TakesTheSeedNamedByItsListIdOffTheList()
     {
         var store = new InMemorySeedStore();
         store.Add(SeedA);
         store.Add(SeedB);
         var manager = CreateManager(store);
 
-        manager.RemoveSeed(" " + SeedA.ToUpperInvariant());
-        manager.RemoveSeed("not-a-seed");
+        manager.RemoveSeed(DistributionSeeds.ListId(SeedA));
+        manager.RemoveSeed(SeedB);
+        manager.RemoveSeed("unknown");
 
         manager.GetSeedList().Select(s => s.Seed).Should().Equal(SeedB);
+    }
+
+    [Fact]
+    public void FindListedSeed_MapsAListIdBackToItsSeed_OnlyForListedSeeds()
+    {
+        var store = new InMemorySeedStore();
+        store.Add(SeedA);
+        var manager = CreateManager(store);
+
+        manager.FindListedSeed(DistributionSeeds.ListId(SeedA)).Should().Be(SeedA);
+        manager.FindListedSeed(DistributionSeeds.ListId(SeedB)).Should().BeNull();
+    }
+
+    [Fact]
+    public void ListIdAndShortForm_DoNotContainTheSeed()
+    {
+        var id = DistributionSeeds.ListId(SeedA);
+        var other = DistributionSeeds.ListId(SeedB);
+
+        id.Should().MatchRegex("^[0-9a-f]{16}$").And.NotBe(other);
+        DistributionSeeds.Abbreviate(SeedA).Length.Should().BeLessThan(DistributionSeeds.Length / 4);
     }
 }

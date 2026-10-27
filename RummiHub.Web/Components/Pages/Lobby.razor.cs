@@ -29,7 +29,7 @@ public partial class Lobby
     private string _seedChoice = RandomSeed;
     private string _pastedSeed = string.Empty;
 
-    /// <summary>The seed the game was created with, shown in the waiting room.</summary>
+    /// <summary>The short form of the seed the game was created with, shown in the waiting room.</summary>
     private string? _gameSeed;
 
     private const string RandomSeed = "";
@@ -251,14 +251,9 @@ public partial class Lobby
             await JoinGame();
     }
 
-    /// <summary>The seed the next game is created with: null for a random one.</summary>
-    private string? ChosenSeed =>
-        _seedChoice switch
-        {
-            RandomSeed => null,
-            PasteSeed => DistributionSeeds.TryNormalize(_pastedSeed, out var seed, out _) ? seed : null,
-            var listed => listed
-        };
+    /// <summary>The pasted seed, normalized; null when not pasting or not valid yet.</summary>
+    private string? PastedSeed =>
+        _seedChoice == PasteSeed && DistributionSeeds.TryNormalize(_pastedSeed, out var seed, out _) ? seed : null;
 
     /// <summary>Why the pasted seed is refused; null while nothing is typed or once it is valid.</summary>
     private string? PasteError =>
@@ -275,27 +270,32 @@ public partial class Lobby
         if (_hubConnection is null || !IsListedSeed)
             return;
 
-        var seed = _seedChoice;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Remove the seed {DistributionSeeds.Abbreviate(seed)} from the list?"))
+        var listId = _seedChoice;
+        var label = _seeds.FirstOrDefault(s => s.Id == listId)?.Short;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Remove the seed {label} from the list?"))
             return;
 
         _seedChoice = RandomSeed;
-        await _hubConnection.SendAsync(HubEvents.RemoveSeed, seed);
+        await _hubConnection.SendAsync(HubEvents.RemoveSeed, listId);
     }
 
     private bool CanCreate =>
-        !string.IsNullOrWhiteSpace(_playerName) && (_seedChoice != PasteSeed || ChosenSeed is not null);
+        !string.IsNullOrWhiteSpace(_playerName) && (_seedChoice != PasteSeed || PastedSeed is not null);
 
     private static string SeedOptionLabel(SeedListItemDto item) =>
-        $"{item.AddedAt.UtcDateTime:d MMM yyyy} · {DistributionSeeds.Abbreviate(item.Seed)}";
+        $"{item.AddedAt.UtcDateTime:d MMM yyyy} · {item.Short}";
 
     private async Task CreateGame()
     {
         if (_hubConnection is null || !CanCreate)
             return;
 
-        _gameSeed = ChosenSeed;
-        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, _gameSeed);
+        var pasted = PastedSeed;
+        var listedId = IsListedSeed ? _seedChoice : null;
+        _gameSeed = pasted is not null
+            ? DistributionSeeds.Abbreviate(pasted)
+            : _seeds.FirstOrDefault(s => s.Id == listedId)?.Short;
+        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, pasted, listedId);
     }
 
     private async Task JoinGame()
