@@ -40,8 +40,8 @@ public partial class GameHub(
 
     /// <summary>
     /// Adds the game's distribution seed to the lobby seed list so it can be replayed later.
-    /// Allowed at any time; while the game runs the lobby does not show it yet (the seed
-    /// rebuilds every rack), and the caller only learns it was saved, not its value.
+    /// Allowed at any time, and listed at once. The in-game chip still shows the value only
+    /// at game over.
     /// </summary>
     public async Task SaveSeed(string gameId)
     {
@@ -54,16 +54,7 @@ public partial class GameHub(
             if (game == null || !game.HasConnection(Context.ConnectionId))
                 return;
 
-            await game.ActionLock.WaitAsync();
-            try
-            {
-                gameManager.SaveSeed(game);
-            }
-            finally
-            {
-                game.ActionLock.Release();
-            }
-
+            gameManager.SaveSeed(game);
             await Clients.Caller.SendAsync(HubEvents.SeedSaved);
         }
         catch (Exception ex)
@@ -579,8 +570,6 @@ public partial class GameHub(
         var engine = game.Engine!;
         engine.AdvanceToNextPlayer();
         SeatBoard(game);
-        if (engine.IsGameOver)
-            gameManager.RevealSeed(game);
 
         var state = BuildGameState(game);
         await hubContext.Clients.Group(game.Id).SendAsync(HubEvents.GameStateUpdated, state);

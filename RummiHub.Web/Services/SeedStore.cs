@@ -3,15 +3,7 @@ using System.Text.Json;
 namespace RummiHub.Web.Services;
 
 /// <summary>A seed on the lobby list.</summary>
-/// <param name="HiddenUntil">
-/// Set while a game dealt from this seed may still be running: the seed rebuilds every rack,
-/// so the lobby leaves it out until that game ends (or this time passes, if the server that
-/// ran it restarted before the end).
-/// </param>
-public sealed record SavedSeed(string Seed, DateTimeOffset AddedAt, DateTimeOffset? HiddenUntil = null)
-{
-    public bool IsVisible(DateTimeOffset now) => HiddenUntil is null || HiddenUntil <= now;
-}
+public sealed record SavedSeed(string Seed, DateTimeOffset AddedAt);
 
 /// <summary>
 /// The lobby seed list, persisted. Production and the test site share one file (a Docker
@@ -19,17 +11,11 @@ public sealed record SavedSeed(string Seed, DateTimeOffset AddedAt, DateTimeOffs
 /// </summary>
 public interface ISeedStore
 {
-    /// <summary>Every seed, hidden ones included, most recently added first.</summary>
+    /// <summary>Every seed, most recently added first.</summary>
     IReadOnlyList<SavedSeed> GetAll();
 
-    /// <summary>
-    /// Puts the seed at the top of the list, dated now. A seed already listed moves up; it
-    /// stays visible if it was (it is public already) and is hidden only when both say so.
-    /// </summary>
-    void Add(string seed, DateTimeOffset? hiddenUntil = null);
-
-    /// <summary>Shows a seed hidden by <see cref="Add"/>. No-op if absent or visible.</summary>
-    void Reveal(string seed);
+    /// <summary>Puts the seed at the top of the list, dated now. A seed already listed moves up.</summary>
+    void Add(string seed);
 }
 
 /// <summary>
@@ -70,42 +56,21 @@ public sealed partial class FileSeedStore : ISeedStore
         }
     }
 
-    public void Add(string seed, DateTimeOffset? hiddenUntil = null)
+    public void Add(string seed)
     {
         if (!DistributionSeeds.IsValid(seed))
             return;
 
         Change(seeds =>
         {
-            var existing = seeds.FindIndex(s => s.Seed == seed);
-            if (existing >= 0)
-            {
-                var old = seeds[existing];
-                seeds.RemoveAt(existing);
-                if (old.HiddenUntil is null || hiddenUntil is null)
-                    hiddenUntil = null;
-                else if (old.HiddenUntil > hiddenUntil)
-                    hiddenUntil = old.HiddenUntil;
-            }
-
-            seeds.Insert(0, new SavedSeed(seed, _time.GetUtcNow(), hiddenUntil));
+            seeds.RemoveAll(s => s.Seed == seed);
+            seeds.Insert(0, new SavedSeed(seed, _time.GetUtcNow()));
             if (seeds.Count > MaxSeeds)
                 seeds.RemoveRange(MaxSeeds, seeds.Count - MaxSeeds);
             return true;
         });
-        LogSeedSaved(seed, hiddenUntil is not null);
+        LogSeedSaved(seed);
     }
-
-    public void Reveal(string seed) =>
-        Change(seeds =>
-        {
-            var i = seeds.FindIndex(s => s.Seed == seed);
-            if (i < 0 || seeds[i].HiddenUntil is null)
-                return false;
-
-            seeds[i] = seeds[i] with { HiddenUntil = null };
-            return true;
-        });
 
     private List<SavedSeed> Read()
     {
@@ -164,8 +129,8 @@ public sealed partial class FileSeedStore : ISeedStore
 
     private sealed record SeedFile(List<SavedSeed> Seeds);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} added to the seed list (hidden while its game runs: {Hidden})")]
-    private partial void LogSeedSaved(string seed, bool hidden);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} added to the seed list")]
+    private partial void LogSeedSaved(string seed);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Could not read the seed list {Path}")]
     private partial void LogReadFailed(Exception ex, string path);

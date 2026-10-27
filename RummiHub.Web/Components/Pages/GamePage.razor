@@ -78,8 +78,8 @@ else
                 }
             </div>
 
-            @* The seed can be saved at any time, but the server sends its value only at game
-               over (it rebuilds every rack), and the lobby lists it only then too. *@
+            @* The seed can be saved to the lobby list at any time; the server sends its value
+               to this page only at game over. *@
             <span class="meta-chip seed-chip" title="@SeedChipTitle">
                 <span class="chip-label">Seed</span>
                 @if (_gameState.DistributionSeed is { } seed)
