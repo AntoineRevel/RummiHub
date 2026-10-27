@@ -37,6 +37,7 @@ public partial class GamePage : IAsyncDisposable
     /// <summary>The asked-for hint has no tiles. Shown only while the play zone is empty.</summary>
     private bool _hintNoMove;
     private bool _seedSaved;
+    private bool _seedCopied;
     private bool _loadingAutoContinue;
     private string? _seatToken;
     private bool _hubStartRequested;
@@ -328,7 +329,7 @@ public partial class GamePage : IAsyncDisposable
             ApplyOptimal(tiles);
         });
 
-        Handle<string>(HubEvents.SeedSaved, _ => _seedSaved = true);
+        hub.On(HubEvents.SeedSaved, () => InvokeAsync(() => { _seedSaved = true; StateHasChanged(); }));
 
         Handle<List<Tile>>(HubEvents.RackUpdated, rack =>
         {
@@ -662,9 +663,16 @@ public partial class GamePage : IAsyncDisposable
         }
     }
 
+    /// <summary>Saved from this tab, or by anyone at the table (the list is shared).</summary>
+    private bool SeedSaved => _seedSaved || _gameState is { SeedSaved: true };
+
+    private string SeedChipTitle =>
+        _gameState?.DistributionSeed
+        ?? "This game's seed: shown here, and on the lobby list, when the game ends.";
+
     private async Task OnSaveSeed()
     {
-        if (_hubConnection is null || _seedSaved) return;
+        if (_hubConnection is null || SeedSaved) return;
 
         try
         {
@@ -673,6 +681,21 @@ public partial class GamePage : IAsyncDisposable
         catch (Exception ex)
         {
             _error = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task OnCopySeed()
+    {
+        if (_gameState?.DistributionSeed is not { } seed) return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", seed);
+            _seedCopied = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not copy the seed: {ex.Message}";
         }
     }
 

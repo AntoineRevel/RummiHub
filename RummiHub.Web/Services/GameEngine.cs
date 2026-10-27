@@ -38,6 +38,9 @@ public sealed class GameEngine
         IReadOnlyList<bool>? autoPlayers = null)
     {
         ArgumentNullException.ThrowIfNull(playerNames);
+        if (distributionSeed is not null && !DistributionSeeds.IsValid(distributionSeed))
+            throw new ArgumentException(
+                $"A seed is {DistributionSeeds.Length} lowercase hex characters.", nameof(distributionSeed));
         if (playerNames.Count is < 1 or > GameLimits.MaxPlayers)
             throw new ArgumentOutOfRangeException(nameof(playerNames),
                 $"Expected between 1 and {GameLimits.MaxPlayers} players.");
@@ -50,17 +53,13 @@ public sealed class GameEngine
         _tilePool.Clear();
 
         var tiles = GenerateTiles();
-        // A seed deals deterministically so a saved seed replays the same game. A seed the
-        // server generated drives a SHA-256 stream: recovering it from a dealt rack means
-        // searching all 256 bits, not System.Random's 32-bit seed. Older replay ids (the
-        // configured list) keep the System.Random deal they were saved with. With no seed,
-        // the shuffle draws from a CSPRNG.
+        // A seed deals deterministically so a saved seed replays the same game. It drives a
+        // SHA-256 stream: recovering it from a dealt rack means searching all 256 bits. With
+        // no seed, the shuffle draws from a CSPRNG.
         if (distributionSeed is null)
             ShuffleSecure(tiles);
-        else if (DistributionSeeds.IsGenerated(distributionSeed))
-            ShuffleFromSeed(tiles, distributionSeed);
         else
-            Shuffle(tiles, new Random(GetStableHash(distributionSeed)));
+            ShuffleFromSeed(tiles, distributionSeed);
         DistributeTiles(tiles, playerNames, autoPlayers);
     }
 
@@ -248,14 +247,6 @@ public sealed class GameEngine
         return await resultSubscriber.WaitForResult(accepted.ContentHash, ct);
     }
 
-    private static int GetStableHash(string s)
-    {
-        var hash = 0;
-        foreach (var c in s)
-            hash = hash * 31 + c;
-        return hash;
-    }
-
     private static Tile[] GenerateTiles()
     {
         var tiles = new Tile[106];
@@ -272,15 +263,6 @@ public sealed class GameEngine
         tiles[index] = new Tile(isJoker: true);
 
         return tiles;
-    }
-
-    private static void Shuffle(Tile[] tiles, Random rng)
-    {
-        for (var i = tiles.Length - 1; i > 0; i--)
-        {
-            var j = rng.Next(i + 1);
-            (tiles[i], tiles[j]) = (tiles[j], tiles[i]);
-        }
     }
 
     private static void ShuffleSecure(Tile[] tiles)

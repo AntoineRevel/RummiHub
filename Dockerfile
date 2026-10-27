@@ -30,7 +30,7 @@ RUN test -n "$ASSEMBLY" \
     && apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /var/rummihub/keys \
+    && mkdir -p /var/rummihub/keys /var/rummihub/seeds \
     && chown -R app:app /var/rummihub
 
 WORKDIR /app
@@ -39,8 +39,11 @@ USER app
 
 # The aspnet image listens on 8080 as the non-root user. Production is the default
 # for this image; Aspire local dev does not use it.
+# GameOptions__SeedsFile: the lobby seed list. Compose mounts there a volume shared by
+# production and the test site; the directory exists (owned by app) so a new volume is too.
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     ASPNETCORE_ENVIRONMENT=Production \
+    GameOptions__SeedsFile=/var/rummihub/seeds/seeds.json \
     DOTNET_ENVIRONMENT=Production \
     ASSEMBLY=${ASSEMBLY}
 

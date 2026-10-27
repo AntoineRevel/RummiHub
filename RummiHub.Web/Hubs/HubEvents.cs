@@ -7,7 +7,7 @@ public static class HubEvents
     public const string PlayerJoined = nameof(PlayerJoined);
     public const string PlayerLeft = nameof(PlayerLeft);
     public const string GameStarted = nameof(GameStarted);
-    public const string AvailableGameIds = nameof(AvailableGameIds);
+    public const string SeedList = nameof(SeedList);
     public const string SeatIssued = nameof(SeatIssued);
     public const string Error = nameof(Error);
 
@@ -16,7 +16,7 @@ public static class HubEvents
     public const string JoinGame = nameof(JoinGame);
     public const string AddAiPlayer = nameof(AddAiPlayer);
     public const string StartGame = nameof(StartGame);
-    public const string GetAvailableGameIds = nameof(GetAvailableGameIds);
+    public const string GetSeedList = nameof(GetSeedList);
 
     // === Game phase: Server -> Client ===
     public const string GameStateUpdated = nameof(GameStateUpdated);

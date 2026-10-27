@@ -2,6 +2,7 @@
 @page "/lobby"
 @rendermode InteractiveServer
 @implements IAsyncDisposable
+@using RummiHub.Web.Services
 @inject Microsoft.AspNetCore.Hosting.Server.IServer Server
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -49,23 +50,42 @@
                        @onkeydown="HandleKeyDown" />
             </div>
 
-            @if (_availableGameIds.Count > 0 && string.IsNullOrWhiteSpace(_joinGameId))
+            @if (string.IsNullOrWhiteSpace(_joinGameId))
             {
                 <div class="form-group">
                     <label for="seedSelect">Distribution seed</label>
-                    <select id="seedSelect" class="form-control" @bind="_selectedGameId">
-                        <option value="">— Random —</option>
-                        @foreach (var id in _availableGameIds)
+                    @* Most recently added first. A seed fixes the whole deal: replaying one
+                       deals the same racks and draw order. *@
+                    <select id="seedSelect" class="form-control" @bind="_seedChoice">
+                        <option value="@RandomSeed">— Random —</option>
+                        <option value="@PasteSeed">Paste a seed…</option>
+                        @foreach (var item in _seeds)
                         {
-                            <option value="@id">@id</option>
+                            <option value="@item.Seed">@SeedOptionLabel(item)</option>
                         }
                     </select>
+                    @if (_seedChoice == PasteSeed)
+                    {
+                        <input id="seedPaste"
+                               type="text"
+                               class="form-control seed-input @(PasteError is null ? "" : "invalid")"
+                               placeholder="Paste a seed here"
+                               autocomplete="off"
+                               spellcheck="false"
+                               maxlength="200"
+                               @bind="_pastedSeed"
+                               @bind:event="oninput"
+                               @onkeydown="HandleKeyDown" />
+                        <small class="seed-help @(PasteError is null ? "" : "invalid")">
+                            @(PasteError ?? $"{DistributionSeeds.Length} characters, 0-9 and a-f. It joins the list.")
+                        </small>
+                    }
                 </div>
             }
 
             <button class="btn-action @(string.IsNullOrWhiteSpace(_joinGameId) ? "btn-create" : "btn-join")"
                     @onclick="HandleAction"
-                    disabled="@string.IsNullOrWhiteSpace(_playerName)">
+                    disabled="@(string.IsNullOrWhiteSpace(_joinGameId) ? !CanCreate : string.IsNullOrWhiteSpace(_playerName))">
                 @if (string.IsNullOrWhiteSpace(_joinGameId))
                 {
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -92,11 +112,11 @@
                     <span class="info-label">Game code</span>
                     <strong class="info-value">@_gameId</strong>
                 </div>
-                @if (!string.IsNullOrEmpty(_selectedGameId))
+                @if (_gameSeed is not null)
                 {
                     <div class="info-row">
                         <span class="info-label">Seed</span>
-                        <strong class="info-value seed-value">@_selectedGameId</strong>
+                        <strong class="info-value seed-value" title="@_gameSeed">@DistributionSeeds.Abbreviate(_gameSeed)</strong>
                     </div>
                 }
             </div>
@@ -359,6 +379,24 @@
 
     .seed-value {
         color: #1976d2;
+    }
+
+    .seed-input {
+        font-family: monospace;
+        font-size: 0.85rem;
+    }
+
+    .seed-input.invalid {
+        border-color: #e57373;
+    }
+
+    .seed-help {
+        color: #999;
+        font-size: 0.8rem;
+    }
+
+    .seed-help.invalid {
+        color: #c62828;
     }
 
     .invite-link {

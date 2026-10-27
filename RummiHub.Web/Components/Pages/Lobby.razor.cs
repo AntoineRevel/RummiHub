@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.JSInterop;
 using RummiHub.Web.Hubs;
+using RummiHub.Web.Models;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Web.Components.Pages;
@@ -22,8 +23,17 @@ public partial class Lobby
     private string _joinGameId = string.Empty;
     private string _playerName = string.Empty;
     private List<string> _players = [];
-    private List<string> _availableGameIds = [];
-    private string _selectedGameId = string.Empty;
+    private List<SeedListItemDto> _seeds = [];
+
+    /// <summary>The seed select: <see cref="RandomSeed"/>, <see cref="PasteSeed"/> or a listed seed.</summary>
+    private string _seedChoice = RandomSeed;
+    private string _pastedSeed = string.Empty;
+
+    /// <summary>The seed the game was created with, shown in the waiting room.</summary>
+    private string? _gameSeed;
+
+    private const string RandomSeed = "";
+    private const string PasteSeed = "paste";
     private ElementReference _nameInput;
     private ElementReference _startButton;
     private bool _startArmed;
@@ -127,9 +137,9 @@ public partial class Lobby
             .WithAutomaticReconnect()
             .Build();
 
-        _hubConnection.On<IEnumerable<string>>(HubEvents.AvailableGameIds, ids =>
+        _hubConnection.On<List<SeedListItemDto>>(HubEvents.SeedList, seeds =>
         {
-            _availableGameIds = ids.ToList();
+            _seeds = seeds;
             InvokeAsync(StateHasChanged);
         });
 
@@ -192,7 +202,7 @@ public partial class Lobby
         {
             await _hubConnection.StartAsync();
             _isConnected = true;
-            await _hubConnection.SendAsync(HubEvents.GetAvailableGameIds);
+            await _hubConnection.SendAsync(HubEvents.GetSeedList);
         }
         catch (Exception ex)
         {
@@ -241,13 +251,35 @@ public partial class Lobby
             await JoinGame();
     }
 
+    /// <summary>The seed the next game is created with: null for a random one.</summary>
+    private string? ChosenSeed =>
+        _seedChoice switch
+        {
+            RandomSeed => null,
+            PasteSeed => DistributionSeeds.TryNormalize(_pastedSeed, out var seed, out _) ? seed : null,
+            var listed => listed
+        };
+
+    /// <summary>Why the pasted seed is refused; null while nothing is typed or once it is valid.</summary>
+    private string? PasteError =>
+        _seedChoice == PasteSeed && !string.IsNullOrWhiteSpace(_pastedSeed)
+        && !DistributionSeeds.TryNormalize(_pastedSeed, out _, out var error)
+            ? error
+            : null;
+
+    private bool CanCreate =>
+        !string.IsNullOrWhiteSpace(_playerName) && (_seedChoice != PasteSeed || ChosenSeed is not null);
+
+    private static string SeedOptionLabel(SeedListItemDto item) =>
+        $"{item.AddedAt.UtcDateTime:d MMM yyyy} · {DistributionSeeds.Abbreviate(item.Seed)}";
+
     private async Task CreateGame()
     {
-        if (_hubConnection is not null)
-        {
-            var seed = string.IsNullOrWhiteSpace(_selectedGameId) ? null : _selectedGameId;
-            await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, seed);
-        }
+        if (_hubConnection is null || !CanCreate)
+            return;
+
+        _gameSeed = ChosenSeed;
+        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, _gameSeed);
     }
 
     private async Task JoinGame()

@@ -260,7 +260,7 @@ public class HumanPlayOwnershipTests
     private static GameEngine CreateAuditGame()
     {
         var engine = new GameEngine();
-        engine.Initialize(["Alice", "Bob"], "audit-seed");
+        engine.Initialize(["Alice", "Bob"], TestSeeds.Of("audit-seed"));
         return engine;
     }
 

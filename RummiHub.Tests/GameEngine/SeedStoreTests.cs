@@ -1,79 +1,168 @@
 using FluentAssertions;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Tests.GameEngineTests;
 
-public class SeedStoreTests
+public sealed class SeedStoreTests : IDisposable
 {
-    private sealed class StubEnv(string environmentName, string contentRoot) : IHostEnvironment
+    private static readonly string SeedA = new('a', DistributionSeeds.Length);
+    private static readonly string SeedB = new('b', DistributionSeeds.Length);
+    private static readonly string SeedC = new('c', DistributionSeeds.Length);
+
+    private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("rummi-seed-");
+    private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 27, 12, 0, 0, TimeSpan.Zero));
+
+    private string SeedsFile => Path.Combine(_dir.FullName, "seeds", "seeds.json");
+
+    private FileSeedStore CreateStore() =>
+        new(SeedsFile, _time, NullLogger<FileSeedStore>.Instance);
+
+    public void Dispose() => _dir.Delete(recursive: true);
+
+    private sealed class ManualTime(DateTimeOffset now) : TimeProvider
     {
-        public string EnvironmentName { get; set; } = environmentName;
-        public string ApplicationName { get; set; } = "RummiHub.Tests";
-        public string ContentRootPath { get; set; } = contentRoot;
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+        public override DateTimeOffset GetUtcNow() => now;
+        public void Advance(TimeSpan by) => now += by;
     }
 
     [Fact]
-    public void Persist_DoesNotWriteAppSettings_OutsideDevelopment()
+    public void Add_ListsTheMostRecentlyAddedFirst_AndPersistsAcrossInstances()
     {
-        var dir = Directory.CreateTempSubdirectory("rummi-seed-");
-        var path = Path.Combine(dir.FullName, "appsettings.json");
-        var original = """
-                       {
-                         "GameOptions": { "PredefinedIds": [ "15e005a3" ] }
-                       }
-                       """;
-        File.WriteAllText(path, original);
+        var store = CreateStore();
 
-        var store = new AppSettingsSeedStore(
-            new StubEnv(Environments.Production, dir.FullName),
-            NullLogger<AppSettingsSeedStore>.Instance);
+        store.Add(SeedA);
+        _time.Advance(TimeSpan.FromMinutes(1));
+        store.Add(SeedB);
 
-        store.Persist("aabbccdd");
-        store.Persist(new string('x', 10_000));
-        store.Persist("{\"GameOptions\":null}");
-
-        File.ReadAllText(path).Should().Be(original);
-        dir.Delete(recursive: true);
+        CreateStore().GetAll().Select(s => s.Seed).Should().Equal(SeedB, SeedA);
     }
 
     [Fact]
-    public void Persist_DoesNotCreateAFile_OutsideDevelopment()
+    public void Add_OfAListedSeed_MovesItUp_WithoutDuplicating()
     {
-        var dir = Directory.CreateTempSubdirectory("rummi-seed-");
-        var store = new AppSettingsSeedStore(
-            new StubEnv(Environments.Production, dir.FullName),
-            NullLogger<AppSettingsSeedStore>.Instance);
+        var store = CreateStore();
+        store.Add(SeedA);
+        _time.Advance(TimeSpan.FromMinutes(1));
+        store.Add(SeedB);
+        _time.Advance(TimeSpan.FromMinutes(1));
 
-        store.Persist("aabbccdd");
+        store.Add(SeedA);
 
-        File.Exists(Path.Combine(dir.FullName, "appsettings.json")).Should().BeFalse();
-        dir.Delete(recursive: true);
+        store.GetAll().Select(s => s.Seed).Should().Equal(SeedA, SeedB);
     }
 
     [Fact]
-    public void Persist_InDevelopment_AppendsASafeSeed_AndIgnoresUnsafeOnes()
+    public void Add_HiddenOverAVisibleSeed_KeepsItVisible()
     {
-        var dir = Directory.CreateTempSubdirectory("rummi-seed-");
-        var path = Path.Combine(dir.FullName, "appsettings.json");
-        File.WriteAllText(path, """{ "GameOptions": { "PredefinedIds": [ "15e005a3" ] } }""");
+        var store = CreateStore();
+        store.Add(SeedA);
 
-        var store = new AppSettingsSeedStore(
-            new StubEnv(Environments.Development, dir.FullName),
-            NullLogger<AppSettingsSeedStore>.Instance);
+        store.Add(SeedA, _time.GetUtcNow().AddHours(24));
 
-        store.Persist("  replay_1  ");
-        store.Persist(new string('a', DistributionSeeds.MaxLength + 1));
-        store.Persist("line\nbreak");
+        store.GetAll().Single().HiddenUntil.Should().BeNull();
+    }
 
-        var text = File.ReadAllText(path);
-        text.Should().Contain("replay_1");
-        text.Should().Contain("15e005a3");
-        text.Should().NotContain("line");
-        text.Should().NotContain(new string('a', DistributionSeeds.MaxLength + 1));
-        dir.Delete(recursive: true);
+    [Fact]
+    public void Reveal_ShowsAHiddenSeed()
+    {
+        var store = CreateStore();
+        store.Add(SeedA, _time.GetUtcNow().AddHours(24));
+        store.GetAll().Single().IsVisible(_time.GetUtcNow()).Should().BeFalse();
+
+        store.Reveal(SeedA);
+
+        CreateStore().GetAll().Single().IsVisible(_time.GetUtcNow()).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Add_IgnoresAMalformedSeed()
+    {
+        var store = CreateStore();
+
+        store.Add("../appsettings");
+        store.Add(SeedA.ToUpperInvariant());
+
+        store.GetAll().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TwoStoresOnTheSameFile_SeeEachOthersSeeds()
+    {
+        var production = CreateStore();
+        var testSite = CreateStore();
+
+        production.Add(SeedA);
+        _time.Advance(TimeSpan.FromSeconds(1));
+        testSite.Add(SeedB);
+
+        production.GetAll().Select(s => s.Seed).Should().Equal(SeedB, SeedA);
+    }
+
+    [Fact]
+    public void ACorruptFile_IsNotOverwritten()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(SeedsFile)!);
+        File.WriteAllText(SeedsFile, "{ not json");
+        var store = CreateStore();
+
+        store.GetAll().Should().BeEmpty();
+        store.Add(SeedA);
+
+        File.ReadAllText(SeedsFile).Should().Be("{ not json");
+    }
+
+    [Fact]
+    public void Add_KeepsAtMostMaxSeeds_DroppingTheOldest()
+    {
+        var store = CreateStore();
+        for (var i = 0; i <= FileSeedStore.MaxSeeds; i++)
+        {
+            store.Add(i.ToString("x64"));
+            _time.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var seeds = store.GetAll();
+        seeds.Should().HaveCount(FileSeedStore.MaxSeeds);
+        seeds[0].Seed.Should().Be(FileSeedStore.MaxSeeds.ToString("x64"));
+        seeds.Select(s => s.Seed).Should().NotContain(0.ToString("x64"));
+    }
+
+    [Fact]
+    public void TryNormalize_RefusesAnEightCharacterValue()
+    {
+        DistributionSeeds.TryNormalize("15e005a3", out _, out var error).Should().BeFalse();
+        error.Should().Contain("64").And.Contain("8");
+    }
+
+    [Fact]
+    public void TryNormalize_ATruncatedSeed_SaysTheExpectedLength()
+    {
+        DistributionSeeds.TryNormalize(SeedC[..63], out _, out var error).Should().BeFalse();
+
+        error.Should().Contain("64").And.Contain("63");
+    }
+
+    [Fact]
+    public void TryNormalize_RefusesNonHexCharacters()
+    {
+        DistributionSeeds.TryNormalize("ggggggggg", out _, out var error).Should().BeFalse();
+        error.Should().Contain("0-9");
+    }
+
+    [Fact]
+    public void TryNormalize_AGroupedSixtyFour_IsTheSameSeed()
+    {
+        var grouped = string.Join("-", Enumerable.Range(0, 8).Select(i => SeedA.Substring(i * 8, 8)));
+
+        DistributionSeeds.TryNormalize(grouped.ToUpperInvariant(), out var seed, out var error).Should().BeTrue();
+        seed.Should().Be(SeedA);
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void Abbreviate_KeepsTheFirst8AndLast4Characters()
+    {
+        DistributionSeeds.Abbreviate(SeedA).Should().Be($"{SeedA[..8]}…{SeedA[^4..]}");
     }
 }
