@@ -310,7 +310,9 @@ Les deux connexions doivent être refusées. Depuis une autre machine, `curl --m
 | `DASHBOARD_API_KEY` | Facultative. Clé de l’API de télémétrie du tableau de bord (`openssl rand -hex 32`). Vide : API fermée. |
 | `OTLP_API_KEY` | Obligatoire. Clé que le tableau de bord exige pour recevoir la télémétrie (`openssl rand -hex 32`). Compose la pose sur le tableau de bord et, en en-tête `x-otlp-api-key`, sur `webfrontend`, `apiservice` et `solver-worker`. Absente : Compose refuse de démarrer, rien n’est recréé. |
 
-Aucun mot de passe Redis : le port n’est pas publié. Les graines de rejeu durables sont `GameOptions:PredefinedIds` dans `RummiHub.Web/appsettings.json` (inclus dans l’image). Le bouton « sauver la graine » n’écrit pas le fichier en production.
+Aucun mot de passe Redis : le port n’est pas publié.
+
+La liste des graines du lobby est le fichier `seeds.json` du volume `rummihub-seeds`, monté sur `/var/rummihub/seeds` par le `webfrontend` de la production et par celui du site de test : les deux proposent les mêmes graines, gardées d’un déploiement à l’autre. Lire : `docker run --rm -v rummihub-seeds:/s alpine:3.20 cat /s/seeds.json`. Ne pas le supprimer avec `docker compose down -v`.
 
 ## Essai local (sans DNS)
 
