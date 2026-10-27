@@ -34,13 +34,22 @@ services:
     environment:
       TestSite__Commit: ${TEST_COMMIT:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ""
-    mem_limit: 512M
-    memswap_limit: 512M
-    networks:
+      # Pas de volume de graines ici. Lecture et ajout passent par le webfrontend
+      # de production (alias seed-catalog). Aucune route ne supprime le fichier.
+      SeedCatalog__Mode: Remote
+      SeedCatalog__RemoteBaseAddress: http://seed-catalog:8080
+      SeedCatalog__ApiKey: ${SEED_CATALOG_KEY:?Définir SEED_CATALOG_KEY dans deploy/.env.test}
+    # Le compose de base monte seed_catalog et publie l'API. Ici, ni l'un ni l'autre :
+    # un fichier local ne doit pas se faire passer pour la liste partagée.
+    volumes: !override
+      - dataprotection_keys:/var/rummihub/keys
+    networks: !override
       internal: {}
       rummihub-edge:
         aliases:
           - webfrontend-test
+    mem_limit: 512M
+    memswap_limit: 512M
     deploy:
       resources:
         limits:

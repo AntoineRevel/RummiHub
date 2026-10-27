@@ -21,15 +21,22 @@
 {$DOMAIN} {
 	import securite
 	encode gzip
-	# Nom du conteneur, pas « webfrontend » : sur le réseau rummihub-edge, Docker donne
-	# aussi ce nom de service au webfrontend du site de test, et Caddy y envoyait alors
-	# le site public. rummihub-webfrontend-1 n'existe que dans le projet de production.
-	reverse_proxy rummihub-webfrontend-1:8080 {
-		# Blazor Server / SignalR : pas de tampon, en-têtes de proxy explicites.
-		flush_interval -1
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Forwarded-Proto {scheme}
-		header_up X-Forwarded-Host {host}
+	# Le catalogue de graines n'est joignable que sur le réseau Docker
+	# (alias seed-catalog:8080), pas par le site public.
+	handle /internal/* {
+		respond "Not found" 404
+	}
+	handle {
+		# Nom du conteneur, pas « webfrontend » : sur le réseau rummihub-edge, Docker donne
+		# aussi ce nom de service au webfrontend du site de test, et Caddy y envoyait alors
+		# le site public. rummihub-webfrontend-1 n'existe que dans le projet de production.
+		reverse_proxy rummihub-webfrontend-1:8080 {
+			# Blazor Server / SignalR : pas de tampon, en-têtes de proxy explicites.
+			flush_interval -1
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
 	}
 }
 

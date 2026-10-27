@@ -309,8 +309,23 @@ Les deux connexions doivent être refusées. Depuis une autre machine, `curl --m
 | `ACME_EMAIL` | Contact Let's Encrypt. |
 | `DASHBOARD_API_KEY` | Facultative. Clé de l’API de télémétrie du tableau de bord (`openssl rand -hex 32`). Vide : API fermée. |
 | `OTLP_API_KEY` | Obligatoire. Clé que le tableau de bord exige pour recevoir la télémétrie (`openssl rand -hex 32`). Compose la pose sur le tableau de bord et, en en-tête `x-otlp-api-key`, sur `webfrontend`, `apiservice` et `solver-worker`. Absente : Compose refuse de démarrer, rien n’est recréé. |
+| `SEED_CATALOG_KEY` | Obligatoire, **identique** dans `deploy/.env` et `deploy/.env.test` (`openssl rand -hex 32`). En-tête `X-Seed-Catalog-Key` du catalogue de graines. Absente : Compose refuse de démarrer, rien n’est recréé. |
 
-Aucun mot de passe Redis : le port n’est pas publié. Les graines de rejeu durables sont `GameOptions:PredefinedIds` dans `RummiHub.Web/appsettings.json` (inclus dans l’image). Le bouton « sauver la graine » n’écrit pas le fichier en production.
+Aucun mot de passe Redis : le port n’est pas publié.
+
+## Graines de distribution
+
+Une graine fait 64 caractères hexadécimaux (32 octets, 256 bits). Le même texte distribue toujours les mêmes tuiles. Le code de partie, 8 caractères, ne sert qu’à rejoindre un salon. Trois anciennes graines de 8 caractères (`GameOptions:PredefinedIds` dans `appsettings.json`) sont écrites une seule fois dans un catalogue vide ; ensuite le fichier est la seule liste.
+
+La liste est un fichier JSONL, une ligne par ajout, **sans opération de suppression**. Elle vit dans le volume Docker `seed_catalog`, monté seulement sur le `webfrontend` de **production** (`/var/rummihub/seeds/catalog.jsonl`). Au premier démarrage le volume reçoit le répertoire vide de l’image, appartenant à l’utilisateur `app`. Ne pas créer ce volume à la main avant, et ne pas le supprimer (`docker volume rm`) : un `docker compose down` sans `-v` le conserve, un redéploiement aussi.
+
+Le site de test ne monte pas ce volume. Son `webfrontend` appelle `http://seed-catalog:8080/internal/seed-catalog` (alias du webfrontend de prod sur `rummihub-edge`) avec la clé partagée. Deux routes : lire la liste, ajouter une graine valide. Pas de PUT, pas de DELETE. Un bug ou un redéploiement du site de test ne peut donc pas vider le fichier. Au pire, il y ajoute des graines de 64 caractères hex (plafond 500, au plus 60 ajouts par minute). Caddy répond 404 sur `/internal/*` du site public : la route n’est pas exposée sur Internet.
+
+`webfrontend` de prod rejoint `rummihub-edge` pour cet alias. Ne pas faire résoudre le nom `webfrontend` sur ce réseau : la pile de test y porte le même nom de service. Caddy continue de viser `rummihub-webfrontend-1` et `webfrontend-test`.
+
+Avant le premier déploiement de ce changement, poser la même `SEED_CATALOG_KEY` dans les deux fichiers d’environnement. Sinon Compose s’arrête avant de recréer les conteneurs. Le déploiement recrée `webfrontend` (les parties en mémoire sont perdues) et Caddy (le `Caddyfile` change : quelques secondes sans HTTPS).
+
+Le job de site de test refuse un commit qui modifie `deploy/`. Une fois le commit sur `master`, mettre le site de test à jour à la main : `rummihub-deploy-test <SHA complet de master>` (le contrôle `deploy/` passe, car le commit est `master`).
 
 ## Essai local (sans DNS)
 

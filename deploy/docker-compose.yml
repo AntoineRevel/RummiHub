@@ -78,10 +78,23 @@ services:
       services__apiservice__http__0: http://apiservice:8080
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       DataProtection__KeysPath: /var/rummihub/keys
+      # Catalogue de graines : ce processus est le seul à écrire le fichier.
+      # Le site de test appelle l'alias seed-catalog, il ne monte pas le volume.
+      SeedCatalog__Mode: File
+      SeedCatalog__Path: /var/rummihub/seeds/catalog.jsonl
+      SeedCatalog__ApiKey: ${SEED_CATALOG_KEY:?Définir SEED_CATALOG_KEY dans deploy/.env}
     volumes:
       - dataprotection_keys:/var/rummihub/keys
+      - seed_catalog:/var/rummihub/seeds
+    # internal : le réseau applicatif. rummihub-edge : uniquement pour que le
+    # webfrontend de test joigne l'alias seed-catalog. Ne pas résoudre le nom
+    # « webfrontend » sur rummihub-edge : la pile de test y a le même nom de
+    # service. Caddy vise rummihub-webfrontend-1 et l'alias webfrontend-test.
     networks:
-      - internal
+      internal: {}
+      rummihub-edge:
+        aliases:
+          - seed-catalog
     depends_on:
       cache:
         condition: service_healthy
@@ -249,3 +262,6 @@ volumes:
   caddy_config:
   redis_data:
   dataprotection_keys:
+  # JSONL des graines proposées. Jamais monté par la pile de test.
+  # Ne pas le supprimer : un `docker compose down` sans -v le garde.
+  seed_catalog:

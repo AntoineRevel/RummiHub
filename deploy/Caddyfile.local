@@ -6,11 +6,16 @@
 {$DOMAIN} {
 	tls internal
 	encode gzip
-	reverse_proxy webfrontend:8080 {
-		flush_interval -1
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Forwarded-Proto {scheme}
-		header_up X-Forwarded-Host {host}
+	handle /internal/* {
+		respond "Not found" 404
+	}
+	handle {
+		reverse_proxy webfrontend:8080 {
+			flush_interval -1
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
 	}
 }
 

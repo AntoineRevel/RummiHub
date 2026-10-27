@@ -9,6 +9,11 @@
 # curl -k ou un client qui ignore l'erreur TLS passent.
 
 services:
+  # Pas de pile de test sur la machine : le webfrontend reste sur internal.
+  webfrontend:
+    networks: !override
+      - internal
+
   caddy:
     environment:
       DOMAIN: rummisolve.localhost
