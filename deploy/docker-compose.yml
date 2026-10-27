@@ -80,6 +80,8 @@ services:
       DataProtection__KeysPath: /var/rummihub/keys
     volumes:
       - dataprotection_keys:/var/rummihub/keys
+      # Liste des graines du lobby, commune à la production et au site de test.
+      - seeds:/var/rummihub/seeds
     networks:
       - internal
     depends_on:
@@ -249,3 +251,7 @@ volumes:
   caddy_config:
   redis_data:
   dataprotection_keys:
+  # Nom fixe : les projets rummihub et rummihub-test montent le même volume. Le
+  # second affiche « already exists but was created for project rummihub » : normal.
+  seeds:
+    name: rummihub-seeds
