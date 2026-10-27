@@ -1,17 +1,8 @@
 @inherits LayoutComponentBase
 
+@* Player pages (the lobby at /, the error page) and the developer bench fill the
+   viewport. The game table uses GameLayout, which has no content padding. *@
 <div class="page">
-    <input type="checkbox" id="sidebar-collapse" class="sidebar-collapse-input" hidden/>
-    <aside class="sidebar">
-        <NavMenu/>
-        <label for="sidebar-collapse" class="sidebar-collapse-btn" title="Toggle menu" aria-label="Toggle menu">
-            <svg class="icon-collapse" width="18" height="18" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="15 18 9 12 15 6"/>
-            </svg>
-        </label>
-    </aside>
-
     <main>
         <article class="content">
             @Body
@@ -26,4 +17,3 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">🗙</a>
 </div>
-
