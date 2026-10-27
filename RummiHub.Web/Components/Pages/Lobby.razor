@@ -90,7 +90,7 @@
                             {
                                 <li class="seed-item @(_seedChoice == item.Seed ? "selected" : null)">
                                     <button type="button" class="seed-pick" title="@item.Seed" @onclick="() => PickListed(item.Seed)">
-                                        <span class="seed-abbr">@DistributionSeeds.Abbreviate(item.Seed)</span>
+                                        <span class="seed-abbr" title="@item.Seed">@DistributionSeeds.Abbreviate(item.Seed)</span>
                                         <span class="seed-meta" title="@DistributionSeeds.Describe(item.Seed)">@DistributionSeeds.SizeLabel(item.Seed)</span>
                                         <span class="seed-when">@item.AddedAt.UtcDateTime.ToString("d MMM yyyy")</span>
                                     </button>
