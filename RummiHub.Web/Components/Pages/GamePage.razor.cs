@@ -239,7 +239,7 @@ public partial class GamePage : IAsyncDisposable
             if (_tileAnimations is not null)
             {
                 boardBusyMs = await _tileAnimations.InvokeAsync<int?>("animate") ?? 0;
-                var canReplay = await _tileAnimations.InvokeAsync<bool>("canReplay");
+                var canReplay = _tileAnimations is not null && await _tileAnimations.InvokeAsync<bool>("canReplay");
                 if (canReplay != _canReplay)
                 {
                     _canReplay = canReplay;
@@ -247,9 +247,10 @@ public partial class GamePage : IAsyncDisposable
                 }
             }
         }
-        catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
+        catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException or ObjectDisposedException)
         {
-            // Animations are best-effort: never let a JS hiccup break the page.
+            // Animations are best-effort: never let a JS hiccup break the page. ObjectDisposedException:
+            // the page was disposed (Back to lobby) while a call was in flight.
         }
 
         if (turnAwaitingBoard is not null && ReferenceEquals(turnAwaitingBoard, _turnAwaitingBoard))
@@ -566,7 +567,7 @@ public partial class GamePage : IAsyncDisposable
                 StateHasChanged();
             }
         }
-        catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
+        catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException or ObjectDisposedException)
         {
             // Best-effort, like the rest of the animation layer.
         }
@@ -921,18 +922,23 @@ public partial class GamePage : IAsyncDisposable
         _replayHoldTimer?.Dispose();
         _heldDrainTimer?.Dispose();
 
+        // Taken before any await, so a render still awaiting JS finds no module afterwards.
+        var tileAnimations = _tileAnimations;
+        _tileAnimations = null;
+
         if (_hubConnection is not null)
             await _hubConnection.DisposeAsync();
 
-        if (_tileAnimations is not null)
+        if (tileAnimations is not null)
         {
             try
             {
-                await _tileAnimations.DisposeAsync();
+                await tileAnimations.DisposeAsync();
             }
-            catch (JSDisconnectedException)
+            catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException)
             {
-                // Circuit already closed — nothing to clean up client-side.
+                // Circuit closed or browser gone — nothing to clean up client-side. Never let it
+                // escape: an exception here kills the circuit the next page (lobby) runs on.
             }
         }
     }
