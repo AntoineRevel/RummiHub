@@ -227,7 +227,7 @@ public partial class GamePage : IAsyncDisposable
                 {
                     BoardPacing.MoveMs, BoardPacing.PopMs,
                     BoardPacing.LiftMs, BoardPacing.PauseMs, BoardPacing.RoomMs, BoardPacing.DropMs,
-                    BoardPacing.FlightMs, BoardPacing.TileGapMs, BoardPacing.SetGapMs, BoardPacing.MaxSpreadMs
+                    BoardPacing.FlightMs, BoardPacing.TileGapMs, BoardPacing.SetGapMs
                 });
             }
 

@@ -12,21 +12,24 @@
 //      stood BEFORE this render (the mover's chip for the board, the pool for the rack).
 //      With no origin on screen, it pops in place.
 //
-// On the board ([data-anim-staged]) a tile at rest never covers another. Each change is told
-// in three acts:
-//   1. Lift  — board tiles changing set rise in place, all at once.
-//   2. Room  — ONE glide: the board makes room (the sets the placed tiles join or leave open
-//              gaps or close up, the rest reflows) while the lifted tiles travel to hover
-//              just above their new gap. The tiles played from the hand stay where they are.
-//   3. Place — set by set, in reading order, the tiles joining that set come in: the played
-//              ones fly out of the play zone (or the mover's chip) straight into their open
-//              gaps, the hovering ones drop, one after the other; then the next set.
-// A beat follows acts 1 and 2, so each reads on its own. Lifted and hovering tiles rest in
-// the lane the board leaves between its rows, above their own (empty) slot. With no room to
-// make and no tile changing set (a new set laid at the end of the board), act 3 plays alone.
-// A board change arriving while another one plays waits for it to end — its animations hold
-// their first keyframe meanwhile (movers on their old spot, newcomers hidden); only a runaway
-// backlog fast-forwards.
+// On the board ([data-anim-staged]) a tile at rest never covers another. A change is told
+// step by step: one step per group of sets that change together — a set the move builds or
+// touches, plus every set a tile passes to or from it (a tile taken from one set for two new
+// ones links all three). Steps follow the reading order of their first set. Each is told in
+// three acts, on that step's sets only:
+//   1. Lift  — its board tiles changing set rise in place.
+//   2. Room  — ONE glide: the board takes the layout it has once this step is done (its sets
+//              open gaps or close up, the sets after them reflow; later steps' sets keep their
+//              old shape) while the lifted tiles travel to hover just above their new gap.
+//   3. Place — its tiles come in one after the other, set by set: the played ones fly out of
+//              the play zone (or the mover's chip) into their open gap, the hovering ones drop.
+// Then the next step. Played tiles wait in the play zone (or hidden in the chip) until their
+// step. Each intermediate layout is measured on a hidden copy of the board. A beat follows
+// acts 1 and 2, so each reads on its own; a step with nothing to lift or make room for (a new
+// set laid at the end) is act 3 alone. Lifted and hovering tiles rest in the lane the board
+// leaves between its rows, above their own (empty) slot. A board change arriving while
+// another one plays waits for it to end — its animations hold their first keyframe meanwhile
+// (movers on their old spot, newcomers hidden); only a runaway backlog fast-forwards.
 //
 // The hand (the rack, the play zone) answers clicks at once and is never queued behind
 // the board. [data-anim-enter-only] scopes (the rack) only animate arrivals — internal
@@ -44,14 +47,13 @@
 const tempo = {
     moveMs: 350,              // a hand tile gliding between the rack and the play zone
     popMs: 300,               // a newcomer with no origin on screen popping in
-    liftMs: 500,              // act 1: board tiles changing set rising in place
-    pauseMs: 450,             // beat after acts 1 and 2
-    roomMs: 1200,             // act 2: the board making room as the lifted tiles travel, one glide
-    dropMs: 650,              // act 3: one hovering tile dropping into its gap
-    flightMs: 1200,           // act 3: a played tile flying into its gap
-    tileGapMs: 200,           // act 3: between two tiles joining the same set
-    setGapMs: 300,            // act 3: once a set is complete, before the next one's tiles come
-    maxSpreadMs: 6000,        // act 3: first set to last, at most (many sets come closer together)
+    liftMs: 400,              // act 1: a step's board tiles changing set rising in place
+    pauseMs: 300,             // beat after acts 1 and 2
+    roomMs: 900,              // act 2: the board making room for the step, one glide
+    dropMs: 600,              // act 3: one hovering tile dropping into its gap
+    flightMs: 900,            // act 3: a played tile flying into its gap
+    tileGapMs: 200,           // act 3: between two tiles of a step
+    setGapMs: 300,            // between two sets of a step, and between two steps
 };
 
 const MIN_DELTA = 4;    // px — cross-scope flights below this just display
@@ -169,7 +171,7 @@ function collect(root) {
             const setEl = el.closest('[data-anim-set]');
             let setIndex = -1;
             if (setEl) {
-                if (!setIndexOf.has(setEl)) { setIndexOf.set(setEl, sets.length); sets.push({ tiles: [] }); }
+                if (!setIndexOf.has(setEl)) { setIndexOf.set(setEl, sets.length); sets.push({ el: setEl, tiles: [] }); }
                 setIndex = setIndexOf.get(setEl);
             }
             const { x, y } = positionIn(root, el);
@@ -349,15 +351,16 @@ function placeFrames(start, { flight }) {
     ];
 }
 
-// Keyframes from timed poses ({ t, x, y, scale, opacity?, lifted?, easing? }), t in ms from
-// the first one. A lifted pose casts the carried-tile shadow; the end pose falls back to
-// the tile's own style.
+// Keyframes from timed poses ({ t, x?, y?, scale, opacity?, shadow?, easing? }), t in ms
+// from the first one. A pose without x/y leaves the translation to its neighbours (a tile
+// swelling mid-flight); one without a shadow leaves the shadow to them.
 function timeline(poses) {
-    const t0 = poses[0].t, total = poses.at(-1).t - t0;
-    return poses.map(({ t, x, y, scale, opacity, lifted, easing }) => {
-        const frame = { offset: (t - t0) / total, translate: `${x}px ${y}px`, scale };
+    const t0 = poses[0].t, total = Math.max(1, poses.at(-1).t - t0);
+    return poses.map(({ t, x, y, scale, opacity, shadow, easing }) => {
+        const frame = { offset: (t - t0) / total, scale };
+        if (x !== undefined) frame.translate = `${x}px ${y}px`;
         if (opacity !== undefined) frame.opacity = opacity;
-        if (lifted) frame.boxShadow = LIFT_SHADOW;
+        if (shadow) frame.boxShadow = shadow;
         if (easing) frame.easing = easing;
         return frame;
     });
@@ -437,30 +440,104 @@ function holdHeights(departedAt, snap, prev) {
     }
 }
 
-// Act 3's units grouped by the set they join, in reading order, each group in reading order.
-function bySet(units) {
-    const groups = new Map();
-    for (const unit of units) bucket(groups, unit.items[0].tile.setIndex).push(unit);
-    return [...groups.entries()].sort(([a], [b]) => a - b)
-        .map(([, group]) => group.sort((a, b) => a.items[0].tile.order - b.items[0].tile.order));
+// Splits the board story into steps (see the top of this file): union-find over the next
+// board's sets (0..m-1) and the previous board's (m..m+n-1), linking a set to the previous set
+// it keeps tiles of, and to every previous set a tile of it comes from. A group with a set
+// that gains or loses tiles is a step; steps follow the reading order of their first set.
+function stepsOf(snap, prev) {
+    const m = snap.sets.length, n = prev.sets.length;
+    const up = [...Array(m + n).keys()];
+    const find = k => (up[k] === k ? k : (up[k] = find(up[k])));
+    const join = (a, b) => { up[find(a)] = find(b); };
+
+    const board = snap.tiles.filter(tile => tile.staged && tile.setIndex >= 0);
+    const fromBoard = tile => tile.from && tile.from.scope === tile.scope && tile.from.setIndex >= 0;
+    const changed = new Array(m).fill(false), kept = new Array(m).fill(0), paired = new Array(m).fill(-1);
+    for (const tile of board) {
+        if (tile.kept) {
+            kept[tile.setIndex]++;
+            paired[tile.setIndex] = tile.from.setIndex;
+        } else {
+            changed[tile.setIndex] = true;
+        }
+        if (fromBoard(tile)) join(tile.setIndex, m + tile.from.setIndex);
+    }
+    for (let j = 0; j < m; j++) {
+        if (paired[j] >= 0 && prev.sets[paired[j]].tiles.length !== kept[j]) changed[j] = true;
+    }
+
+    const stepOf = new Map(); // group root → step index
+    for (let j = 0; j < m; j++) {
+        if (changed[j] && !stepOf.has(find(j))) stepOf.set(find(j), stepOf.size);
+    }
+
+    // Board tiles still in their previous set, by previous set, in their old order.
+    const prevOrder = new Map();
+    prev.sets.forEach(set => set.tiles.forEach((tile, i) => prevOrder.set(tile, i)));
+    const stillIn = Array.from({ length: n }, () => []);
+    for (const tile of board) if (fromBoard(tile)) stillIn[tile.from.setIndex].push(tile);
+    for (const list of stillIn) list.sort((a, b) => prevOrder.get(a.from) - prevOrder.get(b.from));
+
+    // The board once `done` steps are over: their sets (and unchanged ones) as they end up,
+    // every later step's previous sets as they were, where its first set will stand.
+    const layoutAfter = done => {
+        const sets = [], shown = new Set();
+        for (let j = 0; j < m; j++) {
+            const group = find(j), step = stepOf.get(group);
+            if (step === undefined || step < done) { sets.push(snap.sets[j].tiles); continue; }
+            if (shown.has(group)) continue;
+            shown.add(group);
+            for (let i = 0; i < n; i++) {
+                if (find(m + i) === group && stillIn[i].length) sets.push(stillIn[i]);
+            }
+        }
+        return sets;
+    };
+
+    return { count: stepOf.size, stepOfSet: j => stepOf.get(find(j)), layoutAfter };
 }
 
-// When each group starts, from the first one, and when the last tile lands. A group's tiles
-// come tileGapMs apart; the next group waits for the last of them plus setGapMs. Many groups
-// are squeezed so the last starts within maxSpreadMs (mirrors BoardPacing.PlaceMs).
-function schedule(groups, durationOf) {
-    const lengths = groups.map(group =>
-        Math.max(...group.map((unit, i) => i * tempo.tileGapMs + durationOf(unit))));
-    let starts = [], t = 0;
-    for (const length of lengths) { starts.push(t); t += length + tempo.setGapMs; }
-    const last = starts.at(-1) ?? 0;
-    if (last > tempo.maxSpreadMs) starts = starts.map(start => start * tempo.maxSpreadMs / last);
-    return { starts, end: Math.max(0, ...starts.map((start, k) => start + lengths[k])) };
+// Where each tile of `layout` (lists of next-board tiles, one per set) would stand, as an
+// offset from its real (final) spot: the layout is built on a hidden copy of the board, made
+// of copies of its own elements so it wraps exactly like it, measured, then removed before
+// the browser paints. The observer is told to forget those mutations.
+function measure(root, snap, layout) {
+    const template = snap.sets[0]?.el;
+    const real = template?.parentElement;
+    const at = new Map();
+    if (!real) return at;
+
+    const ghost = real.cloneNode(false);
+    Object.assign(ghost.style, {
+        position: 'absolute', visibility: 'hidden', pointerEvents: 'none',
+        left: `${real.offsetLeft}px`, top: `${real.offsetTop}px`, width: `${real.offsetWidth}px`,
+    });
+    const copies = new Map();
+    for (const tiles of layout) {
+        const setEl = template.cloneNode(false);
+        const row = template.firstElementChild.cloneNode(false);
+        setEl.append(row);
+        for (const tile of tiles) {
+            const copy = tile.el.cloneNode(true);
+            copy.removeAttribute('style');
+            row.append(copy);
+            copies.set(tile, copy);
+        }
+        ghost.append(setEl);
+    }
+    real.parentElement.append(ghost);
+    for (const [tile, copy] of copies) {
+        const { x, y } = positionIn(root, copy);
+        at.set(tile, { x: x - tile.x, y: y - tile.y });
+    }
+    ghost.remove();
+    observer?.takeRecords();
+    return at;
 }
 
-// Schedules the board story — act 1 (lift), act 2 (room), act 3 (place, set by set) — to
-// start when the story already playing ends. Returns false when nothing on the board moves.
-function tell(story) {
+// Schedules the board story, step by step, to start when the story already playing ends.
+// Returns false when nothing on the board moves.
+function tell(story, snap, prev, root) {
     const units = [...story.entering, ...story.migrating];
     if (units.length === 0 && story.room.length === 0) return false;
 
@@ -468,50 +545,113 @@ function tell(story) {
     if (boardBusyUntil - now > MAX_BACKLOG_MS) fastForward();
     const wait = Math.max(0, boardBusyUntil - now);
 
-    // The way is opened first only when something stands in it — the board reflowing, or
-    // tiles changing set. Otherwise act 3 plays alone.
-    const lifting = story.migrating.length > 0;
-    const staged = lifting || story.room.length > 0;
-    const roomStart = lifting ? tempo.liftMs + tempo.pauseMs : 0;
-    const roomEnd = roomStart + tempo.roomMs;
-    const placeStart = staged ? roomEnd + tempo.pauseMs : 0;
+    const steps = stepsOf(snap, prev);
+    const count = Math.max(1, steps.count);
+    const stepOfUnit = unit => steps.stepOfSet(unit.items[0].tile.setIndex) ?? 0;
 
-    // Board tiles changing set already hover above their gap: they drop. The rest fly in.
-    const hovers = unit => unit.entering !== true;
-    const groups = bySet(units);
-    const { starts, end: placed } = schedule(groups, unit => hovers(unit) ? tempo.dropMs : tempo.flightMs);
-    const end = units.length ? placeStart + placed : roomEnd;
-
-    const hovering = { x: 0, y: -LIFT, scale: LIFT_SCALE, opacity: 1, lifted: true };
-    groups.forEach((group, k) => group.forEach((unit, i) => {
-        const at = placeStart + starts[k] + i * tempo.tileGapMs;
-        for (const item of unit.items) {
-            const start = startOf(item);
-            if (!hovers(unit)) {
-                // Held on its spot in the play zone (or hidden in the chip) until its set's turn.
-                move(item.tile.el, placeFrames(start, { flight: tempo.flightMs }),
-                     { delay: wait + at, duration: tempo.flightMs, elevate: true, lands: true });
-                continue;
-            }
-            const up = { x: start.x, y: start.y - LIFT, scale: LIFT_SCALE, lifted: true };
-            move(item.tile.el, timeline([
-                { t: 0, ...start, easing: LIFT_EASING },
-                { t: tempo.liftMs, ...up, easing: 'linear' },
-                { t: roomStart, ...up, easing: ROOM_EASING },
-                { t: roomEnd, ...hovering, easing: 'linear' },
-                { t: at, ...hovering, easing: DROP_EASING },
-                { t: at + tempo.dropMs, x: 0, y: 0, scale: 1 },
-            ]), { delay: wait, duration: at + tempo.dropMs, elevate: true });
+    // offsets[k]: where every board tile stands once k steps are done, from its final spot.
+    // Before any step: the old board. After the last: the real layout.
+    const board = snap.tiles.filter(tile => tile.staged);
+    const offsets = [new Map()];
+    for (const tile of board) {
+        if (tile.from && tile.from.scope === tile.scope) {
+            const { dx, dy } = deltaOf(tile);
+            offsets[0].set(tile, { x: dx, y: dy });
         }
-    }));
-    for (const { tile, dx, dy } of story.room) {
-        move(tile.el, [
-            { translate: `${dx}px ${dy}px`, easing: ROOM_EASING },
-            { translate: '0px 0px' },
-        ], { delay: wait + roomStart, duration: tempo.roomMs });
+    }
+    for (let k = 1; k < count; k++) offsets.push(measure(root, snap, steps.layoutAfter(k)));
+    offsets.push(new Map(board.map(tile => [tile, { x: 0, y: 0 }])));
+    const moves = (tile, k) => {
+        const a = offsets[k - 1].get(tile), b = offsets[k].get(tile);
+        return a && b && !isStill(a.x - b.x, a.y - b.y, MIN_DELTA);
+    };
+
+    // Each step's timing: lift, room, then its units one after the other, set by set.
+    const plan = [];
+    let t = 0;
+    for (let k = 1; k <= count; k++) {
+        const mine = units.filter(unit => stepOfUnit(unit) === k - 1)
+            .sort((a, b) => a.items[0].tile.setIndex - b.items[0].tile.setIndex
+                         || a.items[0].tile.order - b.items[0].tile.order);
+        const lifting = mine.some(unit => unit.entering !== true);
+        const roomStart = t + (lifting ? tempo.liftMs + tempo.pauseMs : 0);
+        const room = lifting || board.some(tile => moves(tile, k));
+        let at = room ? roomStart + tempo.roomMs + tempo.pauseMs : t, end = at;
+        mine.forEach((unit, i) => {
+            if (i > 0) {
+                const sameSet = unit.items[0].tile.setIndex === mine[i - 1].items[0].tile.setIndex;
+                at += tempo.tileGapMs + (sameSet ? 0 : tempo.setGapMs);
+            }
+            unit.at = at;
+            end = Math.max(end, at + (unit.entering === true ? tempo.flightMs : tempo.dropMs));
+        });
+        plan.push({ start: t, roomStart, roomEnd: roomStart + tempo.roomMs, room, end });
+        t = end + tempo.setGapMs;
+    }
+    const storyEnd = plan.at(-1).end;
+
+    // Every board tile follows the steps: it rests, glides when its step (or a reflow) moves
+    // it, rises and drops when it changes set. A placed tile comes in at its unit's time.
+    const unitOf = new Map();
+    for (const unit of units) for (const item of unit.items) unitOf.set(item.tile, { unit, item });
+    const rest = '0 4px 6px rgba(0, 0, 0, 0.1)'; // TileComponent's own shadow
+    for (const tile of board) {
+        const placed = unitOf.get(tile);
+        const entering = placed?.unit.entering === true;
+        const joinStep = placed ? stepOfUnit(placed.unit) + 1 : 0;
+        const poses = [];
+        let lifted = false;
+        const pose = (time, offset, extra = {}) => poses.push({ t: time, x: offset.x, y: offset.y, scale: 1, ...extra });
+
+        if (entering) {
+            // Waits in the play zone (or hidden in the chip) until its turn, then flies into
+            // its gap as the board stands after its step. Popping in, with no origin on screen.
+            const slot = offsets[joinStep].get(tile);
+            const start = startOf(placed.item);
+            const from = placed.item.dx === undefined && !placed.item.origin
+                ? { ...start, x: slot.x, y: slot.y } : start;
+            const at = placed.unit.at, flight = tempo.flightMs;
+            poses.push({ t: at, ...from, easing: FLIGHT_EASING });
+            poses.push({ t: at + flight * 0.4, scale: LIFT_SCALE, opacity: 1, shadow: LIFT_SHADOW, easing: 'ease-in-out' });
+            pose(at + flight, slot); // its own style from here: the played-tile highlight
+        } else if (offsets[0].has(tile)) {
+            pose(0, offsets[0].get(tile));
+        } else {
+            continue;
+        }
+
+        for (let k = Math.max(1, joinStep + (entering ? 1 : 0)); k <= count; k++) {
+            const step = plan[k - 1], before = offsets[k - 1].get(tile), after = offsets[k].get(tile);
+            if (!entering && placed && k === joinStep) {
+                const up = o => ({ x: o.x, y: o.y - LIFT });
+                const high = { scale: LIFT_SCALE, shadow: LIFT_SHADOW };
+                pose(step.start, before, { easing: LIFT_EASING });
+                pose(step.start + tempo.liftMs, up(before), { ...high, easing: 'linear' });
+                pose(step.roomStart, up(before), { ...high, easing: ROOM_EASING });
+                pose(step.roomEnd, up(after), { ...high, easing: 'linear' });
+                pose(placed.unit.at, up(after), { ...high, easing: DROP_EASING });
+                pose(placed.unit.at + tempo.dropMs, after, { shadow: rest });
+                lifted = true;
+            } else if (step.room && moves(tile, k)) {
+                pose(step.roomStart, before, { easing: ROOM_EASING, ...(lifted ? { shadow: rest } : {}) });
+                pose(step.roomEnd, after, lifted ? { shadow: rest } : {});
+            }
+        }
+        if (poses.length < 2) {
+            // No step moves it beyond a few px: snap, or glide with the first step.
+            if (isStill(poses[0].x, poses[0].y, STILL_DELTA)) continue;
+            poses[0].t = plan[0].roomStart;
+            poses[0].easing = ROOM_EASING;
+            pose(plan[0].roomEnd, { x: 0, y: 0 });
+        }
+        const t0 = poses[0].t;
+        move(tile.el, timeline(poses), {
+            delay: wait + t0, duration: Math.max(1, poses.at(-1).t - t0),
+            elevate: placed !== undefined, lands: entering,
+        });
     }
 
-    boardBusyUntil = now + wait + end;
+    boardBusyUntil = now + wait + storyEnd;
     return true;
 }
 
@@ -561,13 +701,14 @@ function run() {
     }
 
     // Kept clean (matching flags prev) so the board story can be replayed on demand.
-    const prevClean = toPlainData(last);
-    const { story, hand } = diff(snap, last);
+    const prev = last;
+    const prevClean = toPlainData(prev);
+    const { story, hand } = diff(snap, prev);
     store(snap);
 
     // Board first: a runaway backlog fast-forwards in tell(), which must not swallow the
     // hand's fresh moves.
-    if (tell(story)) replayFrom = prevClean;
+    if (tell(story, snap, prev, root)) replayFrom = prevClean;
     playHand(hand, snap, prevClean);
 }
 
@@ -588,8 +729,9 @@ export function replayLast() {
 
     fastForward();
     const snap = collect(root);
-    const { story } = diff(snap, toPlainData(replayFrom));
+    const prev = toPlainData(replayFrom);
+    const { story } = diff(snap, prev);
     store(snap);
     // The page holds the next move for this long, so a replay is not cancelled mid-flight.
-    return tell(story) ? Math.max(1, boardIdleIn()) : 0;
+    return tell(story, snap, prev, root) ? Math.max(1, boardIdleIn()) : 0;
 }
