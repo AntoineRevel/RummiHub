@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using RummiHub.Web.Services;
 
 namespace RummiHub.Tests.Web;

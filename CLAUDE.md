@@ -23,7 +23,7 @@ dotnet test --filter "FullyQualifiedName~BaseSolverTests"          # run a singl
 dotnet test --filter "FullyQualifiedName~GetRuns_WithJoker"        # run a single test
 ```
 
-Tests use **xUnit** with **FluentAssertions**. There are no integration tests — all tests in `RummiHub.Tests` are unit tests covering `Core` models, the solver primitives, and `GameEngine` logic.
+Tests use **xUnit** with **AwesomeAssertions** (Apache 2.0 fork of FluentAssertions, which went commercial in v8). There are no integration tests — all tests in `RummiHub.Tests` are unit tests covering `Core` models, the solver primitives, and `GameEngine` logic.
 
 ## Shipping a feature
 

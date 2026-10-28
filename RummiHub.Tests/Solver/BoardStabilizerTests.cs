@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Core.Solver;

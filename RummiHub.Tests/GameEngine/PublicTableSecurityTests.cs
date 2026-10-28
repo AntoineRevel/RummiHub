@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
