@@ -9,11 +9,12 @@ namespace RummiHub.Web.Rendering;
 /// (<see cref="Models.Game.PendingAnimationMs"/>) never plays a move mid-animation.
 /// </summary>
 /// <remarks>
-/// A tile at rest never covers another. Every board change is told in three acts: (1) the
-/// placed tiles already on screen — in the play zone, or board tiles changing set — rise in
-/// place; (2) in ONE glide the board makes room while every placed tile travels to hover just
-/// above its own gap; (3) they drop in, one after the other. A beat follows acts 1 and 2. With
-/// no room to make they fly straight in, one after the other.
+/// A tile at rest never covers another. Every board change is told in three acts: (1) board
+/// tiles changing set rise in place; (2) in ONE glide the board makes room while they travel to
+/// hover just above their new gap; (3) set by set, in reading order, the tiles joining that set
+/// come in one after the other — played tiles fly out of the play zone (or the mover's chip),
+/// hovering ones drop — then the next set. A beat follows acts 1 and 2. With no room to make,
+/// act 3 plays alone.
 /// </remarks>
 public static class BoardPacing
 {
@@ -23,26 +24,29 @@ public static class BoardPacing
     /// <summary>A newcomer with no origin on screen popping in.</summary>
     public const int PopMs = 300;
 
-    /// <summary>Act 1 — the placed tiles already on screen rising in place.</summary>
+    /// <summary>Act 1 — board tiles changing set rising in place.</summary>
     public const int LiftMs = 500;
 
     /// <summary>Beat after acts 1 and 2, so each reads on its own.</summary>
     public const int PauseMs = 450;
 
-    /// <summary>Act 2 — the board making room as the placed tiles travel above their gaps.</summary>
+    /// <summary>Act 2 — the board making room as the lifted tiles travel above their gaps.</summary>
     public const int RoomMs = 1200;
 
     /// <summary>Act 3 — one hovering tile dropping into its gap.</summary>
     public const int DropMs = 650;
 
-    /// <summary>A placed tile flying straight into its slot, when there is no room to make.</summary>
+    /// <summary>Act 3 — a played tile flying into its gap.</summary>
     public const int FlightMs = 1200;
 
-    /// <summary>Interval between two drops (or two straight flights).</summary>
-    public const int StaggerMs = 400;
+    /// <summary>Act 3 — interval between two tiles joining the same set.</summary>
+    public const int TileGapMs = 200;
 
-    /// <summary>Longest spread of the drops: many tiles drop closer together.</summary>
-    public const int MaxStaggerSpreadMs = 3000;
+    /// <summary>Act 3 — beat once a set is complete, before the next set's tiles come.</summary>
+    public const int SetGapMs = 300;
+
+    /// <summary>Act 3 — longest spread from the first set to the last: many sets come closer together.</summary>
+    public const int MaxSpreadMs = 6000;
 
     /// <summary>Slack absorbing client jitter.</summary>
     private const int BufferMs = 200;
@@ -65,31 +69,47 @@ public static class BoardPacing
     /// so unchanged sets keep their reading-order index.
     /// </summary>
     public static int EstimateMs(Solution previous, Solution next)
-        => DurationForPlacedTiles(CountPlacedTiles(previous, next));
+        => DurationForPlacedTiles(PlacedPerSet(previous, next));
 
-    // Tiles the client PLACES (acts 2 and 3): every tile of the next board its paired previous
-    // set doesn't keep — tiles entering from the hand, plus board tiles changing set. Counted one
-    // by one; the client flies tiles changing set together as one block, so this can only
-    // over-estimate.
-    private static int CountPlacedTiles(Solution previous, Solution next)
-        => BoardSeating.MovedTiles(previous.Sets, next.Sets);
+    // Tiles the client PLACES (act 3), per set of the next board in reading order: every tile
+    // its paired previous set doesn't keep — tiles entering from the hand, plus board tiles
+    // changing set. Counted one by one; the client brings tiles changing set together as one
+    // block, so this can only over-estimate.
+    private static List<int> PlacedPerSet(Solution previous, Solution next)
+    {
+        var pairs = BoardSeating.Pair(previous.Sets, next.Sets);
+        return next.Sets.Select((set, j) => set.Tiles.Length - pairs[j].Shared).ToList();
+    }
 
     /// <summary>
-    /// Duration of the board story placing <paramref name="placed"/> tiles. Conservative: it always
-    /// counts acts 1 and 2, since whether the board really has to make room depends on the
-    /// client's layout (line wrapping), unknown here; flying straight in is shorter.
+    /// Duration of the board story placing <paramref name="placedPerSet"/> tiles in each set, in
+    /// reading order (sets placing none are skipped). Conservative: it always counts acts 1 and 2,
+    /// since whether the board really has to make room depends on the client's layout (line
+    /// wrapping), unknown here; and every tile as flying in, which outlasts a drop.
     /// </summary>
-    public static int DurationForPlacedTiles(int placed)
-        => placed == 0
+    public static int DurationForPlacedTiles(IEnumerable<int> placedPerSet)
+    {
+        var placed = PlaceMs(placedPerSet.Where(count => count > 0).ToList());
+        return placed == 0
             ? 0
-            : LiftMs + PauseMs                                          // act 1 — the play
-              + RoomMs + PauseMs                                        // act 2 — the board makes room
-              + DropMs + Spread(placed, StaggerMs, MaxStaggerSpreadMs)  // act 3 — the tiles drop in
+            : LiftMs + PauseMs      // act 1 — tiles changing set rise
+              + RoomMs + PauseMs    // act 2 — the board makes room
+              + placed              // act 3 — set by set, the tiles come in
               + BufferMs;
+    }
 
-    // Time from the first to the last of `count` staggered starts: `step` apart, squeezed so
-    // the whole spread never exceeds `max` (the client spaces them the same way).
-    private static int Spread(int count, int step, int max) => Math.Min((count - 1) * step, max);
+    // Act 3, like the client's schedule(): each set's tiles come TileGapMs apart, the next set
+    // waits for the last of them plus SetGapMs; many sets are squeezed so the last one starts
+    // within MaxSpreadMs.
+    private static int PlaceMs(List<int> counts)
+    {
+        if (counts.Count == 0) return 0;
+        var lengths = counts.Select(count => (count - 1) * TileGapMs + FlightMs).ToList();
+        var starts = new double[counts.Count];
+        for (var k = 1; k < counts.Count; k++) starts[k] = starts[k - 1] + lengths[k - 1] + SetGapMs;
+        var squeeze = starts[^1] > MaxSpreadMs ? MaxSpreadMs / starts[^1] : 1;
+        return (int)Math.Round(starts.Select((start, k) => start * squeeze + lengths[k]).Max());
+    }
 
     /// <summary>
     /// Reading window (ms) after the <paramref name="previous"/> → <paramref name="next"/>
