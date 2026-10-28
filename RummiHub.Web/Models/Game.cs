@@ -29,6 +29,11 @@ public class Game
 
     private List<Player> Players { get; } = [];
     public bool IsStarted { get; set; }
+
+    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+
+    /// <summary>Set when the host starts the game; null in the lobby.</summary>
+    public DateTimeOffset? StartedAt { get; set; }
     public string HostConnectionId { get; init; } = string.Empty;
 
     /// <summary>

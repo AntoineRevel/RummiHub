@@ -39,6 +39,7 @@ public record PlayerInfoDto
     public required string Name { get; init; }
     public required int TileCount { get; init; }
     public required bool HasPlayed { get; init; }
+    public bool IsAuto { get; init; }
 }
 
 /// <summary>

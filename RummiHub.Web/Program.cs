@@ -79,6 +79,7 @@ builder.Services.AddSingleton<ISeedStore>(sp =>
 var benchAccess = SolverBenchAccess.From(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(benchAccess);
 builder.Services.AddSingleton<IGameManager, GameManager>();
+builder.Services.Configure<UmamiOptions>(builder.Configuration.GetSection(UmamiOptions.SectionName));
 
 builder.Services.AddTransient<SolverApiKeyHandler>();
 // Aspire injects service discovery for https+http://apiservice. Compose sets a plain
@@ -125,6 +126,18 @@ if (!benchAccess.Enabled)
         await next(context);
     });
 }
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments(AdminAccess.PathPrefix)
+        && !AdminAccess.Allows(app.Environment.IsDevelopment(), context.Request.Headers.Authorization))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    await next(context);
+});
 
 app.UseAntiforgery();
 
