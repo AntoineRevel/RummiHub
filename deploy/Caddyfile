@@ -18,8 +18,32 @@
 	}
 }
 
+# Statistiques (Umami, https://stats.<DOMAIN>). Le script de suivi et son envoi passent
+# par le site lui-même, sous /stats/ : moins bloqués qu'un domaine de statistiques, et
+# rien d'autre d'Umami (connexion, API) n'est servi ici. Nom du conteneur, pas du service,
+# comme pour le webfrontend (voir plus bas).
+(statistiques) {
+	@umami path /stats/script.js /stats/api/send
+	handle @umami {
+		uri strip_prefix /stats
+		reverse_proxy rummihub-umami-1:3000 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}
+
+# Pages d'administration (/admin/…, parties en cours) : mot de passe demandé par Caddy.
+# ADMIN_PASSWORD_HASH vient de `caddy hash-password` (deploy/README.md).
+(admin) {
+	basic_auth /admin* {
+		{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+	}
+}
+
 {$DOMAIN} {
 	import securite
+	import admin
+	import statistiques
 	encode gzip
 	# Nom du conteneur, pas « webfrontend » : sur le réseau rummihub-edge, Docker donne
 	# aussi ce nom de service au webfrontend du site de test, et Caddy y envoyait alors
@@ -44,6 +68,8 @@ www.{$DOMAIN} {
 # une pile de test arrêtée ne casse pas les autres sites (502 sur ce nom seul).
 test.{$DOMAIN} {
 	import securite
+	import admin
+	import statistiques
 	encode gzip
 	header X-Robots-Tag "noindex, nofollow"
 	reverse_proxy {
@@ -61,5 +87,15 @@ test.{$DOMAIN} {
 	handle_errors {
 		header X-Robots-Tag "noindex, nofollow"
 		respond "Site de test indisponible." 502
+	}
+}
+
+# Interface d'Umami (connexion par compte, liens de partage en lecture seule).
+stats.{$DOMAIN} {
+	import securite
+	encode gzip
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy rummihub-umami-1:3000 {
+		header_up X-Forwarded-For {remote_host}
 	}
 }

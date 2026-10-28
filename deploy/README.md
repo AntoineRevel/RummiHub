@@ -12,6 +12,8 @@ Les processus de l’AppHost Aspire, tableau de bord compris (sans Redis Insight
 | `solver-worker` | 2 répliques, groupe Redis `solvers` | réseau `internal` |
 | `cache` | Redis 8.10.2 (RedisJSON inclus), volume persistant | réseau `internal` |
 | `aspire-dashboard` | traces, métriques et journaux structurés (OTLP), en mémoire | `127.0.0.1:18888`, par tunnel SSH |
+| `umami` | statistiques de fréquentation (Umami 3) | `https://stats.rummisolve.com`, par Caddy |
+| `umami-db` | base Postgres 18 d’Umami, volume persistant | réseau `internal` |
 
 L’API, Redis et les workers n’ont aucun port publié. Le réseau `internal` n’a pas de sortie vers Internet. Les parties et les secrets de siège restent en mémoire dans `webfrontend` : ne pas augmenter le nombre de répliques.
 
@@ -20,7 +22,7 @@ La page `/bench` (comparateur de solveurs) répond 404 en production et dispara�
 ## Prérequis
 
 - Ubuntu 24.04, Docker et Docker Compose v2 (le plugin `docker compose`).
-- DNS : enregistrements A (et AAAA le cas échéant) de `rummisolve.com` **et** `www.rummisolve.com` vers le VPS, avant le premier `up` (Let's Encrypt).
+- DNS : enregistrements A (et AAAA le cas échéant) de `rummisolve.com`, `www.rummisolve.com` **et** `stats.rummisolve.com` vers le VPS, avant le premier `up` (Let's Encrypt).
 - Accès en lecture au dépôt (privé) : une clé de déploiement SSH en lecture seule, générée sur le VPS et ajoutée dans *Settings → Deploy keys*, avec un alias `github-rummihub` dans `~/.ssh/config` (`HostName github.com`, `IdentityFile` de cette clé, `IdentitiesOnly yes`).
 - `ufw` : ouvrir seulement 22, 80 et 443. Ne pas publier 6379 ni le port de l’API.
 
@@ -128,6 +130,7 @@ Puis `shred -u /tmp/gha_deploy /tmp/gha_deploy.pub`.
 | Réseau applicatif | `internal`, sans Internet | le sien, sans Internet |
 | Durée de vie | permanente | arrêtée 2 h après le dernier déploiement |
 | Tableau de bord Aspire | oui | non (rien n’est exporté) |
+| Umami | oui | non : le site de test écrit dans celui de la production, sous son propre site |
 
 Seul lien : le réseau Docker **externe et interne** `rummihub-edge`. Le Caddy de production y est attaché et proxifie `test.<DOMAIN>` vers l’alias `webfrontend-test`. Le réseau n’a pas de passerelle : la pile de test ne s’en sert pas pour sortir, ni pour atteindre Redis ou l’API de production (autres réseaux). Si le conteneur de test est arrêté (arrêt automatique compris) ou en cours de recréation, ce nom répond `502` avec « Site de test indisponible. » Le site public continue. L’en-tête `X-Robots-Tag: noindex, nofollow` est posé sur les réponses, y compris ce 502.
 
@@ -194,7 +197,7 @@ cp .env.test.example .env.test
 openssl rand -hex 32
 ```
 
-Coller la valeur dans `SOLVER_API_KEY` de `.env.test`. Ce n’est pas la clé de la production. `DOMAIN`, `ACME_EMAIL` et `OTLP_API_KEY` (valeur quelconque) sont là pour l’interpolation du compose de base ; ni le Caddy ni le tableau de bord ne démarrent sur la pile de test. Ne pas lancer `docker compose up` sans `-f docker-compose.test.yml` dans ce clone : le fichier de base publierait 80 et 443.
+Coller la valeur dans `SOLVER_API_KEY` de `.env.test`. Ce n’est pas la clé de la production. `DOMAIN`, `ACME_EMAIL`, `OTLP_API_KEY`, `UMAMI_DB_PASSWORD`, `UMAMI_APP_SECRET` et `ADMIN_PASSWORD_HASH` (valeurs quelconques) sont là pour l’interpolation du compose de base ; ni le Caddy, ni le tableau de bord, ni Umami ne démarrent sur la pile de test. Ne pas lancer `docker compose up` sans `-f docker-compose.test.yml` dans ce clone : le fichier de base publierait 80 et 443.
 
 Le clone de test est jetable (`git checkout --force` et `git clean -ffd` à chaque déploiement). `.env` et `.env.test` sont gitignorés, donc gardés par le `clean` ; le reste des fichiers non suivis est supprimé.
 
@@ -285,6 +288,42 @@ curl -s -H "$K" 'http://127.0.0.1:18888/api/telemetry/logs?resource=apiservice&s
 
 Les métriques ne sont que dans l’interface. Aucun service ne dépend du tableau de bord : arrêté, il ne bloque rien, et les traces de ce moment-là sont perdues. Le site de test n’a pas de tableau de bord ; ses services n’exportent rien.
 
+### Statistiques (Umami)
+
+`https://stats.rummisolve.com` : visiteurs, pages, pays, appareils, navigateurs, provenance, et les événements envoyés par le jeu. Une seule instance, dans la pile de production ; le site de test y écrit aussi, sous un autre site Umami (identifiants dans `RummiHub.Web/appsettings.json`, `Umami:Websites`, choisis selon le nom d’hôte de la requête). Les données sont dans Postgres (volume `umami_db`) : elles survivent aux redémarrages et aux déploiements.
+
+Aucune adresse IP n’est enregistrée. Un visiteur est un hachage du site, de l’IP, du navigateur et d’un sel qui change chaque mois : la même personne, sur le même appareil, compte pour un visiteur dans le mois. Pas de cookie ni de stockage local.
+
+Le navigateur charge le script et envoie les visites à `https://<site>/stats/script.js` et `/stats/api/send` ; Caddy les passe à Umami avec l’IP du visiteur (`X-Forwarded-For`). Rien d’autre d’Umami n’est servi sur le site public. Umami n’a pas d’accès à Internet (réseau `internal`) : la géolocalisation vient de la base GeoLite2 incluse dans l’image.
+
+**Première installation**, après le premier `up` qui démarre `umami` :
+
+1. DNS : enregistrements A `stats.rummisolve.com` → `54.37.139.20` et AAAA → `2001:41d0:601:1100::99c`. Caddy obtient le certificat tout seul ensuite (il réessaie tant que le nom ne résout pas, sans gêner les autres sites).
+2. Umami crée un compte `admin` / `umami` à son premier démarrage. **Changer ce mot de passe tout de suite** (*Settings → Profile*), avant de publier le DNS si possible.
+3. Créer les deux sites avec les identifiants de `appsettings.json`. L’interface tire un identifiant au hasard : passer par l’API. Depuis le VPS (Umami n’a pas de port publié, on passe par son réseau) :
+
+```bash
+U='docker run --rm -i --network rummihub_internal curlimages/curl:8.17.0 -s'
+T=$($U http://rummihub-umami-1:3000/api/auth/login -H 'content-type: application/json' \
+  -d '{"username":"admin","password":"<mot de passe>"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')
+$U http://rummihub-umami-1:3000/api/websites -H "authorization: Bearer $T" -H 'content-type: application/json' \
+  -d '{"id":"9c3addd7-3403-49f8-9766-3cdafe4d2af7","name":"RummiHub","domain":"rummisolve.com"}'
+$U http://rummihub-umami-1:3000/api/websites -H "authorization: Bearer $T" -H 'content-type: application/json' \
+  -d '{"id":"0a099f4e-77fc-4223-ac5e-632dec0ab257","name":"RummiHub (test)","domain":"test.rummisolve.com"}'
+```
+
+Lien en lecture seule, sans compte : *Websites → (site) → Edit → Share URL*.
+
+### Pages d’administration
+
+`https://rummisolve.com/admin/…` (et la même chose sur le site de test) : Caddy demande un identifiant et un mot de passe (`basic_auth`) avant de laisser passer la requête. Le hachage se calcule avec l’image de Caddy :
+
+```bash
+docker run --rm caddy:2.11.7-alpine caddy hash-password --plaintext 'le mot de passe'
+```
+
+Le coller entre apostrophes dans `ADMIN_PASSWORD_HASH` de `.env` (il contient des `$`), puis `docker compose up -d caddy` : Caddy est recréé, quelques secondes de coupure.
+
 ## Vérifier que seuls 80 et 443 sont exposés
 
 ```bash
@@ -309,6 +348,9 @@ Les deux connexions doivent être refusées. Depuis une autre machine, `curl --m
 | `ACME_EMAIL` | Contact Let's Encrypt. |
 | `DASHBOARD_API_KEY` | Facultative. Clé de l’API de télémétrie du tableau de bord (`openssl rand -hex 32`). Vide : API fermée. |
 | `OTLP_API_KEY` | Obligatoire. Clé que le tableau de bord exige pour recevoir la télémétrie (`openssl rand -hex 32`). Compose la pose sur le tableau de bord et, en en-tête `x-otlp-api-key`, sur `webfrontend`, `apiservice` et `solver-worker`. Absente : Compose refuse de démarrer, rien n’est recréé. |
+| `UMAMI_DB_PASSWORD` | Obligatoire. Mot de passe de la base Postgres d’Umami (`openssl rand -hex 32`). Lu par `umami` et `umami-db` ; le changer après le premier démarrage demande de le changer aussi dans Postgres. |
+| `UMAMI_APP_SECRET` | Obligatoire. Secret qui signe les sessions de l’interface d’Umami (`openssl rand -hex 32`). Le changer déconnecte tout le monde. |
+| `ADMIN_USER`, `ADMIN_PASSWORD_HASH` | Identifiant (`admin` par défaut) et hachage bcrypt du mot de passe des pages `/admin`, vérifié par Caddy. Voir « Statistiques ». |
 
 Aucun mot de passe Redis : le port n’est pas publié.
 

@@ -39,6 +39,9 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?Définir DOMAIN dans deploy/.env}
       ACME_EMAIL: ${ACME_EMAIL:?Définir ACME_EMAIL dans deploy/.env}
+      # Mot de passe des pages /admin (basic_auth), haché par `caddy hash-password`.
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Définir ADMIN_PASSWORD_HASH dans deploy/.env}
     ports:
       - "80:80"
       - "443:443"
@@ -234,6 +237,66 @@ services:
         limits:
           memory: 512M
 
+  # Statistiques de fréquentation (https://stats.<DOMAIN>). Pas d'IP gardée : un
+  # visiteur est un hachage (site, IP, navigateur, sel du mois). Le script et
+  # l'envoi passent par <DOMAIN>/stats/ (Caddy), l'interface par stats.<DOMAIN>.
+  # Les deux sites (production et test) écrivent ici, chacun sous son identifiant
+  # (RummiHub.Web/appsettings.json, Umami:Websites).
+  umami:
+    image: ghcr.io/umami-software/umami:3.4.1
+    restart: unless-stopped
+    logging: *logging
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD:?Définir UMAMI_DB_PASSWORD dans deploy/.env}@umami-db:5432/umami
+      APP_SECRET: ${UMAMI_APP_SECRET:?Définir UMAMI_APP_SECRET dans deploy/.env}
+      # Posé par Caddy (header_up) : l'IP du visiteur, pas celle du proxy.
+      CLIENT_IP_HEADER: x-forwarded-for
+      # Réseau internal sans Internet : pas de vérification de version ni de télémétrie.
+      DISABLE_TELEMETRY: "1"
+      DISABLE_UPDATES: "1"
+    depends_on:
+      umami-db:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:3000/api/heartbeat"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  umami-db:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: ${UMAMI_DB_PASSWORD:?Définir UMAMI_DB_PASSWORD dans deploy/.env}
+    volumes:
+      # Postgres 18 : le volume se monte sur /var/lib/postgresql (plus /data).
+      - umami_db:/var/lib/postgresql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
 networks:
   edge:
   internal:
@@ -251,6 +314,8 @@ volumes:
   caddy_config:
   redis_data:
   dataprotection_keys:
+  # Base d'Umami : visites et événements, gardés d'un déploiement à l'autre.
+  umami_db:
   # Nom fixe : les projets rummihub et rummihub-test montent le même volume. Le
   # second affiche « already exists but was created for project rummihub » : normal.
   seeds:
