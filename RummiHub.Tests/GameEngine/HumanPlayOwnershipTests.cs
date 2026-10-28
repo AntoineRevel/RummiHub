@@ -1,5 +1,5 @@
 using System.Net;
-using FluentAssertions;
+using AwesomeAssertions;
 using RummiHub.Core.Contracts;
 using RummiHub.Core.Models;
 using RummiHub.Web.Services;

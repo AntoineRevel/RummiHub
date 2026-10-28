@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using FluentAssertions;
+using AwesomeAssertions;
 using RummiHub.Core.Models;
 using RummiHub.Core.Solver;
 using RummiHub.Solver.Worker.Solver.Dynamic;

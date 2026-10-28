@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using RummiHub.SolverBench.Comparison;
 using RummiHub.SolverBench.Measure;
 using RummiHub.SolverBench.Model;

@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using FluentAssertions;
+using AwesomeAssertions;
 using OpenTelemetry;
 using OpenTelemetry.Trace;
 using RummiHub.Solver.Worker;

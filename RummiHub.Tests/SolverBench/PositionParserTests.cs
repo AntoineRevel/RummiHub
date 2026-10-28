@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using RummiHub.Core.Models;
 using RummiHub.SolverBench;
 using RummiHub.SolverBench.Model;
@@ -39,7 +39,7 @@ public class PositionParserTests
     [InlineData("10Z")]   // bad colour
     [InlineData("xx")]
     public void ParseTile_RejectsInvalidTokens(string token) =>
-        FluentAssertions.FluentActions.Invoking(() => PositionParser.ParseTile(token))
+        AwesomeAssertions.FluentActions.Invoking(() => PositionParser.ParseTile(token))
             .Should().Throw<FormatException>();
 
     [Fact]
@@ -57,6 +57,6 @@ public class PositionParserTests
 
     [Fact]
     public void FirstPlayFromHand_EmptyHand_Throws() =>
-        FluentAssertions.FluentActions.Invoking(() => PositionParser.FirstPlayFromHand(""))
+        AwesomeAssertions.FluentActions.Invoking(() => PositionParser.FirstPlayFromHand(""))
             .Should().Throw<FormatException>();
 }

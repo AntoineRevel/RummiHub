@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using RummiHub.Core.Models;
 using RummiHub.Web.Rendering;
 
