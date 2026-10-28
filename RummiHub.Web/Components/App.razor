@@ -1,4 +1,7 @@
-﻿<!DOCTYPE html>
+﻿@using Microsoft.Extensions.Options
+@using RummiHub.Web.Services
+@inject IOptions<UmamiOptions> Umami
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -16,6 +19,28 @@
 <body>
 <Routes/>
 <script src="@Assets["_framework/blazor.web.js"]"></script>
+<script src="@Assets["js/stats.js"]"></script>
+@if (_umamiWebsite is not null)
+{
+    @* Served by Caddy from Umami (deploy/Caddyfile). The URL is sent without its query and
+       fragment: the game link carries the player name and the seat secret (#seat=). *@
+    <script defer src="/stats/script.js" data-website-id="@_umamiWebsite"
+            data-exclude-search="true" data-exclude-hash="true"></script>
+}
 </body>
 
 </html>
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private string? _umamiWebsite;
+
+    protected override void OnInitialized()
+    {
+        // The admin pages stay out of the visitor counts.
+        if (HttpContext?.Request.Path.StartsWithSegments(AdminAccess.PathPrefix) == true)
+            return;
+
+        _umamiWebsite = Umami.Value.WebsiteFor(HttpContext?.Request.Host.Host);
+    }
+}

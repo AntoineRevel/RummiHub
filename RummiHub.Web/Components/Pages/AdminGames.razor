@@ -1,0 +1,121 @@
+@page "/admin/parties"
+@using Microsoft.Extensions.Options
+@using RummiHub.Web.Models
+@using RummiHub.Web.Services
+@inject IGameManager GameManager
+@inject IOptions<UmamiOptions> Umami
+
+@* Static page (no circuit): reloads itself. Caddy asks for the password (AdminAccess). *@
+<PageTitle>Parties en cours</PageTitle>
+<HeadContent>
+    <meta http-equiv="refresh" content="15"/>
+    <meta name="robots" content="noindex, nofollow"/>
+</HeadContent>
+
+<h1 class="h3">Parties en cours</h1>
+<p class="text-muted small">
+    @_rows.Count partie(s) en mémoire · @_rows.Count(r => r.Started) lancée(s) ·
+    page rechargée toutes les 15 s · heures UTC
+    @if (!string.IsNullOrWhiteSpace(Umami.Value.DashboardUrl))
+    {
+        <text> · </text><a href="@Umami.Value.DashboardUrl">Statistiques (Umami)</a>
+    }
+</p>
+
+@if (_rows.Count == 0)
+{
+    <p>Aucune partie en ce moment.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead>
+            <tr>
+                <th>Partie</th>
+                <th>Créée</th>
+                <th>État</th>
+                <th>Joueurs (tuiles en main)</th>
+                <th>Pioche</th>
+                <th>Graine</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var row in _rows)
+            {
+                <tr>
+                    <td><code>@row.Id</code></td>
+                    <td>@row.CreatedAt.UtcDateTime.ToString("dd/MM HH:mm") <span class="text-muted">(@Ago(row.CreatedAt))</span></td>
+                    <td>@row.Status</td>
+                    <td>
+                        @foreach (var p in row.Players)
+                        {
+                            <span class="badge @(p.IsAuto ? "text-bg-secondary" : "text-bg-primary") me-1">
+                                @p.Name@(p.IsAuto ? " (IA)" : "")@(p.Tiles is { } n ? $" · {n}" : "")
+                            </span>
+                        }
+                    </td>
+                    <td>@row.Pool</td>
+                    <td><code>@row.Seed</code></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private sealed record PlayerRow(string Name, bool IsAuto, int? Tiles);
+
+    private sealed record GameRow(
+        string Id, DateTimeOffset CreatedAt, bool Started, string Status,
+        List<PlayerRow> Players, int? Pool, string? Seed);
+
+    private List<GameRow> _rows = [];
+
+    protected override void OnInitialized() =>
+        _rows = GameManager.GetGames()
+            .OrderByDescending(g => g.CreatedAt)
+            .Select(ToRow)
+            .ToList();
+
+    /// <summary>
+    /// Read outside the game's ActionLock: a move in progress may show half-applied, or make
+    /// the rack count fail, in which case the row shows the players without it.
+    /// </summary>
+    private static GameRow ToRow(Game game)
+    {
+        var seed = game.DistributionSeed is { } s ? DistributionSeeds.Abbreviate(s) : null;
+        var engine = game.Engine;
+        if (!game.IsStarted || engine is null)
+        {
+            var lobby = game.GetPlayers().Select(p => new PlayerRow(p.Name, p.IsAuto, null)).ToList();
+            return new GameRow(game.Id, game.CreatedAt, false, "Dans le lobby", lobby, null, seed);
+        }
+
+        List<PlayerRow> players;
+        try
+        {
+            players = engine.Players
+                .Select(p => new PlayerRow(p.Name, p.IsAuto, p.Rack.Tiles.Count + p.Rack.Jokers))
+                .ToList();
+        }
+        catch (InvalidOperationException)
+        {
+            players = game.GetPlayers().Select(p => new PlayerRow(p.Name, p.IsAuto, null)).ToList();
+        }
+
+        var status = engine.IsGameOver
+            ? $"Terminée · {engine.WinnerName} a gagné"
+            : $"Tour {engine.Turn}" + (game.StartedAt is { } at ? $" · lancée il y a {Ago(at)}" : "");
+        return new GameRow(game.Id, game.CreatedAt, true, status, players, engine.TilePoolCount, seed);
+    }
+
+    private static string Ago(DateTimeOffset at)
+    {
+        var d = DateTimeOffset.UtcNow - at;
+        return d.TotalMinutes < 1 ? "< 1 min"
+            : d.TotalHours < 1 ? $"{(int)d.TotalMinutes} min"
+            : $"{(int)d.TotalHours} h {d.Minutes:00}";
+    }
+}

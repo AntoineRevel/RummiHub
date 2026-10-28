@@ -116,6 +116,8 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         return game;
     }
 
+    public IReadOnlyList<Game> GetGames() => [.._games.Values];
+
     public Player? AddPlayer(string gameId, string playerName, string connectionId)
     {
         if (!_games.TryGetValue(gameId, out var game))

@@ -30,6 +30,9 @@ public interface IGameManager
 
     Game? GetGame(string gameId);
 
+    /// <summary>Every game still in memory, in the lobby or started (admin page).</summary>
+    IReadOnlyList<Game> GetGames();
+
     /// <summary>
     /// Adds a human seat. Returns null when the game is missing, already started, or already
     /// has <see cref="GameLimits.MaxPlayers"/> seats.

@@ -156,15 +156,25 @@ public partial class Lobby
             _players = players.ToList();
             _isHost = true;
             _error = null;
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(async () =>
+            {
+                StateHasChanged();
+                await JS.TrackAsync(StatsEvents.GameCreated);
+            });
         });
 
         _hubConnection.On<string, IEnumerable<string>>(HubEvents.PlayerJoined, (playerName, players) =>
         {
             _players = players.ToList();
-            if (_gameId == null) _gameId = _joinGameId;
+            var joined = _gameId == null;
+            if (joined) _gameId = _joinGameId;
             _error = null;
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(async () =>
+            {
+                StateHasChanged();
+                if (joined)
+                    await JS.TrackAsync(StatsEvents.GameJoined);
+            });
         });
 
         _hubConnection.On<IEnumerable<string>>(HubEvents.PlayerLeft, players =>
@@ -184,6 +194,9 @@ public partial class Lobby
             {
                 await OpenGameAsync();
                 StateHasChanged();
+                // Once per game: only the host's lobby sends it (AI seats included in the count).
+                if (_isHost)
+                    await JS.TrackAsync(StatsEvents.GameStarted, new { joueurs = _players.Count });
             });
         });
 

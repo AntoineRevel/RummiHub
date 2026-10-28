@@ -436,8 +436,22 @@ public partial class GamePage : IAsyncDisposable
     /// <summary>Shows a state in full: whose turn it is, the banner, my side of the table.</summary>
     private void ApplyTurn(GameStateDto state)
     {
+        // Seen ending here, not loaded already over (a refresh after the end sends nothing).
+        if (state.IsGameOver && _gameState is { IsGameOver: false })
+            _ = TrackGameOverAsync(state);
+
         _gameState = state;
     }
+
+    /// <summary>Sent by each human player's page: <c>gagnee</c> tells the winner's apart.</summary>
+    private Task TrackGameOverAsync(GameStateDto state) =>
+        JS.TrackAsync(StatsEvents.GameOver, new
+        {
+            joueurs = state.Players.Count,
+            ia = state.Players.Count(p => p.IsAuto),
+            tours = state.Turn,
+            gagnee = state.WinnerName == PlayerName
+        });
 
     private void RevealTurn()
     {

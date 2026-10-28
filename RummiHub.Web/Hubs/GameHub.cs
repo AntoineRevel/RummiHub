@@ -238,6 +238,7 @@ public partial class GameHub(
             }
 
             game.IsStarted = true;
+            game.StartedAt = DateTimeOffset.UtcNow;
             LogGameStarted(gameId);
 
             // Broadcast: all lobby clients navigate to the game page
@@ -560,7 +561,8 @@ public partial class GameHub(
             {
                 Name = p.Name,
                 TileCount = p.Rack.Tiles.Count + p.Rack.Jokers,
-                HasPlayed = p.HasPlayed
+                HasPlayed = p.HasPlayed,
+                IsAuto = p.IsAuto
             }).ToList(),
             CurrentPlayerIndex = engine.PlayerIndex,
             Turn = engine.Turn,
