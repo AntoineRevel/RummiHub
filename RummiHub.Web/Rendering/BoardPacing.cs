@@ -5,18 +5,18 @@ namespace RummiHub.Web.Rendering;
 /// <summary>
 /// Single source of truth for the tile animation's tempo. The constants are pushed to the JS
 /// module (<c>wwwroot/js/tile-animations.js</c>) via its <c>configure()</c> export, and
-/// <see cref="EstimateMs"/> mirrors the client's board story so AI pacing
-/// (<see cref="Models.Game.PendingAnimationMs"/>) never plays a move mid-animation.
+/// <see cref="EstimateMs"/> estimates the client's board story so AI pacing
+/// (<see cref="Models.Game.PendingAnimationMs"/>) waits for it. It is an estimate, not a bound:
+/// how many blocks the board shifts depends on the client's layout (line wrapping); a board
+/// arriving early waits on the client until the running story is over.
 /// </summary>
 /// <remarks>
-/// A tile at rest never covers another. A board change is told step by step, one step per group
-/// of sets that change together (a set the move builds or touches, plus the sets tiles pass
-/// between with it), in reading order. Each step is told in three acts, on its sets only:
-/// (1) its board tiles changing set rise in place; (2) in ONE glide the board makes room for
-/// this step alone while they travel to hover just above their new gap; (3) its tiles come in
-/// one after the other — played tiles fly out of the play zone (or the mover's chip), hovering
-/// ones drop. Then the next step. A beat follows acts 1 and 2; a step with nothing to lift or
-/// make room for is act 3 alone.
+/// A tile at rest never covers another, and only one thing moves at a time: a tile, or a block
+/// of tiles stuck together (a set, the tail of a row). A board change is told step by step, one
+/// step per group of sets that change together (a set the move builds or touches, plus the sets
+/// tiles pass between with it), in reading order. In each step the board blocks move one after
+/// the other — sliding along their row, or rising, travelling in the lane between rows and
+/// dropping in — then the step's played tiles fly in one after the other.
 /// </remarks>
 public static class BoardPacing
 {
@@ -26,26 +26,26 @@ public static class BoardPacing
     /// <summary>A newcomer with no origin on screen popping in.</summary>
     public const int PopMs = 300;
 
-    /// <summary>Act 1 — a step's board tiles changing set rising in place.</summary>
-    public const int LiftMs = 400;
+    /// <summary>A board block rising out of its row.</summary>
+    public const int LiftMs = 300;
 
-    /// <summary>Beat after acts 1 and 2, so each reads on its own.</summary>
-    public const int PauseMs = 300;
+    /// <summary>A board block sliding along its row, or travelling in the lane between rows.</summary>
+    public const int SlideMs = 500;
 
-    /// <summary>Act 2 — the board making room for one step as its lifted tiles travel above their gaps.</summary>
-    public const int RoomMs = 900;
+    /// <summary>A lifted block dropping into its spot.</summary>
+    public const int DropMs = 400;
 
-    /// <summary>Act 3 — one hovering tile dropping into its gap.</summary>
-    public const int DropMs = 600;
+    /// <summary>A played tile flying into its gap.</summary>
+    public const int FlightMs = 700;
 
-    /// <summary>Act 3 — a played tile flying into its gap.</summary>
-    public const int FlightMs = 900;
+    /// <summary>Beat between two moves.</summary>
+    public const int BeatMs = 150;
 
-    /// <summary>Act 3 — interval between two tiles of a step.</summary>
-    public const int TileGapMs = 200;
-
-    /// <summary>Beat between two sets of a step, and between two steps.</summary>
+    /// <summary>Beat between two steps.</summary>
     public const int SetGapMs = 300;
+
+    /// <summary>Most board blocks counted for making room for one set.</summary>
+    public const int MaxRoomMoves = 8;
 
     /// <summary>Slack absorbing client jitter.</summary>
     private const int BufferMs = 200;
@@ -71,16 +71,16 @@ public static class BoardPacing
         => DurationFor(PlacedSets(previous, next));
 
     /// <summary>
-    /// A set of the next board that gains tiles: how many (<paramref name="Tiles"/>), whether
-    /// some come from other sets — they rise first (<paramref name="ChangesSet"/>) — and whether
-    /// the board has to make room for it (<paramref name="MakesRoom"/>).
+    /// A set of the next board that gains tiles: how many come from the hand
+    /// (<paramref name="Played"/>), how many from other sets (<paramref name="Moved"/>), and how
+    /// many sets, from this one to the end of the board, may shift to make room for them
+    /// (<paramref name="Shifting"/>) — none for a new set of played tiles laid at the end.
     /// </summary>
-    public readonly record struct PlacedSet(int Tiles, bool ChangesSet, bool MakesRoom);
+    public readonly record struct PlacedSet(int Played, int Moved, int Shifting);
 
     // Every set of the next board gaining tiles its paired previous set doesn't have, in reading
     // order. A tile the previous board lacks came from the hand; any other one changes set (with
-    // duplicates, either copy may count as such). Only a new set of played tiles with nothing
-    // but new sets after it lands without moving anything.
+    // duplicates, either copy may count as such).
     private static List<PlacedSet> PlacedSets(Solution previous, Solution next)
     {
         var prevSets = previous.Sets;
@@ -95,38 +95,40 @@ public static class BoardPacing
         for (var j = 0; j < nextSets.Count; j++)
         {
             var kept = pairs[j].PrevIndex >= 0 ? Counts(prevSets[pairs[j].PrevIndex].Tiles) : [];
-            var placed = 0;
-            var changesSet = false;
+            int played = 0, moved = 0;
             foreach (var key in nextSets[j].Tiles.Select(TileKey))
             {
-                if (kept.GetValueOrDefault(key) > 0) { kept[key]--; continue; }
-                placed++;
-                if (fromHand.GetValueOrDefault(key) > 0) fromHand[key]--;
-                else changesSet = true;
+                if (kept.GetValueOrDefault(key) > 0) kept[key]--;
+                else if (fromHand.GetValueOrDefault(key) > 0) { fromHand[key]--; played++; }
+                else moved++;
             }
-            if (placed == 0) continue;
+            if (played + moved == 0) continue;
 
-            var appended = !changesSet && pairs.Skip(j).All(pair => pair.PrevIndex < 0);
-            placedSets.Add(new PlacedSet(placed, changesSet, !appended));
+            var laidAtTheEnd = moved == 0 && pairs.Skip(j).All(pair => pair.PrevIndex < 0);
+            placedSets.Add(new PlacedSet(played, moved, laidAtTheEnd ? 0 : nextSets.Count - j));
         }
 
         return placedSets;
     }
 
     /// <summary>
-    /// Duration of the board story placing <paramref name="sets"/>, in reading order.
-    /// Conservative: each set counts as its own step (the client may group several), every tile
-    /// as flying in (a drop is shorter), and room for any set but a new one laid at the end,
-    /// since whether the board really reflows depends on the client's layout (line wrapping).
+    /// Estimated duration of the board story placing <paramref name="sets"/>, in reading order:
+    /// each set as its own step (the client may group several); each tile changing set carried
+    /// on its own (it may carry several together); room made by one block, plus one for every
+    /// two shifting sets (a row's tail, a set wrapping to the next row), at most
+    /// <see cref="MaxRoomMoves"/>, each counted as carried (sliding is shorter).
     /// </summary>
     public static int DurationFor(IReadOnlyList<PlacedSet> sets)
-        => sets.Count == 0
+    {
+        const int carry = LiftMs + SlideMs + DropMs + BeatMs;
+        return sets.Count == 0
             ? 0
-            : sets.Sum(set => (set.ChangesSet ? LiftMs + PauseMs : 0)           // act 1 — tiles changing set rise
-                              + (set.MakesRoom ? RoomMs + PauseMs : 0)          // act 2 — the board makes room
-                              + (set.Tiles - 1) * TileGapMs + FlightMs)         // act 3 — its tiles come in
+            : sets.Sum(set => set.Moved * carry
+                              + (set.Shifting > 0 ? Math.Min(MaxRoomMoves, 1 + set.Shifting / 2) * carry : 0)
+                              + set.Played * (FlightMs + BeatMs))
               + (sets.Count - 1) * SetGapMs
               + BufferMs;
+    }
 
     private static Dictionary<int, int> Counts(IEnumerable<Tile> tiles)
     {
