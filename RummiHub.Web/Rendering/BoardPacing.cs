@@ -16,7 +16,8 @@ namespace RummiHub.Web.Rendering;
 /// step per group of sets that change together (a set the move builds or touches, plus the sets
 /// tiles pass between with it), in reading order. In each step the board blocks move one after
 /// the other — sliding along their row, or rising, travelling in the lane between rows and
-/// dropping in — then the step's played tiles fly in one after the other.
+/// dropping in — then the step's played tiles fly in one after the other; a set made only of
+/// played tiles flies in whole, at once.
 /// </remarks>
 public static class BoardPacing
 {
@@ -72,11 +73,13 @@ public static class BoardPacing
 
     /// <summary>
     /// A set of the next board that gains tiles: how many come from the hand
-    /// (<paramref name="Played"/>), how many from other sets (<paramref name="Moved"/>), and how
+    /// (<paramref name="Played"/>), how many from other sets (<paramref name="Moved"/>), how
     /// many sets, from this one to the end of the board, may shift to make room for them
-    /// (<paramref name="Shifting"/>) — none for a new set of played tiles laid at the end.
+    /// (<paramref name="Shifting"/>) — none for a new set of played tiles laid at the end —
+    /// and whether it is a new set made only of played tiles, which flies in whole
+    /// (<paramref name="Whole"/>).
     /// </summary>
-    public readonly record struct PlacedSet(int Played, int Moved, int Shifting);
+    public readonly record struct PlacedSet(int Played, int Moved, int Shifting, bool Whole = false);
 
     // Every set of the next board gaining tiles its paired previous set doesn't have, in reading
     // order. A tile the previous board lacks came from the hand; any other one changes set (with
@@ -105,7 +108,8 @@ public static class BoardPacing
             if (played + moved == 0) continue;
 
             var laidAtTheEnd = moved == 0 && pairs.Skip(j).All(pair => pair.PrevIndex < 0);
-            placedSets.Add(new PlacedSet(played, moved, laidAtTheEnd ? 0 : nextSets.Count - j));
+            var whole = moved == 0 && pairs[j].PrevIndex < 0;
+            placedSets.Add(new PlacedSet(played, moved, laidAtTheEnd ? 0 : nextSets.Count - j, whole));
         }
 
         return placedSets;
@@ -116,7 +120,8 @@ public static class BoardPacing
     /// each set as its own step (the client may group several); each tile changing set carried
     /// on its own (it may carry several together); room made by one block, plus one for every
     /// two shifting sets (a row's tail, a set wrapping to the next row), at most
-    /// <see cref="MaxRoomMoves"/>, each counted as carried (sliding is shorter).
+    /// <see cref="MaxRoomMoves"/>, each counted as carried (sliding is shorter); a whole set of
+    /// played tiles as one flight.
     /// </summary>
     public static int DurationFor(IReadOnlyList<PlacedSet> sets)
     {
@@ -125,7 +130,7 @@ public static class BoardPacing
             ? 0
             : sets.Sum(set => set.Moved * carry
                               + (set.Shifting > 0 ? Math.Min(MaxRoomMoves, 1 + set.Shifting / 2) * carry : 0)
-                              + set.Played * (FlightMs + BeatMs))
+                              + (set.Whole ? 1 : set.Played) * (FlightMs + BeatMs))
               + (sets.Count - 1) * SetGapMs
               + BufferMs;
     }
