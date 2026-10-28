@@ -42,7 +42,17 @@ public static class DistributionSeeds
         return error is null;
     }
 
-    /// <summary>Short form that fits a card or a select; the full value is the title.</summary>
+    /// <summary>
+    /// What a page gets for a listed seed: 16 hex characters of its SHA-256. It names the seed
+    /// (to pick or remove it) without giving it away; only the server maps it back.
+    /// </summary>
+    public static string ListId(string seed) =>
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed)))[..16].ToLowerInvariant();
+
+    /// <summary>
+    /// The first 8 and last 4 characters: enough to recognize a seed, far too few to rebuild
+    /// the deal. The only form a page shows while the full seed must stay on the server.
+    /// </summary>
     public static string Abbreviate(string seed) =>
         seed.Length <= 13 ? seed : $"{seed[..8]}…{seed[^4..]}";
 

@@ -78,13 +78,13 @@ else
                 }
             </div>
 
-            @* The seed can be saved to the lobby list at any time; the server sends its value
-               to this page only at game over. *@
+            @* The game's seed, shortened, from the start. The full value only arrives at game
+               over (Copy). Save seed adds it to the lobby list at any time. *@
             <span class="meta-chip seed-chip" title="@SeedChipTitle">
                 <span class="chip-label">Seed</span>
+                <span class="seed-abbr">@_gameState.SeedShort</span>
                 @if (_gameState.DistributionSeed is { } seed)
                 {
-                    <span class="seed-abbr" title="@seed">@DistributionSeeds.Abbreviate(seed)</span>
                     <button type="button" class="seed-copy" title="@seed" @onclick="OnCopySeed">
                         @(_seedCopied ? "Copied" : "Copy")
                     </button>

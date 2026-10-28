@@ -12,6 +12,15 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
     public IReadOnlyList<SavedSeed> GetSeedList() => seedStore.GetAll();
 
+    public string? FindListedSeed(string listId) =>
+        seedStore.GetAll().FirstOrDefault(s => DistributionSeeds.ListId(s.Seed) == listId)?.Seed;
+
+    public void RemoveSeed(string listId)
+    {
+        if (FindListedSeed(listId) is { } seed)
+            seedStore.Remove(seed);
+    }
+
     public void SaveSeed(Game game)
     {
         if (game.DistributionSeed is not { } seed)

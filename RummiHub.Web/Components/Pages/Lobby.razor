@@ -56,14 +56,22 @@
                     <label for="seedSelect">Distribution seed</label>
                     @* Most recently added first. A seed fixes the whole deal: replaying one
                        deals the same racks and draw order. *@
-                    <select id="seedSelect" class="form-control" @bind="_seedChoice">
-                        <option value="@RandomSeed">— Random —</option>
-                        <option value="@PasteSeed">Paste a seed…</option>
-                        @foreach (var item in _seeds)
+                    <div class="seed-picker">
+                        <select id="seedSelect" class="form-control" @bind="_seedChoice">
+                            <option value="@RandomSeed">— Random —</option>
+                            <option value="@PasteSeed">Paste a seed…</option>
+                            @foreach (var item in _seeds)
+                            {
+                                <option value="@item.Id">@SeedOptionLabel(item)</option>
+                            }
+                        </select>
+                        @if (IsListedSeed)
                         {
-                            <option value="@item.Seed">@SeedOptionLabel(item)</option>
+                            <button type="button" class="seed-remove" title="Remove this seed from the list" @onclick="RemoveSelectedSeed">
+                                Remove
+                            </button>
                         }
-                    </select>
+                    </div>
                     @if (_seedChoice == PasteSeed)
                     {
                         <input id="seedPaste"
@@ -116,7 +124,7 @@
                 {
                     <div class="info-row">
                         <span class="info-label">Seed</span>
-                        <strong class="info-value seed-value" title="@_gameSeed">@DistributionSeeds.Abbreviate(_gameSeed)</strong>
+                        <strong class="info-value seed-value">@_gameSeed</strong>
                     </div>
                 }
             </div>
@@ -379,6 +387,32 @@
 
     .seed-value {
         color: #1976d2;
+    }
+
+    .seed-picker {
+        display: flex;
+        gap: 8px;
+    }
+
+    .seed-picker select {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .seed-remove {
+        flex-shrink: 0;
+        padding: 0 14px;
+        font-family: inherit;
+        font-size: 0.85rem;
+        color: #c62828;
+        background: #fff;
+        border: 2px solid #ef9a9a;
+        border-radius: 10px;
+        cursor: pointer;
+    }
+
+    .seed-remove:hover {
+        background: #ffebee;
     }
 
     .seed-input {

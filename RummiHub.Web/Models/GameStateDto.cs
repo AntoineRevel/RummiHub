@@ -8,9 +8,13 @@ namespace RummiHub.Web.Models;
 public record GameStateDto
 {
     public required string GameId { get; init; }
+    /// <summary>The full seed, at game over only: during play it would rebuild every rack.</summary>
     public string? DistributionSeed { get; init; }
 
-    /// <summary>The game's seed is on the lobby list (its value may still be hidden).</summary>
+    /// <summary>The seed shortened (<see cref="Services.DistributionSeeds.Abbreviate"/>), from the start.</summary>
+    public string? SeedShort { get; init; }
+
+    /// <summary>The game's seed is on the lobby list.</summary>
     public bool SeedSaved { get; init; }
     public required List<PlayerInfoDto> Players { get; init; }
     public required int CurrentPlayerIndex { get; init; }
@@ -37,5 +41,8 @@ public record PlayerInfoDto
     public required bool HasPlayed { get; init; }
 }
 
-/// <summary>A seed offered in the lobby, with the time it was added to the list.</summary>
-public record SeedListItemDto(string Seed, DateTimeOffset AddedAt);
+/// <summary>
+/// A seed offered in the lobby: its list id and short form, never the seed itself (the hub is
+/// public), with the time it was added to the list.
+/// </summary>
+public record SeedListItemDto(string Id, string Short, DateTimeOffset AddedAt);
