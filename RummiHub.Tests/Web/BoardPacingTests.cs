@@ -8,6 +8,7 @@ public class BoardPacingTests
 {
     private static ValidSet Set(params Tile[] tiles) => new(tiles);
     private static Tile T(int value, TileColor color) => new(value, color);
+    private static BoardPacing.PlacedSet P(int played, int moved, int shifting) => new(played, moved, shifting);
 
     // EstimateMs never mutates its inputs, so fixtures are safely shared across tests.
     // FivesGroup and RedRun both hold a 5-Red: the board-wide duplicate pair.
@@ -35,7 +36,7 @@ public class BoardPacingTests
         var previous = new Solution { Sets = [BlueRun, RedRun] };
         var next = new Solution { Sets = [BlueRun, RedRunExtended] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(1));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(1, moved: 0, shifting: 1)]));
     }
 
     [Fact]
@@ -48,7 +49,7 @@ public class BoardPacingTests
         var previous = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
         var next = new Solution { Sets = [blueRunExtended, RedRun, FivesGroup] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(1));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(1, moved: 0, shifting: 3)]));
     }
 
     [Fact]
@@ -57,21 +58,21 @@ public class BoardPacingTests
         var previous = new Solution { Sets = [BlueRun] };
         var next = new Solution { Sets = [BlueRun, RedRun] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(3, moved: 0, shifting: 0)]));
     }
 
     [Fact]
     public void EstimateMs_BoardTileChangingSet_IsPlacedToo()
     {
         // The 4-Blue leaves its run for a new group with the played 4-Red and 4-Black: it is
-        // picked up and dropped like the played tiles — 3 placed tiles.
+        // carried over, the 4-Red and 4-Black are played.
         var longBlueRun = Set(
             T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
         var foursGroup = Set(T(4, TileColor.Blue), T(4, TileColor.Red), T(4, TileColor.Black));
         var previous = new Solution { Sets = [longBlueRun] };
         var next = new Solution { Sets = [BlueRun, foursGroup] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(2, moved: 1, shifting: 1)]));
     }
 
     [Fact]
@@ -82,7 +83,7 @@ public class BoardPacingTests
         var previous = new Solution { Sets = [BlueRun, FivesGroup] };
         var next = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationForPlacedTiles(3));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(3, moved: 0, shifting: 2)]));
     }
 
     [Fact]
@@ -160,17 +161,35 @@ public class BoardPacingTests
     }
 
     [Fact]
-    public void DurationForPlacedTiles_NothingPlaced_IsZero()
+    public void DurationFor_NothingPlaced_IsZero()
     {
-        BoardPacing.DurationForPlacedTiles(0).Should().Be(0);
+        BoardPacing.DurationFor([]).Should().Be(0);
     }
 
     [Fact]
-    public void DurationForPlacedTiles_OneTile_CoversTheThreeActs()
+    public void DurationFor_TileChangingSet_RisesTravelsAndDrops()
     {
-        // The lift, the board making room, the drop — acts 1 and 2 followed by their beat.
-        BoardPacing.DurationForPlacedTiles(1).Should().BeGreaterThanOrEqualTo(
-            BoardPacing.LiftMs + BoardPacing.RoomMs + 2 * BoardPacing.PauseMs + BoardPacing.DropMs);
+        BoardPacing.DurationFor([P(0, moved: 1, shifting: 0)]).Should().BeGreaterThanOrEqualTo(
+            BoardPacing.LiftMs + BoardPacing.SlideMs + BoardPacing.DropMs);
+    }
+
+    [Fact]
+    public void DurationFor_PlayedTilesFlyInOneAfterTheOther()
+    {
+        (BoardPacing.DurationFor([P(3, moved: 0, shifting: 0)]) - BoardPacing.DurationFor([P(2, moved: 0, shifting: 0)]))
+            .Should().Be(BoardPacing.FlightMs + BoardPacing.BeatMs);
+    }
+
+    [Fact]
+    public void DurationFor_MakingRoom_GrowsWithTheShiftingSets_UpToTheCap()
+    {
+        var carry = BoardPacing.LiftMs + BoardPacing.SlideMs + BoardPacing.DropMs + BoardPacing.BeatMs;
+        (BoardPacing.DurationFor([P(1, moved: 0, shifting: 1)]) - BoardPacing.DurationFor([P(1, moved: 0, shifting: 0)]))
+            .Should().Be(carry);
+        (BoardPacing.DurationFor([P(1, moved: 0, shifting: 4)]) - BoardPacing.DurationFor([P(1, moved: 0, shifting: 0)]))
+            .Should().Be(3 * carry);
+        (BoardPacing.DurationFor([P(1, moved: 0, shifting: 100)]) - BoardPacing.DurationFor([P(1, moved: 0, shifting: 0)]))
+            .Should().Be(BoardPacing.MaxRoomMoves * carry);
     }
 
     [Fact]
@@ -287,18 +306,25 @@ public class BoardPacingTests
     }
 
     [Fact]
-    public void DurationForPlacedTiles_EachExtraTileAddsADrop_UpToTheSpreadCap()
+    public void EstimateMs_TilesJoiningTwoSets_ComeSetBySet()
     {
-        (BoardPacing.DurationForPlacedTiles(2) - BoardPacing.DurationForPlacedTiles(1))
-            .Should().Be(BoardPacing.StaggerMs);
-        for (var placed = 1; placed < 40; placed++)
-        {
-            (BoardPacing.DurationForPlacedTiles(placed + 1) - BoardPacing.DurationForPlacedTiles(placed))
-                .Should().BeInRange(0, BoardPacing.StaggerMs);
-        }
+        // The 4-Blue joins the Blue run, the 8-Red the Red run: two steps, one after the other.
+        var blueRunExtended = Set(
+            T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
+        var previous = new Solution { Sets = [BlueRun, RedRun] };
+        var next = new Solution { Sets = [blueRunExtended, RedRunExtended] };
 
-        // However many tiles are placed, the drops never spread wider than the cap.
-        (BoardPacing.DurationForPlacedTiles(100) - BoardPacing.DurationForPlacedTiles(1))
-            .Should().Be(BoardPacing.MaxStaggerSpreadMs);
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor(
+            [P(1, moved: 0, shifting: 2), P(1, moved: 0, shifting: 1)]));
+    }
+
+    [Fact]
+    public void DurationFor_EachSetIsItsOwnStep()
+    {
+        // The second set waits for the first one to be done, after a beat.
+        var one = P(2, moved: 1, shifting: 2);
+        var second = BoardPacing.DurationFor([one, one]) - BoardPacing.DurationFor([one]);
+        second.Should().BeGreaterThan(BoardPacing.SetGapMs);
+        (BoardPacing.DurationFor([one, one, one]) - BoardPacing.DurationFor([one, one])).Should().Be(second);
     }
 }

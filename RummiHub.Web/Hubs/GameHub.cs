@@ -817,8 +817,8 @@ public partial class GameHub(
     }
 
     /// <summary>
-    /// Tells every seat which tiles came out of the mover's rack and which sets the move
-    /// changed, so an AI turn is as readable as a human one. Indices refer to the board just
+    /// Tells every seat which tiles came out of the mover's rack, so an AI turn is as
+    /// readable as a human one. Indices refer to the board just
     /// broadcast.
     /// </summary>
     private async Task BroadcastMoveHighlightAsync(Game game, Solution? boardBefore, List<Tile> played)
@@ -828,8 +828,7 @@ public partial class GameHub(
         await hubContext.Clients.Group(game.Id).SendAsync(
             HubEvents.HighlightTilesUpdated,
             BoardPacing.PlayedIndices(boardBefore, next, played),
-            game.PendingAnimationMs + HighlightLingerMs,
-            BoardPacing.ModifiedSetIndices(boardBefore, next));
+            game.PendingAnimationMs + HighlightLingerMs);
     }
 
     /// <summary>Flattens a solve result into the tile list it plays (jokers included).</summary>

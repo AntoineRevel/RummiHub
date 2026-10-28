@@ -28,7 +28,6 @@ public partial class GamePage : IAsyncDisposable
     /// <summary>The tile I last drew, lit in the rack until I next touch it.</summary>
     private Tile? _drawnTile;
     private HashSet<int>? _highlightIndices;
-    private HashSet<int>? _modifiedSetIndices;
     private Timer? _highlightTimer;
     private bool _optimalReady;
     private List<Tile>? _optimalSuggestion;
@@ -42,7 +41,6 @@ public partial class GamePage : IAsyncDisposable
     private string? _seatToken;
     private bool _hubStartRequested;
     private List<int>? _lastHighlightIndices;
-    private List<int>? _lastModifiedSetIndices;
     private int _lastHighlightMs;
 
     // The JS module kept the last board story (my review, an AI move, the winning move).
@@ -228,8 +226,8 @@ public partial class GamePage : IAsyncDisposable
                 await _tileAnimations.InvokeVoidAsync("configure", new
                 {
                     BoardPacing.MoveMs, BoardPacing.PopMs,
-                    BoardPacing.LiftMs, BoardPacing.PauseMs, BoardPacing.RoomMs, BoardPacing.DropMs,
-                    BoardPacing.FlightMs, BoardPacing.StaggerMs, BoardPacing.MaxStaggerSpreadMs
+                    BoardPacing.LiftMs, BoardPacing.SlideMs, BoardPacing.DropMs,
+                    BoardPacing.FlightMs, BoardPacing.BeatMs, BoardPacing.SetGapMs
                 });
             }
 
@@ -275,8 +273,8 @@ public partial class GamePage : IAsyncDisposable
         void Handle<T>(string method, Action<T> apply) =>
             hub.On<T>(method, value => InvokeAsync(() => { apply(value); StateHasChanged(); }));
 
-        void Handle3<T1, T2, T3>(string method, Action<T1, T2, T3> apply) =>
-            hub.On<T1, T2, T3>(method, (a, b, c) => InvokeAsync(() => { apply(a, b, c); StateHasChanged(); }));
+        void Handle2<T1, T2>(string method, Action<T1, T2> apply) =>
+            hub.On<T1, T2>(method, (a, b) => InvokeAsync(() => { apply(a, b); StateHasChanged(); }));
 
         Handle<GameStateDto>(HubEvents.GameStateUpdated, state =>
         {
@@ -290,7 +288,7 @@ public partial class GamePage : IAsyncDisposable
             ApplyIncomingState(state);
         });
 
-        Handle3<List<int>, int, List<int>>(HubEvents.HighlightTilesUpdated, (indices, displayMs, modifiedSets) =>
+        Handle2<List<int>, int>(HubEvents.HighlightTilesUpdated, (indices, displayMs) =>
         {
             if (HoldingMoves)
             {
@@ -298,7 +296,7 @@ public partial class GamePage : IAsyncDisposable
                 // move on screen (it arrived while we were already replaying it).
                 if (_heldMoves.Count == 0)
                 {
-                    ApplyIncomingHighlight(indices, displayMs, modifiedSets);
+                    ApplyIncomingHighlight(indices, displayMs);
                     return;
                 }
 
@@ -308,13 +306,12 @@ public partial class GamePage : IAsyncDisposable
                     move.Highlighted = true;
                     move.Indices = indices is { Count: > 0 } ? [..indices] : null;
                     move.DisplayMs = displayMs;
-                    move.ModifiedSets = modifiedSets is { Count: > 0 } ? [..modifiedSets] : null;
                 }
 
                 return;
             }
 
-            ApplyIncomingHighlight(indices, displayMs, modifiedSets);
+            ApplyIncomingHighlight(indices, displayMs);
         });
 
         Handle<List<Tile>>(HubEvents.OptimalReady, tiles =>
@@ -377,9 +374,7 @@ public partial class GamePage : IAsyncDisposable
         if (_gameState is null || !BoardPacing.SameBoard(_gameState.Board, state.Board))
         {
             _highlightIndices = null;
-            _modifiedSetIndices = null;
             _lastHighlightIndices = null;
-            _lastModifiedSetIndices = null;
             StopHighlightTimer();
         }
         _optimalSuggestion = null;
@@ -409,18 +404,15 @@ public partial class GamePage : IAsyncDisposable
         }
     }
 
-    private void ApplyIncomingHighlight(List<int>? indices, int displayMs, List<int>? modifiedSets)
+    private void ApplyIncomingHighlight(List<int>? indices, int displayMs)
     {
         // Reading-order indices of the tiles that entered the board (server-computed),
         // so the freshly-played copy lights up — never an identical twin already there.
-        // Modified-set indices outline every combination the move touched. The server
-        // sizes displayMs to the board animation plus a reading window; the highlight
+        // The server sizes displayMs to the board animation plus a reading window; the highlight
         // then fades on its own instead of lingering until the next move.
         _highlightIndices = indices is { Count: > 0 } ? [..indices] : null;
-        _modifiedSetIndices = modifiedSets is { Count: > 0 } ? [..modifiedSets] : null;
         // Remembered so a "replay animation" can bring the highlight back too.
         _lastHighlightIndices = _highlightIndices?.ToList();
-        _lastModifiedSetIndices = _modifiedSetIndices?.ToList();
         _lastHighlightMs = displayMs;
         SetupHighlightTimer(displayMs);
     }
@@ -559,10 +551,9 @@ public partial class GamePage : IAsyncDisposable
             // Keep the next move off this board until the story has landed again.
             ArmReplayHold(replayMs);
 
-            if (_lastHighlightIndices is { Count: > 0 } || _lastModifiedSetIndices is { Count: > 0 })
+            if (_lastHighlightIndices is { Count: > 0 })
             {
-                _highlightIndices = _lastHighlightIndices is { Count: > 0 } ? [.._lastHighlightIndices] : null;
-                _modifiedSetIndices = _lastModifiedSetIndices is { Count: > 0 } ? [.._lastModifiedSetIndices] : null;
+                _highlightIndices = [.._lastHighlightIndices];
                 SetupHighlightTimer(_lastHighlightMs);
                 StateHasChanged();
             }
@@ -622,7 +613,7 @@ public partial class GamePage : IAsyncDisposable
         _heldMoves.RemoveAt(0);
         ApplyIncomingState(move.State);
         if (move.Highlighted)
-            ApplyIncomingHighlight(move.Indices, move.DisplayMs, move.ModifiedSets);
+            ApplyIncomingHighlight(move.Indices, move.DisplayMs);
         if (move.Optimal is not null)
             ApplyOptimal(move.Optimal);
 
@@ -880,7 +871,7 @@ public partial class GamePage : IAsyncDisposable
     private void SetupHighlightTimer(int displayMs)
     {
         StopHighlightTimer();
-        if (_highlightIndices is null && _modifiedSetIndices is null) return;
+        if (_highlightIndices is null) return;
 
         _highlightTimer = new Timer(Math.Max(displayMs, 1000)) { AutoReset = false };
         _highlightTimer.Elapsed += (_, _) =>
@@ -888,7 +879,6 @@ public partial class GamePage : IAsyncDisposable
             InvokeAsync(() =>
             {
                 _highlightIndices = null;
-                _modifiedSetIndices = null;
                 StopHighlightTimer();
                 StateHasChanged();
             });
@@ -910,7 +900,6 @@ public partial class GamePage : IAsyncDisposable
         public bool Highlighted { get; set; }
         public List<int>? Indices { get; set; }
         public int DisplayMs { get; set; }
-        public List<int>? ModifiedSets { get; set; }
         /// <summary>This turn's OptimalReady tiles (empty: no move); null until it arrives.</summary>
         public List<Tile>? Optimal { get; set; }
     }
