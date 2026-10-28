@@ -8,7 +8,7 @@ public class BoardPacingTests
 {
     private static ValidSet Set(params Tile[] tiles) => new(tiles);
     private static Tile T(int value, TileColor color) => new(value, color);
-    private static BoardPacing.PlacedSet P(int played, int moved, int shifting) => new(played, moved, shifting);
+    private static BoardPacing.PlacedSet P(int played, int moved, int shifting, bool whole = false) => new(played, moved, shifting, whole);
 
     // EstimateMs never mutates its inputs, so fixtures are safely shared across tests.
     // FivesGroup and RedRun both hold a 5-Red: the board-wide duplicate pair.
@@ -58,7 +58,7 @@ public class BoardPacingTests
         var previous = new Solution { Sets = [BlueRun] };
         var next = new Solution { Sets = [BlueRun, RedRun] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(3, moved: 0, shifting: 0)]));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(3, moved: 0, shifting: 0, whole: true)]));
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class BoardPacingTests
         var previous = new Solution { Sets = [BlueRun, FivesGroup] };
         var next = new Solution { Sets = [BlueRun, RedRun, FivesGroup] };
 
-        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(3, moved: 0, shifting: 2)]));
+        BoardPacing.EstimateMs(previous, next).Should().Be(BoardPacing.DurationFor([P(3, moved: 0, shifting: 2, whole: true)]));
     }
 
     [Fact]
@@ -178,6 +178,13 @@ public class BoardPacingTests
     {
         (BoardPacing.DurationFor([P(3, moved: 0, shifting: 0)]) - BoardPacing.DurationFor([P(2, moved: 0, shifting: 0)]))
             .Should().Be(BoardPacing.FlightMs + BoardPacing.BeatMs);
+    }
+
+    [Fact]
+    public void DurationFor_WholeSetOfPlayedTiles_FliesInAtOnce()
+    {
+        BoardPacing.DurationFor([P(4, moved: 0, shifting: 0, whole: true)])
+            .Should().Be(BoardPacing.DurationFor([P(1, moved: 0, shifting: 0)]));
     }
 
     [Fact]

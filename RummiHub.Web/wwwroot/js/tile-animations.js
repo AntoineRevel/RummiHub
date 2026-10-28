@@ -25,7 +25,8 @@
 //   - when every block waits for another one's spot, the first one rises and hovers above its
 //     new spot until that spot is free, then drops;
 //   - then the step's played tiles fly in one after the other, out of the play zone (or the
-//     mover's chip), where they wait until then.
+//     mover's chip), where they wait until then; a set made only of played tiles, tied to
+//     nothing on the board, flies in whole, all its tiles at once.
 // Tiles changing set go first, room is made from the end of the board backwards. Lifted and
 // hovering tiles rest in the lane the board leaves between its rows, above their own slot.
 // A board change arriving while another one plays waits for it to end — its animations hold
@@ -671,11 +672,14 @@ function tell(story, snap, prev, root) {
             drop(block); block.state = 'after';
         }
 
-        // The step's played tiles, one after the other, into their open gaps.
+        // The step's played tiles, one after the other, into their open gaps — except a set
+        // made only of played tiles, tied to nothing on the board: it comes in whole, at once.
         const played = mine.filter(unit => unit.entering === true)
             .sort((a, b) => a.items[0].tile.setIndex - b.items[0].tile.setIndex
                          || a.items[0].tile.order - b.items[0].tile.order);
-        for (const unit of played) {
+        const wholeSets = new Set(played.map(unit => unit.items[0].tile.setIndex).filter(set =>
+            snap.sets[set].tiles.every(tile => played.some(unit => unit.items[0].tile === tile))));
+        played.forEach((unit, i) => {
             const item = unit.items[0], tile = item.tile, slot = after.get(tile);
             const start = startOf(item);
             const from = item.dx === undefined && !item.origin ? { ...start, x: slot.x, y: slot.y } : start;
@@ -685,8 +689,9 @@ function tell(story, snap, prev, root) {
                                     { t: t + f, ...slot, scale: 1 }],
                             lifted: true, moved: true, entering: true };
             track.set(tile, entry);
-            t += f + tempo.beatMs;
-        }
+            const next = played[i + 1]?.items[0].tile.setIndex;
+            if (!(wholeSets.has(tile.setIndex) && next === tile.setIndex)) t += f + tempo.beatMs;
+        });
         t += tempo.setGapMs - tempo.beatMs;
     }
     const storyEnd = Math.max(0, t - tempo.setGapMs);
