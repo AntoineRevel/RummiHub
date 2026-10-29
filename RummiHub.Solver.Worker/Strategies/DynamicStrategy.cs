@@ -48,7 +48,9 @@ public sealed class DynamicStrategy : IStrategy
             var result = _createSolver(board, rack, hasPlayed).SearchSolution(cancellationToken);
 
             // An exact "no move" is final; only a move the engine found needs double-checking.
-            if (!result.Found || SolutionValidator.IsValid(result, board, rack, hasPlayed))
+            // A first play is laid beside the table, never on it: check it against no board.
+            var playedOn = hasPlayed ? board : new Set();
+            if (!result.Found || SolutionValidator.IsValid(result, playedOn, rack, hasPlayed))
                 return result;
         }
         catch (OperationCanceledException)
