@@ -20,6 +20,12 @@ public record GameStateDto
     public required int CurrentPlayerIndex { get; init; }
     public required int Turn { get; init; }
     public required Solution Board { get; init; }
+
+    /// <summary>
+    /// Which broadcast this board is (<see cref="BoardSettling.Version"/>): the page names it
+    /// when it reports how long the board keeps moving (<c>BoardShown</c>).
+    /// </summary>
+    public int BoardVersion { get; init; }
     public required bool IsGameOver { get; init; }
     public string? WinnerName { get; init; }
     public int TilePoolCount { get; init; }

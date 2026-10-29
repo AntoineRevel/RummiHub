@@ -28,6 +28,9 @@ public partial class GameHub(
     /// </summary>
     private const int HighlightLingerMs = BoardPacing.MaxReadMs + 1000;
 
+    /// <summary>The game whose board a connection's page watches (<c>Context.Items</c> key).</summary>
+    private const string WatchedGameKey = "watched-game";
+
     // ========== LOBBY PHASE ==========
 
     public async Task GetSeedList()
@@ -282,6 +285,9 @@ public partial class GameHub(
             }
 
             await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
+            // From now on AI moves wait for this page's board too; OnDisconnectedAsync forgets it.
+            game.BoardSettling.Watch(Context.ConnectionId);
+            Context.Items[WatchedGameKey] = gameId;
 
             // Make sure an optimal solve is in flight for whoever's turn it currently is.
             // Idempotent — won't relaunch if one already runs for this (turn, playerIndex).
@@ -482,6 +488,14 @@ public partial class GameHub(
     }
 
     /// <summary>
+    /// Sent by a game page once it has drawn board <paramref name="boardVersion"/>: its board
+    /// keeps moving for <paramref name="busyMs"/> more. The next AI move waits for the slowest
+    /// page (<see cref="BoardSettling"/>).
+    /// </summary>
+    public void BoardShown(string gameId, int boardVersion, int busyMs) =>
+        gameManager.GetGame(gameId)?.BoardSettling.Report(Context.ConnectionId, boardVersion, busyMs);
+
+    /// <summary>
     /// Ends a "play &amp; review" turn: the move was already applied and broadcast by
     /// <see cref="PlayTiles"/>; this just advances to the next player.
     /// </summary>
@@ -517,6 +531,11 @@ public partial class GameHub(
     {
         try
         {
+            // Keyed by the game this page joined: after a reconnect the seat holds a newer
+            // connection, so FindGameByConnection no longer knows this one.
+            if (Context.Items.TryGetValue(WatchedGameKey, out var watched) && watched is string watchedId)
+                gameManager.GetGame(watchedId)?.BoardSettling.Forget(Context.ConnectionId);
+
             var game = gameManager.FindGameByConnection(Context.ConnectionId);
             if (game != null)
             {
@@ -569,6 +588,7 @@ public partial class GameHub(
             // LastBroadcastBoard is the post-move board seated so unchanged sets stay put.
             // engine.Board mirrors it, which is what the next solve stabilizes against.
             Board = game.LastBroadcastBoard ?? engine.Board,
+            BoardVersion = game.BoardSettling.Version,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,
             TilePoolCount = engine.TilePoolCount,
@@ -618,8 +638,8 @@ public partial class GameHub(
     /// <summary>
     /// Aligns the post-move board to the one currently shown so unchanged sets keep their
     /// place, and records how long clients take to play the change out — the board animation
-    /// (play → make room → place), then the reading window — so the next AI move waits for
-    /// both. Callers must hold <see cref="Game.ActionLock"/>.
+    /// (play → make room → place), estimated until the pages report it, then the reading
+    /// window — so the next AI move waits for both. Callers must hold <see cref="Game.ActionLock"/>.
     /// </summary>
     private static void SeatBoard(Game game)
     {
@@ -628,6 +648,7 @@ public partial class GameHub(
         var aligned = previous is null ? engine.Board : BoardAlignment.Align(previous, engine.Board);
         game.PendingAnimationMs = previous is null ? 0 : BoardPacing.EstimateMs(previous, aligned);
         game.PendingReadingMs = previous is null ? 0 : BoardPacing.ReadingMs(previous, aligned);
+        game.BoardSettling.Begin(game.PendingAnimationMs);
         game.LastBroadcastBoard = aligned;
         engine.Board = aligned;
     }
@@ -740,7 +761,8 @@ public partial class GameHub(
     }
 
     /// <summary>
-    /// Plays the AI seat's optimal move automatically after a short, watchable delay:
+    /// Plays the AI seat's optimal move automatically once the previous move has played out on
+    /// every page and been read:
     /// applies the solved move (or draws when there's nothing to play), advances the turn,
     /// broadcasts the new state, and re-arms the chain for the next player (which auto-plays
     /// too if it is also an AI). Runs outside a hub invocation, so it uses <c>hubContext</c>.
@@ -750,12 +772,13 @@ public partial class GameHub(
     {
         try
         {
-            // Wait for the currently-shown transition's animation to finish, then for its
-            // reading window (at least the watchable pause), so an AI move never lands on top
-            // of the previous one before the table has had time to read it.
+            // Wait for the currently-shown transition's animation to finish on every page,
+            // then for its reading window (at least the watchable pause), so an AI move never
+            // lands on top of the previous one before the table has had time to read it.
             var pause = TimeSpan.FromMilliseconds(game.PendingReadingMs);
-            await Task.Delay(TimeSpan.FromMilliseconds(game.PendingAnimationMs)
-                             + (pause > AutoPlayDelay ? pause : AutoPlayDelay), ct);
+            var idleAt = await game.BoardSettling.IdleAtAsync(ct);
+            var wait = idleAt + (pause > AutoPlayDelay ? pause : AutoPlayDelay) - DateTimeOffset.UtcNow;
+            if (wait > TimeSpan.Zero) await Task.Delay(wait, ct);
             await game.ActionLock.WaitAsync(ct);
         }
         catch (OperationCanceledException)
