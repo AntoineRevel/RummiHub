@@ -69,6 +69,24 @@ public class DynamicStrategyTests
     }
 
     [Fact]
+    public async Task FirstPlayWithTilesOnTheTable_ReturnsTheDynamicResult_WithoutFallback()
+    {
+        // The worker hands the real table over even for a first play, which is laid beside it.
+        // Validating that move against the table rejected it, and the exponential fallback
+        // ran out of memory on a 51-tile rack: the player was told to draw on every turn.
+        var board = new Set([T(4, TileColor.Red), T(4, TileColor.Mango), T(4, TileColor.Black)]);
+        var rack = new Set([T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Black)]);
+        var fallback = new SpyFallback();
+
+        var result = await new DynamicStrategy(fallback).GetSolverResult(board, rack, hasPlayed: false);
+
+        result.Found.Should().BeTrue();
+        result.Source.Should().Be(nameof(DynamicSolver));
+        result.Score.Should().Be(39);
+        fallback.Calls.Should().Be(0);
+    }
+
+    [Fact]
     public async Task NormalPlay_ReturnsTheDynamicResult_WithoutFallback()
     {
         // Board run [10B, 11B, 12B] + rack [13B] → extend the run.
