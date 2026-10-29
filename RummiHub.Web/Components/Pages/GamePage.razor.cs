@@ -71,6 +71,11 @@ public partial class GamePage : IAsyncDisposable
     private GameStateDto? _turnAwaitingBoard;
     private Timer? _turnRevealTimer;
 
+    // The broadcast board on screen, and the last one whose motion I reported to the server:
+    // AI moves wait for every page's board to stop moving (BoardShown).
+    private int _boardVersionShown;
+    private int _boardVersionReported;
+
     // Whole-page tile animation module (wwwroot/js/tile-animations.js). It runs a FLIP pass
     // after every render, diffing DOM positions itself, and tells board changes as
     // play → make room → place.
@@ -217,6 +222,7 @@ public partial class GamePage : IAsyncDisposable
         // Captured before awaiting JS: a state arriving meanwhile is drawn by the next render,
         // which schedules its own reveal from the board it actually shows.
         var turnAwaitingBoard = _turnAwaitingBoard;
+        var boardVersion = _boardVersionShown;
         var boardBusyMs = 0;
         try
         {
@@ -253,6 +259,12 @@ public partial class GamePage : IAsyncDisposable
 
         if (turnAwaitingBoard is not null && ReferenceEquals(turnAwaitingBoard, _turnAwaitingBoard))
             ScheduleTurnReveal(boardBusyMs);
+
+        if (boardVersion != _boardVersionReported)
+        {
+            _boardVersionReported = boardVersion;
+            _ = ReportBoardShownAsync(boardVersion, boardBusyMs);
+        }
 
         // The move just released from the replay queue is on screen. The next one waits
         // until this board stops moving, so neither animation is skipped.
@@ -358,6 +370,7 @@ public partial class GamePage : IAsyncDisposable
 
     private void ApplyIncomingState(GameStateDto state)
     {
+        _boardVersionShown = state.BoardVersion;
         _errorPlay = null;
         _isLoading = false;
         // Cleared here rather than on RackUpdated so the selected tiles are still
@@ -452,6 +465,23 @@ public partial class GamePage : IAsyncDisposable
         if (_turnAwaitingBoard is not { } state) return;
         _turnAwaitingBoard = null;
         ApplyTurn(state);
+    }
+
+    /// <summary>
+    /// Tells the server how long the board just drawn keeps moving here, so the next AI move
+    /// starts once it has landed. Best-effort: without it the server falls back on its estimate.
+    /// </summary>
+    private async Task ReportBoardShownAsync(int boardVersion, int boardBusyMs)
+    {
+        if (_hubConnection is not { State: HubConnectionState.Connected } hub) return;
+        try
+        {
+            await hub.SendAsync(HubEvents.BoardShown, GameId, boardVersion, boardBusyMs);
+        }
+        catch (Exception)
+        {
+            // Connection lost or page closing: the server falls back on its estimate.
+        }
     }
 
     /// <summary>Reveals the held-back turn once the board stops moving.</summary>

@@ -89,9 +89,10 @@ public class Game
     public Solution? LastBroadcastBoard { get; set; }
 
     /// <summary>
-    /// How long (ms) the client animation for the most recently broadcast transition runs. The
-    /// next AI move waits this long (plus the watchable pause) so its move never overlaps the
-    /// in-progress animation. Read/written only inside <see cref="ActionLock"/>.
+    /// Estimated duration (ms) of the client animation for the most recently broadcast
+    /// transition: the longest the next AI move waits for the players' pages to report it over
+    /// (<see cref="BoardSettling"/>), and how long its highlight lasts. Read/written only inside
+    /// <see cref="ActionLock"/>.
     /// </summary>
     public int PendingAnimationMs { get; set; }
 
@@ -101,6 +102,12 @@ public class Game
     /// <see cref="ActionLock"/>.
     /// </summary>
     public int PendingReadingMs { get; set; }
+
+    /// <summary>
+    /// When the last broadcast board stops moving on the players' screens, as their pages
+    /// report it; the next AI move waits for that rather than <see cref="PendingAnimationMs"/>.
+    /// </summary>
+    public BoardSettling BoardSettling { get; } = new();
 
     public int PlayerCount
     {
