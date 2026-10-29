@@ -12,10 +12,10 @@ namespace RummiHub.Web.Models;
 public sealed class BoardSettling(TimeProvider time)
 {
     /// <summary>
-    /// Longest board motion a page may report: <c>tile-animations.js</c> fast-forwards a longer
-    /// backlog (<c>MAX_BACKLOG_MS</c>), and a page cannot hold the table longer than that.
+    /// Longest board motion a page may report, so no page holds the table longer than that.
+    /// One move can really play for 20 s and more on a crowded table.
     /// </summary>
-    public const int MaxReportedMs = 20_000;
+    public const int MaxReportedMs = 60_000;
 
     private readonly Lock _lock = new();
 
