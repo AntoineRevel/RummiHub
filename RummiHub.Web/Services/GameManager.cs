@@ -12,34 +12,52 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
     public IReadOnlyList<SavedSeed> GetSeedList() => seedStore.GetAll();
 
-    public string? FindListedSeed(string listId) =>
-        seedStore.GetAll().FirstOrDefault(s => DistributionSeeds.ListId(s.Seed) == listId)?.Seed;
+    public SavedSeed? FindListedSeed(string listId) =>
+        seedStore.GetAll().FirstOrDefault(s => s.ListId == listId);
 
-    public void RemoveSeed(string listId)
-    {
-        if (FindListedSeed(listId) is { } seed)
-            seedStore.Remove(seed);
-    }
+    public void RemoveSeed(string listId) => seedStore.Remove(listId);
 
-    public void SaveSeed(Game game)
+    public void RenameSeed(string listId, string? name) => seedStore.Rename(listId, name);
+
+    public void SaveSeed(Game game, int seat, string? name)
     {
-        if (game.DistributionSeed is not { } seed)
+        if (game.DistributionSeed is not { } seed || game.Engine is not { } engine)
+            return;
+        if (seat < 0 || seat >= engine.Players.Count)
             return;
 
-        seedStore.Add(seed);
-        game.SeedSaved = true;
+        seedStore.Add(seed, engine.Players.Count, seat, name);
+        game.MarkSeedSaved(seat);
     }
 
     public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null)
     {
-        var seed = ResolveDistributionSeed(distributionSeed, out var chosen);
-
-        var game = new Game
+        var seed = ResolveDistributionSeed(distributionSeed);
+        return CreateGame(playerName, connectionId, new Game
         {
             HostConnectionId = connectionId,
             DistributionSeed = seed
-        };
+        });
+    }
 
+    public Game CreateGame(string playerName, string connectionId, SavedSeed saved)
+    {
+        var game = CreateGame(playerName, connectionId, new Game
+        {
+            HostConnectionId = connectionId,
+            DistributionSeed = saved.Seed,
+            SavedFrom = saved
+        });
+
+        // The table as it was saved: AI seats around the host, who sits on the saved seat.
+        // The host removes an AI to make room for a friend.
+        for (var i = 1; i < saved.Players; i++)
+            AddAiPlayer(game.Id);
+        return game;
+    }
+
+    private Game CreateGame(string playerName, string connectionId, Game game)
+    {
         var player = new Player
         {
             Id = NewShortId(),
@@ -51,28 +69,18 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         if (!game.AddPlayer(player))
             throw new InvalidOperationException("Could not seat the host.");
 
-        // A pasted seed joins the list. One picked from the list stays where it is.
-        if (chosen)
-        {
-            if (seedStore.GetAll().Any(s => s.Seed == seed))
-                game.SeedSaved = true;
-            else
-                SaveSeed(game);
-        }
-
         _games[game.Id] = game;
         LogGameCreated(game.Id, playerName);
         return game;
     }
 
     /// <summary>
-    /// Empty means "deal from a fresh CSPRNG seed". Anything else must be a well-formed seed
-    /// (<see cref="DistributionSeeds.TryNormalize"/>), picked from the list or pasted.
+    /// Empty means "deal from a fresh CSPRNG seed". Anything else must be a well-formed pasted
+    /// seed (<see cref="DistributionSeeds.TryNormalize"/>).
     /// </summary>
-    private static string ResolveDistributionSeed(string? requested, out bool chosen)
+    private static string ResolveDistributionSeed(string? requested)
     {
-        chosen = !string.IsNullOrWhiteSpace(requested);
-        if (!chosen)
+        if (string.IsNullOrWhiteSpace(requested))
             return DistributionSeeds.Create();
 
         if (!DistributionSeeds.TryNormalize(requested, out var seed, out var error))
@@ -86,6 +94,15 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
     /// AI seats have no connection — they are driven by the solver. Returns null if the game
     /// is missing or already started.
     /// </summary>
+    public Player? RemoveAiPlayer(string gameId, string name)
+    {
+        if (!_games.TryGetValue(gameId, out var game) || !game.RemoveAutoPlayer(name, out var removed))
+            return null;
+
+        LogPlayerRemoved(removed!.Name, gameId);
+        return removed;
+    }
+
     public Player? AddAiPlayer(string gameId)
     {
         if (!_games.TryGetValue(gameId, out var game) || game.IsStarted)
@@ -179,6 +196,10 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         var engine = new GameEngine { GameId = game.Id };
         engine.Initialize(playerNames, game.DistributionSeed, autoPlayers);
         game.Engine = engine;
+
+        // Replaying a list entry at its table size: the host's seat holds that entry.
+        if (game.SavedFrom is { } saved && saved.Players == players.Count)
+            game.MarkSeedSaved(saved.Seat);
 
         LogEngineInitialized(gameId, playerNames.Count);
         return true;

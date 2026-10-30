@@ -1,9 +1,39 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
-/// <summary>A seed on the lobby list.</summary>
-public sealed record SavedSeed(string Seed, DateTimeOffset AddedAt);
+/// <summary>
+/// A deal on the lobby list: the seed, how many players sat at the table, and the seat of
+/// whoever saved it. A seed deals seat k the same rack whatever the table size, but the draw
+/// pile starts after the last rack dealt: the same players and seat replay the same game.
+/// </summary>
+public sealed record SavedSeed(string Seed, int Players, int Seat, string? Name, DateTimeOffset AddedAt)
+{
+    /// <summary>Longest name kept; a longer one is cut.</summary>
+    public const int MaxNameLength = 40;
+
+    /// <summary>What a page names this entry by (<see cref="DistributionSeeds.ListId"/>).</summary>
+    [JsonIgnore]
+    public string ListId => DistributionSeeds.ListId(Seed, Players, Seat);
+
+    /// <summary>A seed of the shape <see cref="DistributionSeeds.Create"/> makes, a table size the game allows, a seat at it.</summary>
+    public static bool IsValid(string? seed, int players, int seat) =>
+        DistributionSeeds.IsValid(seed)
+        && players is >= GameLimits.MinPlayers and <= GameLimits.MaxPlayers
+        && seat >= 0 && seat < players;
+
+    /// <summary>The name as kept: one line, trimmed, at most <see cref="MaxNameLength"/> characters; null when empty.</summary>
+    public static string? NormalizeName(string? name)
+    {
+        var oneLine = new string((name ?? string.Empty).Select(c => char.IsControl(c) ? ' ' : c).ToArray());
+        var clean = string.Join(' ', oneLine.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        if (clean.Length > MaxNameLength)
+            clean = clean[..MaxNameLength].TrimEnd();
+        return clean.Length == 0 ? null : clean;
+    }
+}
 
 /// <summary>
 /// The lobby seed list, persisted. Production and the test site share one file (a Docker
@@ -11,14 +41,20 @@ public sealed record SavedSeed(string Seed, DateTimeOffset AddedAt);
 /// </summary>
 public interface ISeedStore
 {
-    /// <summary>Every seed, most recently added first.</summary>
+    /// <summary>Every entry, most recently added first.</summary>
     IReadOnlyList<SavedSeed> GetAll();
 
-    /// <summary>Puts the seed at the top of the list, dated now. A seed already listed moves up.</summary>
-    void Add(string seed);
+    /// <summary>
+    /// Puts the deal at the top of the list, dated now. The same seed, table size and seat
+    /// already listed moves up, keeping its name when <paramref name="name"/> is empty.
+    /// </summary>
+    void Add(string seed, int players, int seat, string? name);
 
-    /// <summary>Takes the seed off the list. No-op if absent.</summary>
-    void Remove(string seed);
+    /// <summary>Names the entry (<see cref="SavedSeed.ListId"/>); an empty name clears it. No-op if absent.</summary>
+    void Rename(string listId, string? name);
+
+    /// <summary>Takes the entry off the list. No-op if absent.</summary>
+    void Remove(string listId);
 }
 
 /// <summary>
@@ -59,26 +95,43 @@ public sealed partial class FileSeedStore : ISeedStore
         }
     }
 
-    public void Add(string seed)
+    public void Add(string seed, int players, int seat, string? name)
     {
-        if (!DistributionSeeds.IsValid(seed))
+        if (!SavedSeed.IsValid(seed, players, seat))
             return;
 
+        name = SavedSeed.NormalizeName(name);
         Change(seeds =>
         {
-            seeds.RemoveAll(s => s.Seed == seed);
-            seeds.Insert(0, new SavedSeed(seed, _time.GetUtcNow()));
+            var listId = DistributionSeeds.ListId(seed, players, seat);
+            var previous = seeds.FirstOrDefault(s => s.ListId == listId);
+            seeds.RemoveAll(s => s.ListId == listId);
+            seeds.Insert(0, new SavedSeed(seed, players, seat, name ?? previous?.Name, _time.GetUtcNow()));
             if (seeds.Count > MaxSeeds)
                 seeds.RemoveRange(MaxSeeds, seeds.Count - MaxSeeds);
             return true;
         });
-        LogSeedSaved(seed);
+        LogSeedSaved(seed, players, seat);
     }
 
-    public void Remove(string seed)
+    public void Rename(string listId, string? name)
     {
-        Change(seeds => seeds.RemoveAll(s => s.Seed == seed) > 0);
-        LogSeedRemoved(seed);
+        name = SavedSeed.NormalizeName(name);
+        Change(seeds =>
+        {
+            var index = seeds.FindIndex(s => s.ListId == listId);
+            if (index < 0 || seeds[index].Name == name)
+                return false;
+
+            seeds[index] = seeds[index] with { Name = name };
+            return true;
+        });
+    }
+
+    public void Remove(string listId)
+    {
+        Change(seeds => seeds.RemoveAll(s => s.ListId == listId) > 0);
+        LogSeedRemoved(listId);
     }
 
     private List<SavedSeed> Read()
@@ -89,8 +142,9 @@ public sealed partial class FileSeedStore : ISeedStore
         var file = JsonSerializer.Deserialize<SeedFile>(File.ReadAllText(_path), JsonOptions);
         // The test site runs any branch and writes here too: keep only well-formed entries.
         return (file?.Seeds ?? [])
-            .Where(s => s is not null && DistributionSeeds.IsValid(s.Seed))
-            .DistinctBy(s => s.Seed)
+            .Where(s => s is not null && SavedSeed.IsValid(s.Seed, s.Players, s.Seat))
+            .Select(s => s with { Name = SavedSeed.NormalizeName(s.Name) })
+            .DistinctBy(s => s.ListId)
             .OrderByDescending(s => s.AddedAt)
             .ToList();
     }
@@ -138,11 +192,11 @@ public sealed partial class FileSeedStore : ISeedStore
 
     private sealed record SeedFile(List<SavedSeed> Seeds);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} added to the seed list")]
-    private partial void LogSeedSaved(string seed);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} added to the seed list ({Players} players, seat {Seat})")]
+    private partial void LogSeedSaved(string seed, int players, int seat);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Seed {Seed} removed from the seed list")]
-    private partial void LogSeedRemoved(string seed);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Seed list entry {ListId} removed")]
+    private partial void LogSeedRemoved(string listId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Could not read the seed list {Path}")]
     private partial void LogReadFailed(Exception ex, string path);

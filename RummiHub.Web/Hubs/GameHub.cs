@@ -37,7 +37,7 @@ public partial class GameHub(
     {
         var seeds = gameManager.GetSeedList()
             .Select(s => new SeedListItemDto(
-                DistributionSeeds.ListId(s.Seed), DistributionSeeds.Abbreviate(s.Seed), s.AddedAt))
+                s.ListId, DistributionSeeds.Abbreviate(s.Seed), s.Name, s.Players, s.Seat, s.AddedAt))
             .ToList();
         await Clients.Caller.SendAsync(HubEvents.SeedList, seeds);
     }
@@ -49,11 +49,19 @@ public partial class GameHub(
         await GetSeedList();
     }
 
+    /// <summary>Names a list entry (an empty name clears it), then sends the caller the new list.</summary>
+    public async Task RenameSeed(string listId, string? name)
+    {
+        gameManager.RenameSeed(listId ?? string.Empty, name);
+        await GetSeedList();
+    }
+
     /// <summary>
-    /// Adds the game's distribution seed to the lobby seed list so it can be replayed later.
-    /// Allowed at any time, and listed at once.
+    /// Adds the game's deal to the lobby seed list so it can be replayed later: the seed, the
+    /// table size and the caller's seat, under an optional name. Allowed at any time, and
+    /// listed at once.
     /// </summary>
-    public async Task SaveSeed(string gameId)
+    public async Task SaveSeed(string gameId, string? name)
     {
         try
         {
@@ -61,10 +69,10 @@ public partial class GameHub(
             var game = gameManager.GetGame(gameId);
             // Only a seated connection may save the seed, and the value is the one the
             // server dealt — never a string supplied by the caller.
-            if (game == null || !game.HasConnection(Context.ConnectionId))
+            if (game?.FindPlayerIndexByConnection(Context.ConnectionId) is not { } seat)
                 return;
 
-            gameManager.SaveSeed(game);
+            gameManager.SaveSeed(game, seat, name);
             await Clients.Caller.SendAsync(HubEvents.SeedSaved);
         }
         catch (Exception ex)
@@ -74,8 +82,9 @@ public partial class GameHub(
     }
 
     /// <summary>
-    /// Creates a game dealt from a pasted seed, from a listed one (named by its list id: the
-    /// lobby never holds a listed seed), or, with both empty, from a fresh random seed.
+    /// Creates a game dealt from a pasted seed, from a list entry (named by its list id: the
+    /// lobby never holds a listed seed; the table is then set as it was saved), or, with both
+    /// empty, from a fresh random seed.
     /// </summary>
     public async Task CreateGame(string playerName, string? pastedSeed, string? listedSeedId)
     {
@@ -88,29 +97,36 @@ public partial class GameHub(
                 return;
             }
 
-            var requestedSeed = pastedSeed?.Trim();
+            Game game;
             if (!string.IsNullOrWhiteSpace(listedSeedId))
             {
-                requestedSeed = gameManager.FindListedSeed(listedSeedId.Trim());
-                if (requestedSeed is null)
+                var saved = gameManager.FindListedSeed(listedSeedId.Trim());
+                if (saved is null)
                 {
                     await Clients.Caller.SendAsync(HubEvents.Error, "That seed is no longer on the list.");
                     return;
                 }
+
+                game = gameManager.CreateGame(playerName, Context.ConnectionId, saved);
             }
-            else if (!string.IsNullOrEmpty(requestedSeed)
-                     && !DistributionSeeds.TryNormalize(requestedSeed, out _, out var seedError))
+            else
             {
-                await Clients.Caller.SendAsync(HubEvents.Error, seedError);
-                return;
+                var requestedSeed = pastedSeed?.Trim();
+                if (!string.IsNullOrEmpty(requestedSeed)
+                    && !DistributionSeeds.TryNormalize(requestedSeed, out _, out var seedError))
+                {
+                    await Clients.Caller.SendAsync(HubEvents.Error, seedError);
+                    return;
+                }
+
+                game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed);
             }
 
-            var game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed);
-            var seatToken = game.GetPlayers().Single().SeatToken;
+            var seatToken = game.GetPlayers().Single(p => !p.IsAuto).SeatToken;
             await Groups.AddToGroupAsync(Context.ConnectionId, game.Id);
             // Seat secret goes to the creator only — never on the shared player list.
             await Clients.Caller.SendAsync(HubEvents.SeatIssued, game.Id, seatToken);
-            await Clients.Caller.SendAsync(HubEvents.GameCreated, game.Id, game.GetPlayerNames());
+            await Clients.Caller.SendAsync(HubEvents.GameCreated, game.Id, game.GetLobbyPlayers());
         }
         catch (Exception ex)
         {
@@ -165,7 +181,7 @@ public partial class GameHub(
 
             await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
             await Clients.Caller.SendAsync(HubEvents.SeatIssued, gameId, player.SeatToken);
-            await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetPlayerNames());
+            await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetLobbyPlayers());
         }
         catch (Exception ex)
         {
@@ -200,12 +216,35 @@ public partial class GameHub(
                 return;
             }
 
-            await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetPlayerNames());
+            await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetLobbyPlayers());
         }
         catch (Exception ex)
         {
             LogHubError(ex, nameof(AddAiPlayer), Context.ConnectionId);
             await Clients.Caller.SendAsync(HubEvents.Error, "An error occurred while adding an AI player.");
+        }
+    }
+
+    /// <summary>Host takes an AI seat off the game while still in the lobby.</summary>
+    public async Task RemoveAiPlayer(string gameId, string playerName)
+    {
+        try
+        {
+            gameId = gameId?.Trim() ?? string.Empty;
+
+            var game = gameManager.GetGame(gameId);
+            if (game == null || game.HostConnectionId != Context.ConnectionId || game.IsStarted)
+                return;
+
+            if (gameManager.RemoveAiPlayer(gameId, playerName ?? string.Empty) is null)
+                return;
+
+            await Clients.Group(gameId).SendAsync(HubEvents.PlayerLeft, game.GetLobbyPlayers());
+        }
+        catch (Exception ex)
+        {
+            LogHubError(ex, nameof(RemoveAiPlayer), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.Error, "An error occurred while removing an AI player.");
         }
     }
 
@@ -548,7 +587,7 @@ public partial class GameHub(
                     var updatedGame = gameManager.GetGame(gameId);
                     if (updatedGame != null)
                         await Clients.Group(gameId)
-                            .SendAsync(HubEvents.PlayerLeft, updatedGame.GetPlayerNames());
+                            .SendAsync(HubEvents.PlayerLeft, updatedGame.GetLobbyPlayers());
                 }
             }
         }
@@ -575,7 +614,7 @@ public partial class GameHub(
             // The short form identifies the game's seed from the start.
             DistributionSeed = engine.IsGameOver ? game.DistributionSeed : null,
             SeedShort = game.DistributionSeed is { } seed ? DistributionSeeds.Abbreviate(seed) : null,
-            SeedSaved = game.SeedSaved,
+            SeedSavedSeats = game.GetSavedSeats(),
             Players = engine.Players.Select(p => new PlayerInfoDto
             {
                 Name = p.Name,

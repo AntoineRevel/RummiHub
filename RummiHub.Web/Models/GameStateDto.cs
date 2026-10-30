@@ -14,8 +14,11 @@ public record GameStateDto
     /// <summary>The seed shortened (<see cref="Services.DistributionSeeds.Abbreviate"/>), from the start.</summary>
     public string? SeedShort { get; init; }
 
-    /// <summary>The game's seed is on the lobby list.</summary>
-    public bool SeedSaved { get; init; }
+    /// <summary>
+    /// The seats whose deal is on the lobby list (seed, this table size, that seat): each page
+    /// checks its own.
+    /// </summary>
+    public List<int> SeedSavedSeats { get; init; } = [];
     public required List<PlayerInfoDto> Players { get; init; }
     public required int CurrentPlayerIndex { get; init; }
     public required int Turn { get; init; }
@@ -49,7 +52,11 @@ public record PlayerInfoDto
 }
 
 /// <summary>
-/// A seed offered in the lobby: its list id and short form, never the seed itself (the hub is
-/// public), with the time it was added to the list.
+/// A deal offered in the lobby: its list id and short form, never the seed itself (the hub is
+/// public), its name if any, the table size and seat it was saved with (seat 0 = first player),
+/// and when it was added to the list.
 /// </summary>
-public record SeedListItemDto(string Id, string Short, DateTimeOffset AddedAt);
+public record SeedListItemDto(string Id, string Short, string? Name, int Players, int Seat, DateTimeOffset AddedAt);
+
+/// <summary>A seat in the waiting room, in seat order.</summary>
+public record LobbyPlayerDto(string Name, bool IsAuto);

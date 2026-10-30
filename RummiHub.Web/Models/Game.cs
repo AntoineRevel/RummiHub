@@ -24,8 +24,13 @@ public class Game
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string? DistributionSeed { get; set; }
 
-    /// <summary>The seed is on the lobby list (saved from this game, picked or pasted).</summary>
-    public bool SeedSaved { get; set; }
+    /// <summary>
+    /// Set when the game was created from a lobby list entry: the table size and seat it was
+    /// saved with. The host keeps that seat (<see cref="KeepHostSeat"/>) so they get the same rack.
+    /// </summary>
+    public SavedSeed? SavedFrom { get; init; }
+
+    private readonly HashSet<int> _savedSeats = [];
 
     private List<Player> Players { get; } = [];
     public bool IsStarted { get; set; }
@@ -136,6 +141,40 @@ public class Game
         }
     }
 
+    /// <summary>The waiting room's list: names in seat order, AI seats flagged.</summary>
+    public List<LobbyPlayerDto> GetLobbyPlayers()
+    {
+        lock (_playersLock)
+        {
+            return Players.Select(p => new LobbyPlayerDto(p.Name, p.IsAuto)).ToList();
+        }
+    }
+
+    /// <summary>The seats whose deal (seed, table size, seat) is on the lobby list.</summary>
+    public List<int> GetSavedSeats()
+    {
+        lock (_savedSeats)
+        {
+            return _savedSeats.Order().ToList();
+        }
+    }
+
+    public bool IsSeedSaved(int seat)
+    {
+        lock (_savedSeats)
+        {
+            return _savedSeats.Contains(seat);
+        }
+    }
+
+    public void MarkSeedSaved(int seat)
+    {
+        lock (_savedSeats)
+        {
+            _savedSeats.Add(seat);
+        }
+    }
+
     public bool HasPlayerWithName(string name)
     {
         lock (_playersLock)
@@ -156,8 +195,43 @@ public class Game
                 return false;
 
             Players.Add(player);
+            KeepHostSeat();
             return true;
         }
+    }
+
+    /// <summary>Takes the AI seat named <paramref name="name"/> off a game still in the lobby.</summary>
+    public bool RemoveAutoPlayer(string name, out Player? removed)
+    {
+        lock (_playersLock)
+        {
+            removed = IsStarted
+                ? null
+                : Players.FirstOrDefault(p => p.IsAuto && p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (removed == null) return false;
+            Players.Remove(removed);
+            KeepHostSeat();
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// In a game created from a list entry, puts the host back on the seat it was saved from
+    /// (or the last seat while the table is smaller), whoever joins or leaves; the others keep
+    /// their order. A seed deals each seat the same rack whatever the table size.
+    /// Called under the player lock.
+    /// </summary>
+    private void KeepHostSeat()
+    {
+        if (SavedFrom is null || IsStarted)
+            return;
+
+        var host = Players.FirstOrDefault(p => p.ConnectionId == HostConnectionId);
+        if (host is null)
+            return;
+
+        Players.Remove(host);
+        Players.Insert(Math.Min(SavedFrom.Seat, Players.Count), host);
     }
 
     public bool HasConnection(string connectionId)
@@ -175,6 +249,7 @@ public class Game
             removed = Players.FirstOrDefault(p => p.ConnectionId == connectionId);
             if (removed == null) return false;
             Players.Remove(removed);
+            KeepHostSeat();
             return true;
         }
     }

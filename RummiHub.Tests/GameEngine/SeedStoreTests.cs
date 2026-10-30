@@ -13,7 +13,7 @@ public sealed class SeedStoreTests : IDisposable
     private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("rummi-seed-");
     private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 27, 12, 0, 0, TimeSpan.Zero));
 
-    private string SeedsFile => Path.Combine(_dir.FullName, "seeds", "seeds.json");
+    private string SeedsFile => Path.Combine(_dir.FullName, "seeds", "seed-configs.json");
 
     private FileSeedStore CreateStore() =>
         new(SeedsFile, _time, NullLogger<FileSeedStore>.Instance);
@@ -26,64 +26,113 @@ public sealed class SeedStoreTests : IDisposable
         public void Advance(TimeSpan by) => now += by;
     }
 
+    private static string Id(string seed, int players = 2, int seat = 0) =>
+        DistributionSeeds.ListId(seed, players, seat);
+
     [Fact]
     public void Add_ListsTheMostRecentlyAddedFirst_AndPersistsAcrossInstances()
     {
         var store = CreateStore();
 
-        store.Add(SeedA);
+        store.Add(SeedA, 3, 1, "Nice opening");
         _time.Advance(TimeSpan.FromMinutes(1));
-        store.Add(SeedB);
+        store.Add(SeedB, 2, 0, null);
 
-        CreateStore().GetAll().Select(s => s.Seed).Should().Equal(SeedB, SeedA);
+        var seeds = CreateStore().GetAll();
+        seeds.Select(s => s.Seed).Should().Equal(SeedB, SeedA);
+        seeds[1].Should().Be(new SavedSeed(SeedA, 3, 1, "Nice opening", new DateTimeOffset(2026, 10, 27, 12, 0, 0, TimeSpan.Zero)));
     }
 
     [Fact]
-    public void Add_OfAListedSeed_MovesItUp_WithoutDuplicating()
+    public void Add_OfAListedEntry_MovesItUp_WithoutDuplicating_AndKeepsItsName()
     {
         var store = CreateStore();
-        store.Add(SeedA);
+        store.Add(SeedA, 2, 0, "First");
         _time.Advance(TimeSpan.FromMinutes(1));
-        store.Add(SeedB);
+        store.Add(SeedB, 2, 0, null);
         _time.Advance(TimeSpan.FromMinutes(1));
 
-        store.Add(SeedA);
+        store.Add(SeedA, 2, 0, "  ");
 
-        store.GetAll().Select(s => s.Seed).Should().Equal(SeedA, SeedB);
+        store.GetAll().Select(s => (s.Seed, s.Name)).Should().Equal((SeedA, "First"), (SeedB, null));
     }
 
     [Fact]
-    public void AFileWithTheOldHiddenUntilField_StillReadsEverySeed()
+    public void TheSameSeed_FromAnotherSeatOrTableSize_IsAnotherEntry()
+    {
+        var store = CreateStore();
+
+        store.Add(SeedA, 2, 0, null);
+        store.Add(SeedA, 2, 1, null);
+        store.Add(SeedA, 3, 1, null);
+
+        store.GetAll().Select(s => s.ListId).Should().BeEquivalentTo([Id(SeedA, 2, 0), Id(SeedA, 2, 1), Id(SeedA, 3, 1)]);
+    }
+
+    [Fact]
+    public void Read_DropsEntriesWithoutATableSize_LikeTheOldSeedFile()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(SeedsFile)!);
         File.WriteAllText(SeedsFile, $$"""
-            { "seeds": [ { "seed": "{{SeedA}}", "addedAt": "2026-10-27T15:42:27Z", "hiddenUntil": "2026-10-28T15:42:27Z" } ] }
+            { "seeds": [
+              { "seed": "{{SeedA}}", "addedAt": "2026-10-27T15:42:27Z" },
+              { "seed": "{{SeedB}}", "players": 4, "seat": 3, "addedAt": "2026-10-27T15:42:27Z" },
+              { "seed": "{{SeedC}}", "players": 2, "seat": 2, "addedAt": "2026-10-27T15:42:27Z" }
+            ] }
             """);
 
-        CreateStore().GetAll().Select(s => s.Seed).Should().Equal(SeedA);
+        CreateStore().GetAll().Select(s => s.Seed).Should().Equal(SeedB);
     }
 
     [Fact]
-    public void Remove_TakesTheSeedOffTheList_ForEveryStoreOnTheFile()
+    public void Rename_NamesTheEntry_AndAnEmptyNameClearsIt()
     {
         var store = CreateStore();
-        store.Add(SeedA);
-        _time.Advance(TimeSpan.FromMinutes(1));
-        store.Add(SeedB);
+        store.Add(SeedA, 2, 0, null);
 
-        CreateStore().Remove(SeedA);
-        store.Remove(SeedC);
+        CreateStore().Rename(Id(SeedA), "  Two\tjokers  in   hand ");
+        store.GetAll().Single().Name.Should().Be("Two jokers in hand");
+
+        store.Rename(Id(SeedA), "");
+        store.GetAll().Single().Name.Should().BeNull();
+    }
+
+    [Fact]
+    public void Rename_CutsALongName()
+    {
+        var store = CreateStore();
+        store.Add(SeedA, 2, 0, new string('x', 100));
+
+        store.GetAll().Single().Name.Should().HaveLength(SavedSeed.MaxNameLength);
+    }
+
+    [Fact]
+    public void Remove_TakesTheEntryOffTheList_ForEveryStoreOnTheFile()
+    {
+        var store = CreateStore();
+        store.Add(SeedA, 2, 0, null);
+        _time.Advance(TimeSpan.FromMinutes(1));
+        store.Add(SeedB, 2, 0, null);
+
+        CreateStore().Remove(Id(SeedA));
+        store.Remove(Id(SeedC));
 
         store.GetAll().Select(s => s.Seed).Should().Equal(SeedB);
     }
 
-    [Fact]
-    public void Add_IgnoresAMalformedSeed()
+    [Theory]
+    [InlineData("../appsettings", 2, 0)]
+    [InlineData("AAAA", 2, 0)]
+    [InlineData(null, 1, 0)]
+    [InlineData(null, 5, 0)]
+    [InlineData(null, 3, 3)]
+    [InlineData(null, 3, -1)]
+    public void Add_IgnoresAMalformedEntry(string? seed, int players, int seat)
     {
         var store = CreateStore();
 
-        store.Add("../appsettings");
-        store.Add(SeedA.ToUpperInvariant());
+        store.Add(seed ?? SeedA, players, seat, null);
+        store.Add(SeedA.ToUpperInvariant(), 2, 0, null);
 
         store.GetAll().Should().BeEmpty();
     }
@@ -94,9 +143,9 @@ public sealed class SeedStoreTests : IDisposable
         var production = CreateStore();
         var testSite = CreateStore();
 
-        production.Add(SeedA);
+        production.Add(SeedA, 2, 0, null);
         _time.Advance(TimeSpan.FromSeconds(1));
-        testSite.Add(SeedB);
+        testSite.Add(SeedB, 2, 0, null);
 
         production.GetAll().Select(s => s.Seed).Should().Equal(SeedB, SeedA);
     }
@@ -109,7 +158,7 @@ public sealed class SeedStoreTests : IDisposable
         var store = CreateStore();
 
         store.GetAll().Should().BeEmpty();
-        store.Add(SeedA);
+        store.Add(SeedA, 2, 0, null);
 
         File.ReadAllText(SeedsFile).Should().Be("{ not json");
     }
@@ -120,7 +169,7 @@ public sealed class SeedStoreTests : IDisposable
         var store = CreateStore();
         for (var i = 0; i <= FileSeedStore.MaxSeeds; i++)
         {
-            store.Add(i.ToString("x64"));
+            store.Add(i.ToString("x64"), 2, 0, null);
             _time.Advance(TimeSpan.FromSeconds(1));
         }
 
