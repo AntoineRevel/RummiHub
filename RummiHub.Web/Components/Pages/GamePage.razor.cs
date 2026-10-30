@@ -36,6 +36,11 @@ public partial class GamePage : IAsyncDisposable
     /// <summary>The asked-for hint has no tiles. Shown only while the play zone is empty.</summary>
     private bool _hintNoMove;
     private bool _seedSaved;
+
+    /// <summary>The name typed for the seed about to be saved; null while the name field is closed.</summary>
+    private string? _seedNameDraft;
+    private ElementReference _seedNameInput;
+    private bool _focusSeedName;
     private bool _seedCopied;
     private bool _loadingAutoContinue;
     private string? _seatToken;
@@ -217,6 +222,12 @@ public partial class GamePage : IAsyncDisposable
         {
             await LoadRackSortAsync();
             await EnsureHubAsync();
+        }
+
+        if (_focusSeedName && _seedNameDraft is not null)
+        {
+            _focusSeedName = false;
+            await _seedNameInput.FocusAsync();
         }
 
         // Captured before awaiting JS: a state arriving meanwhile is drawn by the next render,
@@ -699,19 +710,44 @@ public partial class GamePage : IAsyncDisposable
         }
     }
 
-    /// <summary>Saved from this tab, or by anyone at the table (the list is shared).</summary>
-    private bool SeedSaved => _seedSaved || _gameState is { SeedSaved: true };
+    /// <summary>
+    /// My seat's deal (seed, table size, my seat) is on the list: saved from this tab, or
+    /// earlier from this seat, or this game replays it.
+    /// </summary>
+    private bool SeedSaved =>
+        _seedSaved
+        || _gameState is { } state && state.SeedSavedSeats.Contains(state.Players.FindIndex(p => p.Name == PlayerName));
 
     private string SeedChipTitle =>
         _gameState?.DistributionSeed ?? "This game's seed, shortened: the full seed shows when the game ends";
 
-    private async Task OnSaveSeed()
+    /// <summary>Save seed opens the name field; saving waits for its Save.</summary>
+    private void OnSaveSeed()
     {
-        if (_hubConnection is null || SeedSaved) return;
+        if (SeedSaved) return;
 
+        _seedNameDraft ??= string.Empty;
+        _focusSeedName = true;
+    }
+
+    private void OnCancelSeedName() => _seedNameDraft = null;
+
+    private async Task OnSeedNameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await OnConfirmSaveSeed();
+        else if (e.Key == "Escape")
+            OnCancelSeedName();
+    }
+
+    private async Task OnConfirmSaveSeed()
+    {
+        if (_hubConnection is null || SeedSaved || _seedNameDraft is not { } name) return;
+
+        _seedNameDraft = null;
         try
         {
-            await _hubConnection.SendAsync(HubEvents.SaveSeed, GameId);
+            await _hubConnection.SendAsync(HubEvents.SaveSeed, GameId, name);
         }
         catch (Exception ex)
         {

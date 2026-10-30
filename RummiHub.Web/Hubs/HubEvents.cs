@@ -15,9 +15,11 @@ public static class HubEvents
     public const string CreateGame = nameof(CreateGame);
     public const string JoinGame = nameof(JoinGame);
     public const string AddAiPlayer = nameof(AddAiPlayer);
+    public const string RemoveAiPlayer = nameof(RemoveAiPlayer);
     public const string StartGame = nameof(StartGame);
     public const string GetSeedList = nameof(GetSeedList);
     public const string RemoveSeed = nameof(RemoveSeed);
+    public const string RenameSeed = nameof(RenameSeed);
 
     // === Game phase: Server -> Client ===
     public const string GameStateUpdated = nameof(GameStateUpdated);

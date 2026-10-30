@@ -43,7 +43,7 @@ USER app
 # production and the test site; the directory exists (owned by app) so a new volume is too.
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     ASPNETCORE_ENVIRONMENT=Production \
-    GameOptions__SeedsFile=/var/rummihub/seeds/seeds.json \
+    GameOptions__SeedsFile=/var/rummihub/seeds/seed-configs.json \
     DOTNET_ENVIRONMENT=Production \
     ASSEMBLY=${ASSEMBLY}
 

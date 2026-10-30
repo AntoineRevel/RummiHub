@@ -11,22 +11,40 @@ public interface IGameManager
     Game CreateGame(string playerName, string connectionId, string? distributionSeed = null);
 
     /// <summary>
+    /// Creates a game replaying a list entry: its seed, AI seats up to its table size, and the
+    /// host on its seat, so the host gets the same rack and the same draws.
+    /// </summary>
+    Game CreateGame(string playerName, string connectionId, SavedSeed saved);
+
+    /// <summary>
     /// Adds an AI (auto-play) seat to a not-yet-started game. Returns null if the game is
     /// missing or already started.
     /// </summary>
     Player? AddAiPlayer(string gameId);
 
+    /// <summary>
+    /// Takes the AI seat named <paramref name="name"/> off a not-yet-started game. Returns null
+    /// if the game is missing or started, or has no such AI seat.
+    /// </summary>
+    Player? RemoveAiPlayer(string gameId, string name);
+
     /// <summary>The lobby seed list, most recently added first.</summary>
     IReadOnlyList<SavedSeed> GetSeedList();
 
-    /// <summary>Adds the game's seed to the lobby list, at any time; it shows there at once.</summary>
-    void SaveSeed(Game game);
+    /// <summary>
+    /// Adds the game's deal, as seen from <paramref name="seat"/> (seed, table size, seat), to
+    /// the lobby list, at any time; it shows there at once.
+    /// </summary>
+    void SaveSeed(Game game, int seat, string? name);
 
-    /// <summary>The listed seed whose <see cref="DistributionSeeds.ListId"/> this is, or null.</summary>
-    string? FindListedSeed(string listId);
+    /// <summary>The list entry whose <see cref="SavedSeed.ListId"/> this is, or null.</summary>
+    SavedSeed? FindListedSeed(string listId);
 
-    /// <summary>Takes a seed off the lobby list by its list id (anyone may: there are no accounts).</summary>
+    /// <summary>Takes an entry off the lobby list by its list id (anyone may: there are no accounts).</summary>
     void RemoveSeed(string listId);
+
+    /// <summary>Names a list entry; an empty name clears it (anyone may: there are no accounts).</summary>
+    void RenameSeed(string listId, string? name);
 
     Game? GetGame(string gameId);
 

@@ -54,10 +54,11 @@
             {
                 <div class="form-group">
                     <label for="seedSelect">Distribution seed</label>
-                    @* Most recently added first. A seed fixes the whole deal: replaying one
-                       deals the same racks and draw order. *@
+                    @* Most recently added first. An entry is a seed, the table size and the seat it
+                       was saved from: picking it seats AIs up to that size and puts you on that
+                       seat, so you get the same rack and the same draws. *@
                     <div class="seed-picker">
-                        <select id="seedSelect" class="form-control" @bind="_seedChoice">
+                        <select id="seedSelect" class="form-control" @bind="SeedChoice">
                             <option value="@RandomSeed">— Random —</option>
                             <option value="@PasteSeed">Paste a seed…</option>
                             @foreach (var item in _seeds)
@@ -65,13 +66,38 @@
                                 <option value="@item.Id">@SeedOptionLabel(item)</option>
                             }
                         </select>
-                        @if (IsListedSeed)
-                        {
-                            <button type="button" class="seed-remove" title="Remove this seed from the list" @onclick="RemoveSelectedSeed">
-                                Remove
-                            </button>
-                        }
                     </div>
+                    @if (SelectedSeed is { } selected)
+                    {
+                        @if (_renameDraft is null)
+                        {
+                            <div class="seed-actions">
+                                <small class="seed-help">@SeedTable(selected) · seed @selected.Short</small>
+                                <button type="button" class="seed-rename" title="Name this seed" @onclick="StartRename">
+                                    Rename
+                                </button>
+                                <button type="button" class="seed-remove" title="Remove this seed from the list" @onclick="RemoveSelectedSeed">
+                                    Remove
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="seed-actions">
+                                <input id="seedRename"
+                                       type="text"
+                                       class="form-control seed-name-input"
+                                       placeholder="Name (empty: no name)"
+                                       maxlength="@SavedSeed.MaxNameLength"
+                                       autocomplete="off"
+                                       @bind="_renameDraft"
+                                       @bind:event="oninput"
+                                       @onkeydown="HandleRenameKeyDown" />
+                                <button type="button" class="seed-rename" @onclick="SaveRename">Save</button>
+                                <button type="button" class="seed-remove" @onclick="CancelRename">Cancel</button>
+                            </div>
+                        }
+                    }
                     @if (_seedChoice == PasteSeed)
                     {
                         <input id="seedPaste"
@@ -85,7 +111,7 @@
                                @bind:event="oninput"
                                @onkeydown="HandleKeyDown" />
                         <small class="seed-help @(PasteError is null ? "" : "invalid")">
-                            @(PasteError ?? $"{DistributionSeeds.Length} characters, 0-9 and a-f. It joins the list.")
+                            @(PasteError ?? $"{DistributionSeeds.Length} characters, 0-9 and a-f. Save seed in the game lists it.")
                         </small>
                     }
                 </div>
@@ -124,10 +150,25 @@
                 {
                     <div class="info-row">
                         <span class="info-label">Seed</span>
-                        <strong class="info-value seed-value">@_gameSeed</strong>
+                        <strong class="info-value seed-value">@(_gameSaved?.Name ?? _gameSeed)</strong>
+                    </div>
+                }
+                @if (_gameSaved is not null)
+                {
+                    <div class="info-row">
+                        <span class="info-label">Saved with</span>
+                        <strong class="info-value">@SeedTable(_gameSaved)</strong>
                     </div>
                 }
             </div>
+            @if (_gameSaved is not null && _isHost && !_gameStarted && _players.Count != _gameSaved.Players)
+            {
+                @* Each seat gets the same rack at any table size, but the draw pile starts after
+                   the last rack dealt. *@
+                <p class="hint seed-mismatch">
+                    With @_players.Count players instead of @_gameSaved.Players, the draws differ from the saved game.
+                </p>
+            }
 
             <button type="button" class="invite-link @(_inviteCopied ? "copied" : null)" @onclick="CopyInviteLink">
                 @if (_inviteCopied)
@@ -150,12 +191,19 @@
                 <h3>Players (@_players.Count)</h3>
                 @foreach (var player in _players)
                 {
-                    <div class="player-row @(player == _playerName ? "me" : "")">
+                    <div class="player-row @(player.Name == _playerName ? "me" : "")">
                         <span class="player-dot"></span>
-                        <span>@player</span>
-                        @if (player == _playerName)
+                        <span>@player.Name</span>
+                        @if (player.Name == _playerName)
                         {
                             <span class="you-badge">you</span>
+                        }
+                        else if (player.IsAuto && _isHost && !_gameStarted)
+                        {
+                            <button type="button" class="ai-remove" title="Remove @player.Name"
+                                    aria-label="Remove @player.Name" @onclick="() => RemoveAiPlayer(player.Name)">
+                                ✕
+                            </button>
                         }
                     </div>
                 }
@@ -399,9 +447,42 @@
         min-width: 0;
     }
 
+    .seed-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .seed-actions .seed-help {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .seed-name-input {
+        flex: 1;
+        min-width: 0;
+        padding: 8px 12px;
+    }
+
+    .seed-rename {
+        flex-shrink: 0;
+        padding: 6px 14px;
+        font-family: inherit;
+        font-size: 0.85rem;
+        color: #1565c0;
+        background: #fff;
+        border: 2px solid #90caf9;
+        border-radius: 10px;
+        cursor: pointer;
+    }
+
+    .seed-rename:hover {
+        background: #e3f2fd;
+    }
+
     .seed-remove {
         flex-shrink: 0;
-        padding: 0 14px;
+        padding: 6px 14px;
         font-family: inherit;
         font-size: 0.85rem;
         color: #c62828;
@@ -499,6 +580,29 @@
         border-radius: 50%;
         background: #4caf50;
         flex-shrink: 0;
+    }
+
+    .ai-remove {
+        margin-left: auto;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        font-size: 0.85rem;
+        line-height: 1;
+        color: #c62828;
+        background: #fff;
+        border: 1px solid #ef9a9a;
+        border-radius: 50%;
+        cursor: pointer;
+    }
+
+    .ai-remove:hover {
+        background: #ffebee;
+    }
+
+    .hint.seed-mismatch {
+        margin: -8px 0 0 0;
+        color: #e65100;
     }
 
     .you-badge {

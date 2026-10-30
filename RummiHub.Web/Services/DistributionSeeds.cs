@@ -43,11 +43,13 @@ public static class DistributionSeeds
     }
 
     /// <summary>
-    /// What a page gets for a listed seed: 16 hex characters of its SHA-256. It names the seed
-    /// (to pick or remove it) without giving it away; only the server maps it back.
+    /// What a page gets for a lobby list entry: 16 hex characters of the SHA-256 of its seed,
+    /// table size and seat. It names the entry (to pick, rename or remove it) without giving
+    /// the seed away; only the server maps it back.
     /// </summary>
-    public static string ListId(string seed) =>
-        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed)))[..16].ToLowerInvariant();
+    public static string ListId(string seed, int players, int seat) =>
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{seed}/{players}/{seat}")))[..16]
+            .ToLowerInvariant();
 
     /// <summary>
     /// The first 8 and last 4 characters: enough to recognize a seed, far too few to rebuild

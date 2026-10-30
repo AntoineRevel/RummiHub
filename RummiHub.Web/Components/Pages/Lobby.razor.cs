@@ -22,7 +22,7 @@ public partial class Lobby
     private bool _isHost;
     private string _joinGameId = string.Empty;
     private string _playerName = string.Empty;
-    private List<string> _players = [];
+    private List<LobbyPlayerDto> _players = [];
     private List<SeedListItemDto> _seeds = [];
 
     /// <summary>The seed select: <see cref="RandomSeed"/>, <see cref="PasteSeed"/> or a listed seed.</summary>
@@ -31,6 +31,12 @@ public partial class Lobby
 
     /// <summary>The short form of the seed the game was created with, shown in the waiting room.</summary>
     private string? _gameSeed;
+
+    /// <summary>The list entry the game replays, if it was created from one.</summary>
+    private SeedListItemDto? _gameSaved;
+
+    /// <summary>The new name typed for the selected list entry; null when not renaming.</summary>
+    private string? _renameDraft;
 
     private const string RandomSeed = "";
     private const string PasteSeed = "paste";
@@ -150,10 +156,10 @@ public partial class Lobby
                 StateHasChanged();
             }));
 
-        _hubConnection.On<string, IEnumerable<string>>(HubEvents.GameCreated, (gameId, players) =>
+        _hubConnection.On<string, List<LobbyPlayerDto>>(HubEvents.GameCreated, (gameId, players) =>
         {
             _gameId = gameId;
-            _players = players.ToList();
+            _players = players;
             _isHost = true;
             _error = null;
             InvokeAsync(async () =>
@@ -163,9 +169,9 @@ public partial class Lobby
             });
         });
 
-        _hubConnection.On<string, IEnumerable<string>>(HubEvents.PlayerJoined, (playerName, players) =>
+        _hubConnection.On<string, List<LobbyPlayerDto>>(HubEvents.PlayerJoined, (playerName, players) =>
         {
-            _players = players.ToList();
+            _players = players;
             var joined = _gameId == null;
             if (joined) _gameId = _joinGameId;
             _error = null;
@@ -177,9 +183,9 @@ public partial class Lobby
             });
         });
 
-        _hubConnection.On<IEnumerable<string>>(HubEvents.PlayerLeft, players =>
+        _hubConnection.On<List<LobbyPlayerDto>>(HubEvents.PlayerLeft, players =>
         {
-            _players = players.ToList();
+            _players = players;
             InvokeAsync(StateHasChanged);
         });
 
@@ -277,26 +283,66 @@ public partial class Lobby
 
     private bool IsListedSeed => _seedChoice is not (RandomSeed or PasteSeed);
 
+    private SeedListItemDto? SelectedSeed => IsListedSeed ? _seeds.FirstOrDefault(s => s.Id == _seedChoice) : null;
+
+    /// <summary>The select's value; picking another entry leaves a rename in progress.</summary>
+    private string SeedChoice
+    {
+        get => _seedChoice;
+        set
+        {
+            _seedChoice = value;
+            _renameDraft = null;
+        }
+    }
+
     /// <summary>Asks first: a removed seed is gone for production and the test site alike.</summary>
     private async Task RemoveSelectedSeed()
     {
-        if (_hubConnection is null || !IsListedSeed)
+        if (_hubConnection is null || SelectedSeed is not { } selected)
             return;
 
-        var listId = _seedChoice;
-        var label = _seeds.FirstOrDefault(s => s.Id == listId)?.Short;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Remove the seed {label} from the list?"))
+        if (!await JS.InvokeAsync<bool>("confirm", $"Remove {SeedTitle(selected)} from the list?"))
             return;
 
-        _seedChoice = RandomSeed;
-        await _hubConnection.SendAsync(HubEvents.RemoveSeed, listId);
+        SeedChoice = RandomSeed;
+        await _hubConnection.SendAsync(HubEvents.RemoveSeed, selected.Id);
+    }
+
+    private void StartRename() => _renameDraft = SelectedSeed?.Name ?? string.Empty;
+
+    private void CancelRename() => _renameDraft = null;
+
+    private async Task SaveRename()
+    {
+        if (_hubConnection is null || SelectedSeed is not { } selected || _renameDraft is null)
+            return;
+
+        var name = _renameDraft;
+        _renameDraft = null;
+        // The list comes back renamed; the entry keeps its id.
+        await _hubConnection.SendAsync(HubEvents.RenameSeed, selected.Id, name);
+    }
+
+    private async Task HandleRenameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await SaveRename();
+        else if (e.Key == "Escape")
+            CancelRename();
     }
 
     private bool CanCreate =>
         !string.IsNullOrWhiteSpace(_playerName) && (_seedChoice != PasteSeed || PastedSeed is not null);
 
+    /// <summary>Its name, else its short seed.</summary>
+    private static string SeedTitle(SeedListItemDto item) => item.Name ?? item.Short;
+
+    /// <summary>What the deal replays: the table size and the seat (counted from 1) it was saved from.</summary>
+    private static string SeedTable(SeedListItemDto item) => $"{item.Players} players, seat {item.Seat + 1}";
+
     private static string SeedOptionLabel(SeedListItemDto item) =>
-        $"{item.AddedAt.UtcDateTime:d MMM yyyy} · {item.Short}";
+        $"{SeedTitle(item)} · {SeedTable(item)} · {item.AddedAt.UtcDateTime:d MMM yyyy}";
 
     private async Task CreateGame()
     {
@@ -304,11 +350,9 @@ public partial class Lobby
             return;
 
         var pasted = PastedSeed;
-        var listedId = IsListedSeed ? _seedChoice : null;
-        _gameSeed = pasted is not null
-            ? DistributionSeeds.Abbreviate(pasted)
-            : _seeds.FirstOrDefault(s => s.Id == listedId)?.Short;
-        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, pasted, listedId);
+        _gameSaved = SelectedSeed;
+        _gameSeed = pasted is not null ? DistributionSeeds.Abbreviate(pasted) : _gameSaved?.Short;
+        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id);
     }
 
     private async Task JoinGame()
@@ -321,6 +365,12 @@ public partial class Lobby
     {
         if (_hubConnection is not null && _gameId is not null)
             await _hubConnection.SendAsync(HubEvents.AddAiPlayer, _gameId);
+    }
+
+    private async Task RemoveAiPlayer(string name)
+    {
+        if (_hubConnection is not null && _gameId is not null)
+            await _hubConnection.SendAsync(HubEvents.RemoveAiPlayer, _gameId, name);
     }
 
     private async Task StartGame()

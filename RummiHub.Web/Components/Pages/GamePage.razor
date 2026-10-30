@@ -79,7 +79,8 @@ else
             </div>
 
             @* The game's seed, shortened, from the start. The full value only arrives at game
-               over (Copy). Save seed adds it to the lobby list at any time. *@
+               over (Copy). Save seed adds it to the lobby list at any time, with the table size
+               and my seat, under a name if one is typed. *@
             <span class="meta-chip seed-chip" title="@SeedChipTitle">
                 <span class="chip-label">Seed</span>
                 <span class="seed-abbr">@_gameState.SeedShort</span>
@@ -91,7 +92,7 @@ else
                 }
                 <button type="button"
                         class="seed-replay-btn @(SeedSaved ? "saved" : "")"
-                        title="Add this game's seed to the lobby list to replay the same deal"
+                        title="Add this game's seed, table size and your seat to the lobby list to replay the same deal"
                         disabled="@SeedSaved"
                         @onclick="OnSaveSeed">
                     @if (SeedSaved)
@@ -112,6 +113,25 @@ else
                 </button>
             </span>
             <div class="game-id" title="Game code">#@_gameState.GameId</div>
+            @if (_seedNameDraft is not null && !SeedSaved)
+            {
+                @* A row of its own under the chips: the top bar wraps, so it fits a phone. Keys
+                   stay here: Enter must not play the selection. *@
+                <div class="seed-name-row">
+                    <input type="text"
+                           class="seed-name-input"
+                           placeholder="Name this seed (optional)"
+                           maxlength="@SavedSeed.MaxNameLength"
+                           autocomplete="off"
+                           @ref="_seedNameInput"
+                           @bind="_seedNameDraft"
+                           @bind:event="oninput"
+                           @onkeydown="OnSeedNameKeyDown"
+                           @onkeydown:stopPropagation="true" />
+                    <button type="button" class="seed-replay-btn" @onclick="OnConfirmSaveSeed">Save</button>
+                    <button type="button" class="seed-name-cancel" @onclick="OnCancelSeedName">Cancel</button>
+                </div>
+            }
         </header>
 
         @if (_gameState.IsGameOver)
@@ -529,6 +549,40 @@ else
 
     .seed-replay-btn svg {
         flex-shrink: 0;
+    }
+
+    .seed-name-row {
+        flex-basis: 100%;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .seed-name-input {
+        flex: 1;
+        min-width: 0;
+        max-width: 22rem;
+        height: 30px;
+        padding: 0 10px;
+        font-size: 0.85rem;
+        border: 1px solid #c5d0da;
+        border-radius: 999px;
+    }
+
+    .seed-name-input:focus {
+        outline: none;
+        border-color: #2196f3;
+    }
+
+    .seed-name-cancel {
+        padding: 4px 9px;
+        border: 1px solid #c5d0da;
+        border-radius: 999px;
+        background: #fff;
+        color: #555;
+        font-size: 0.72rem;
+        font-weight: 600;
+        cursor: pointer;
     }
 
     .game-id {
