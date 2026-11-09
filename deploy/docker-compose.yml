@@ -22,7 +22,7 @@ x-dotnet-env: &dotnet-env
 services:
   caddy:
     # Version épinglée : une mise à jour est un commit visible (Dependabot la propose).
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.9-alpine
     restart: unless-stopped
     # Tourne en root (image officielle) : on ne lui laisse que l'ouverture des ports
     # 80/443, et aucun gain de privilèges (setuid, capacités de fichier).
