@@ -19,6 +19,12 @@ namespace RummiHub.Solver.Worker.Solver.Dynamic;
 /// </para>
 ///
 /// <para>
+/// The sweep runs on flat tables indexed by state and kept per thread, and at each value it
+/// only tries, for every run decision, the best group profile per number of jokers spent:
+/// the others lead to the same state with a lower objective.
+/// </para>
+///
+/// <para>
 /// The same engine serves both phases. During the game every board tile is forced to be
 /// played (huge per-tile weight) and the objective maximizes the number of rack tiles
 /// played, then the score. For the first play there is no board and the objective is the
@@ -29,6 +35,12 @@ public sealed class DynamicSolver : ISolver
 {
     private const int Colors = 4;
     private const int MaxValue = 13;
+
+    // A tile cell serves two runs and two groups at most.
+    private const int MaxSlots = 4;
+
+    // Run demand per color is 0, 1 or 2: 3^4 combinations.
+    private const int RunDemands = 81;
 
     // A placed board tile is worth far more than any achievable rack contribution, so the
     // optimum always keeps every board tile on the table (the untouched board is always a
@@ -43,6 +55,7 @@ public sealed class DynamicSolver : ISolver
     private static readonly int[,,] ColorStateIndex;
     private static readonly RunDecision[][] RunDecisionsByState;
     private static readonly GroupProfile[] GroupProfiles;
+    private static readonly int[] GroupDemand; // GroupProfiles[gp].Gdem[k] at gp * Colors + k
 
     // ── per-instance input ─────────────────────────────────────────────────────────
     private readonly int[,] _board = new int[MaxValue + 1, Colors];
@@ -54,12 +67,17 @@ public sealed class DynamicSolver : ISolver
     private readonly bool _firstPlay;
     private readonly int _jokerStates; // _totalJokers + 1
 
+    // Per value and (color, slots): the objective a cell brings and the jokers it needs.
+    private readonly long[] _cellGain = new long[Colors * (MaxSlots + 1)];
+    private readonly int[] _cellJokers = new int[Colors * (MaxSlots + 1)];
+
     static DynamicSolver()
     {
         ColorStates = BuildColorStates();
         ColorStateIndex = BuildColorStateIndex(ColorStates);
         RunDecisionsByState = BuildRunDecisions(ColorStates, ColorStateIndex);
         GroupProfiles = BuildGroupProfiles();
+        GroupDemand = GroupProfiles.SelectMany(p => p.Gdem).ToArray();
     }
 
     private DynamicSolver(bool firstPlay, int boardJokers, int totalJokers)
@@ -113,128 +131,190 @@ public sealed class DynamicSolver : ISolver
         if (cancellationToken.IsCancellationRequested)
             return SolverResult.Invalid(nameof(DynamicSolver));
 
-        var objByState = new Dictionary<int, long>[MaxValue + 1];
-        var backByState = new Dictionary<int, Back>[MaxValue + 1];
-
-        objByState[0] = new Dictionary<int, long> { [Encode(0, 0, 0, 0, _totalJokers)] = 0L };
-        backByState[0] = new Dictionary<int, Back>();
-
-        for (var v = 1; v <= MaxValue; v++)
+        var ws = Workspace.Rent(_jokerStates);
+        try
         {
-            if (cancellationToken.IsCancellationRequested)
-                return SolverResult.Invalid(nameof(DynamicSolver));
+            var start = Encode(0, 0, 0, 0, _totalJokers);
+            ws.Objective[start] = 0L;
+            ws.States[0] = start;
+            var count = 1;
 
-            var prev = objByState[v - 1];
-            var next = new Dictionary<int, long>(prev.Count * 4);
-            var nextBack = new Dictionary<int, Back>(prev.Count * 4);
+            for (var v = 1; v <= MaxValue; v++)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    ws.Forget(count);
+                    return SolverResult.Invalid(nameof(DynamicSolver));
+                }
 
-            foreach (var (state, baseObj) in prev)
-                Expand(v, state, baseObj, next, nextBack);
+                PrepareValue(v, ws);
 
-            objByState[v] = next;
-            backByState[v] = nextBack;
+                var back = ws.Back[v];
+                var nextCount = 0;
+                for (var i = 0; i < count; i++)
+                    nextCount = Expand(v, ws.States[i], ws, back, nextCount);
+
+                ws.Forget(count);
+                ws.Advance();
+                count = nextCount;
+            }
+
+            var terminal = SelectTerminal(ws.Objective, ws.States, count);
+            ws.Forget(count);
+
+            return terminal is null
+                ? SolverResult.Invalid(nameof(DynamicSolver))
+                : Reconstruct(terminal.Value, ws.Back);
+        }
+        catch
+        {
+            // The tables are in an unknown state: never hand them to the next solve.
+            Workspace.Discard();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// What one tile cell of value <paramref name="v"/> brings and costs in jokers for 0 to 4
+    /// slots (two runs and two groups at most), and a clean slate for the moves of this value.
+    /// </summary>
+    private void PrepareValue(int v, Workspace ws)
+    {
+        for (var k = 0; k < Colors; k++)
+        for (var slots = 0; slots <= MaxSlots; slots++)
+        {
+            var real = Math.Min(slots, _count[v, k]);
+            var boardUsed = Math.Min(real, _board[v, k]);
+            var rackUsed = real - boardUsed;
+            var jokerUsed = slots - real;
+            var cell = k * (MaxSlots + 1) + slots;
+            _cellJokers[cell] = jokerUsed;
+            _cellGain[cell] = boardUsed * BoardTileWeight + rackUsed * (_countUnit + v) + jokerUsed * (long)v;
         }
 
-        var terminal = SelectTerminal(objByState[MaxValue]);
-        if (terminal is null)
-            return SolverResult.Invalid(nameof(DynamicSolver));
+        Array.Clear(ws.MovesReady);
+    }
 
-        return Reconstruct(terminal.Value, backByState);
+    /// <summary>
+    /// For one run demand per color, the best group profile for every number of jokers the
+    /// value may spend. A state only reaches its successors through the jokers left, so every
+    /// other profile is dominated: the sweep tries one move per joker count, not one per profile.
+    /// </summary>
+    private void BuildMoves(Workspace ws, int demand)
+    {
+        var first = demand * _jokerStates;
+        for (var need = 0; need < _jokerStates; need++)
+            ws.MoveGain[first + need] = long.MinValue;
+
+        var r0 = demand % 3;
+        var r1 = demand / 3 % 3 + (MaxSlots + 1);
+        var r2 = demand / 9 % 3 + 2 * (MaxSlots + 1);
+        var r3 = demand / 27 + 3 * (MaxSlots + 1);
+
+        for (var gp = 0; gp < GroupProfiles.Length; gp++)
+        {
+            var g = gp * Colors;
+            var c0 = r0 + GroupDemand[g];
+            var c1 = r1 + GroupDemand[g + 1];
+            var c2 = r2 + GroupDemand[g + 2];
+            var c3 = r3 + GroupDemand[g + 3];
+
+            var need = _cellJokers[c0] + _cellJokers[c1] + _cellJokers[c2] + _cellJokers[c3];
+            if (need >= _jokerStates) continue;
+
+            var gain = _cellGain[c0] + _cellGain[c1] + _cellGain[c2] + _cellGain[c3];
+            if (gain <= ws.MoveGain[first + need]) continue;
+
+            ws.MoveGain[first + need] = gain;
+            ws.MoveGroup[first + need] = (byte)gp;
+        }
+
+        ws.MovesReady[demand] = true;
     }
 
     /// <summary>Expands one DP state at value <paramref name="v"/> over every run/group decision.</summary>
-    private void Expand(int v, int state, long baseObj, Dictionary<int, long> next, Dictionary<int, Back> nextBack)
+    private int Expand(int v, int state, Workspace ws, long[] back, int nextCount)
     {
-        var jokers = state % _jokerStates;
-        var rs = state / _jokerStates;
-        Span<int> cs = stackalloc int[Colors];
-        cs[0] = rs % 10;
-        cs[1] = rs / 10 % 10;
-        cs[2] = rs / 100 % 10;
-        cs[3] = rs / 1000 % 10;
+        var jokerStates = _jokerStates;
+        var jokers = state % jokerStates;
+        var rs = state / jokerStates;
+        var baseObj = ws.Objective[state];
 
-        var d0 = RunDecisionsByState[cs[0]];
-        var d1 = RunDecisionsByState[cs[1]];
-        var d2 = RunDecisionsByState[cs[2]];
-        var d3 = RunDecisionsByState[cs[3]];
+        var d0 = RunDecisionsByState[rs % 10];
+        var d1 = RunDecisionsByState[rs / 10 % 10];
+        var d2 = RunDecisionsByState[rs / 100 % 10];
+        var d3 = RunDecisionsByState[rs / 1000 % 10];
 
-        foreach (var r0 in d0)
+        // A run demand that needs more jokers than are left (whatever the groups do) is impossible.
+        var max0 = _count[v, 0] + jokers;
+        var max1 = _count[v, 1] + jokers;
+        var max2 = _count[v, 2] + jokers;
+        var max3 = _count[v, 3] + jokers;
+
+        var next = ws.NextObjective;
+        var nextStates = ws.NextStates;
+        var moveGain = ws.MoveGain;
+
+        for (var i0 = 0; i0 < d0.Length; i0++)
         {
-            if (Infeasible(v, 0, r0.Rdem, jokers)) continue;
-            foreach (var r1 in d1)
+            var r0 = d0[i0];
+            if (r0.Rdem > max0) continue;
+            for (var i1 = 0; i1 < d1.Length; i1++)
             {
-                if (Infeasible(v, 1, r1.Rdem, jokers)) continue;
-                foreach (var r2 in d2)
+                var r1 = d1[i1];
+                if (r1.Rdem > max1) continue;
+                for (var i2 = 0; i2 < d2.Length; i2++)
                 {
-                    if (Infeasible(v, 2, r2.Rdem, jokers)) continue;
-                    foreach (var r3 in d3)
+                    var r2 = d2[i2];
+                    if (r2.Rdem > max2) continue;
+                    for (var i3 = 0; i3 < d3.Length; i3++)
                     {
-                        if (Infeasible(v, 3, r3.Rdem, jokers)) continue;
+                        var r3 = d3[i3];
+                        if (r3.Rdem > max3) continue;
 
-                        for (var gp = 0; gp < GroupProfiles.Length; gp++)
+                        var demand = r0.Rdem + 3 * r1.Rdem + 9 * r2.Rdem + 27 * r3.Rdem;
+                        if (!ws.MovesReady[demand]) BuildMoves(ws, demand);
+
+                        var first = demand * jokerStates;
+                        var target = (r0.Out + r1.Out * 10 + r2.Out * 100 + r3.Out * 1000) * jokerStates + jokers;
+                        var decisions = (long)(i0 | i1 << 3 | i2 << 6 | i3 << 9) << BackDecisionShift;
+
+                        for (var need = 0; need <= jokers; need++)
                         {
-                            var profile = GroupProfiles[gp];
-                            var g = profile.Gdem;
+                            var gain = moveGain[first + need];
+                            if (gain == long.MinValue) continue;
 
-                            var jokerNeed =
-                                JokerFill(v, 0, r0.Rdem + g[0]) +
-                                JokerFill(v, 1, r1.Rdem + g[1]) +
-                                JokerFill(v, 2, r2.Rdem + g[2]) +
-                                JokerFill(v, 3, r3.Rdem + g[3]);
-                            if (jokerNeed > jokers) continue;
+                            var newState = target - need;
+                            var newObj = baseObj + gain;
+                            var existing = next[newState];
+                            if (existing >= newObj) continue;
 
-                            var inc =
-                                CellObjective(v, 0, r0.Rdem + g[0]) +
-                                CellObjective(v, 1, r1.Rdem + g[1]) +
-                                CellObjective(v, 2, r2.Rdem + g[2]) +
-                                CellObjective(v, 3, r3.Rdem + g[3]);
-
-                            var newState = Encode(r0.Out, r1.Out, r2.Out, r3.Out, jokers - jokerNeed);
-                            var newObj = baseObj + inc;
-
-                            if (next.TryGetValue(newState, out var existing) && existing >= newObj) continue;
-
+                            if (existing == long.MinValue) nextStates[nextCount++] = newState;
                             next[newState] = newObj;
-                            nextBack[newState] = new Back(state, r0, r1, r2, r3, gp);
+                            back[newState] = (uint)state | decisions |
+                                             (long)ws.MoveGroup[first + need] << BackGroupShift;
                         }
                     }
                 }
             }
         }
-    }
 
-    /// <summary>A run demand that needs more jokers than exist (regardless of groups) is impossible.</summary>
-    private bool Infeasible(int v, int k, int rdem, int jokers)
-        => rdem - _count[v, k] > jokers;
-
-    private int JokerFill(int v, int k, int slots)
-    {
-        var deficit = slots - _count[v, k];
-        return deficit > 0 ? deficit : 0;
-    }
-
-    private long CellObjective(int v, int k, int slots)
-    {
-        if (slots == 0) return 0L;
-        var real = Math.Min(slots, _count[v, k]);
-        var boardUsed = Math.Min(real, _board[v, k]);
-        var rackUsed = real - boardUsed;
-        var jokerUsed = slots - real;
-        return boardUsed * BoardTileWeight + rackUsed * (_countUnit + v) + jokerUsed * (long)v;
+        return nextCount;
     }
 
     /// <summary>
     /// Picks the best terminal state: no run may still be open with length 1 or 2 (they
     /// could never reach the legal length of 3), and every board joker must have been used.
     /// </summary>
-    private int? SelectTerminal(Dictionary<int, long> last)
+    private int? SelectTerminal(long[] objective, int[] states, int count)
     {
         int? best = null;
         var bestObj = long.MinValue;
         var rackJokers = _totalJokers - _boardJokers;
 
-        foreach (var (state, obj) in last)
+        for (var i = 0; i < count; i++)
         {
+            var state = states[i];
             var jokers = state % _jokerStates;
             if (jokers > rackJokers) continue; // board jokers not all played
 
@@ -243,6 +323,7 @@ public sealed class DynamicSolver : ISolver
                 HasUnfinishedRun(rs / 100 % 10) || HasUnfinishedRun(rs / 1000 % 10))
                 continue;
 
+            var obj = objective[state];
             if (obj <= bestObj) continue;
             bestObj = obj;
             best = state;
@@ -259,13 +340,13 @@ public sealed class DynamicSolver : ISolver
 
     // ── reconstruction ──────────────────────────────────────────────────────────────
 
-    private SolverResult Reconstruct(int terminalState, Dictionary<int, Back>[] backByState)
+    private SolverResult Reconstruct(int terminalState, long[][] backByValue)
     {
         var decisions = new Back[MaxValue + 1];
         var cursor = terminalState;
         for (var v = MaxValue; v >= 1; v--)
         {
-            var back = backByState[v][cursor];
+            var back = Decode(backByValue[v][cursor]);
             decisions[v] = back;
             cursor = back.Prev;
         }
@@ -499,18 +580,96 @@ public sealed class DynamicSolver : ISolver
         public int[][] Groups { get; } = groups;
     }
 
-    private sealed class Back(int prev, RunDecision r0, RunDecision r1, RunDecision r2, RunDecision r3, int group)
+    /// <summary>How a state was reached: the state before it, one run decision per color, the groups.</summary>
+    private readonly record struct Back(int Prev, RunDecision R0, RunDecision R1, RunDecision R2, RunDecision R3, int Group)
     {
-        public int Prev { get; } = prev;
-        public int Group { get; } = group;
-        private readonly RunDecision _r0 = r0, _r1 = r1, _r2 = r2, _r3 = r3;
-
         public RunDecision Run(int k) => k switch
         {
-            0 => _r0,
-            1 => _r1,
-            2 => _r2,
-            _ => _r3
+            0 => R0,
+            1 => R1,
+            2 => R2,
+            _ => R3
         };
+    }
+
+    // A back-pointer packed in a long: the previous state, then the index of each color's run
+    // decision (6 at most, 3 bits each), then the group profile.
+    private const int BackDecisionShift = 32;
+    private const int BackGroupShift = BackDecisionShift + 3 * Colors;
+
+    private Back Decode(long packed)
+    {
+        var prev = (int)(uint)packed;
+        var rs = prev / _jokerStates;
+        var decisions = (int)(packed >> BackDecisionShift);
+        return new Back(prev,
+            RunDecisionsByState[rs % 10][decisions & 7],
+            RunDecisionsByState[rs / 10 % 10][decisions >> 3 & 7],
+            RunDecisionsByState[rs / 100 % 10][decisions >> 6 & 7],
+            RunDecisionsByState[rs / 1000 % 10][decisions >> 9 & 7],
+            (int)(packed >> BackGroupShift));
+    }
+
+    /// <summary>
+    /// The tables of one sweep, indexed by state, kept per thread so a solve allocates next to
+    /// nothing (the stabilizer runs hundreds of small solves per move). Between two solves
+    /// every objective is back to "unreached".
+    /// </summary>
+    private sealed class Workspace
+    {
+        private const int RunStates = 10_000; // ten states per color
+
+        // Two jokers exist; anything beyond a few is a made-up rack, served by a throwaway.
+        private const int MaxKeptJokerStates = 4;
+
+        [ThreadStatic] private static Workspace? _kept;
+
+        private readonly int _jokerStates;
+
+        public long[] Objective;
+        public long[] NextObjective;
+        public int[] States;
+        public int[] NextStates;
+        public readonly long[][] Back = new long[MaxValue + 1][];
+        public readonly long[] MoveGain;
+        public readonly byte[] MoveGroup;
+        public readonly bool[] MovesReady = new bool[RunDemands];
+
+        private Workspace(int jokerStates)
+        {
+            _jokerStates = jokerStates;
+            var states = RunStates * jokerStates;
+            Objective = new long[states];
+            NextObjective = new long[states];
+            Array.Fill(Objective, long.MinValue);
+            Array.Fill(NextObjective, long.MinValue);
+            States = new int[states];
+            NextStates = new int[states];
+            for (var v = 1; v <= MaxValue; v++) Back[v] = new long[states];
+            MoveGain = new long[RunDemands * jokerStates];
+            MoveGroup = new byte[RunDemands * jokerStates];
+        }
+
+        public static Workspace Rent(int jokerStates)
+        {
+            if (jokerStates > MaxKeptJokerStates) return new Workspace(jokerStates);
+            if (_kept is { } kept && kept._jokerStates >= jokerStates) return kept;
+            return _kept = new Workspace(jokerStates);
+        }
+
+        public static void Discard() => _kept = null;
+
+        /// <summary>Marks the first <paramref name="count"/> current states unreached again.</summary>
+        public void Forget(int count)
+        {
+            for (var i = 0; i < count; i++)
+                Objective[States[i]] = long.MinValue;
+        }
+
+        public void Advance()
+        {
+            (Objective, NextObjective) = (NextObjective, Objective);
+            (States, NextStates) = (NextStates, States);
+        }
     }
 }
