@@ -319,7 +319,7 @@ Lien en lecture seule, sans compte : *Websites → (site) → Edit → Share URL
 `https://rummisolve.com/admin/…` (et la même chose sur le site de test) : Caddy demande un identifiant et un mot de passe (`basic_auth`) avant de laisser passer la requête. Le hachage se calcule avec l’image de Caddy :
 
 ```bash
-docker run --rm caddy:2.11.7-alpine caddy hash-password --plaintext 'le mot de passe'
+docker run --rm caddy:2.11.9-alpine caddy hash-password --plaintext 'le mot de passe'
 ```
 
 Le coller entre apostrophes dans `ADMIN_PASSWORD_HASH` de `.env` (il contient des `$`), puis `docker compose up -d caddy` : Caddy est recréé, quelques secondes de coupure.
