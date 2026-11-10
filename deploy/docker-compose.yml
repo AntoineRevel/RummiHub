@@ -22,7 +22,7 @@ x-dotnet-env: &dotnet-env
 services:
   caddy:
     # Version épinglée : une mise à jour est un commit visible (Dependabot la propose).
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.9-alpine
     restart: unless-stopped
     # Tourne en root (image officielle) : on ne lui laisse que l'ouverture des ports
     # 80/443, et aucun gain de privilèges (setuid, capacités de fichier).
@@ -210,7 +210,7 @@ services:
   # et n'accepte que les envois qui portent OTLP_API_KEY.
   # Aucun service n'en dépend : arrêté ou absent, l'export échoue en silence.
   aspire-dashboard:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.2
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.4
     restart: unless-stopped
     logging: *logging
     # Interface : connexion par jeton, tiré au démarrage et écrit dans le journal du
@@ -274,7 +274,9 @@ services:
           memory: 512M
 
   umami-db:
-    image: postgres:18.6-alpine
+    # Épinglée par digest : l'étiquette est reconstruite en amont pour les correctifs
+    # de sécurité, et Compose ne retélécharge pas une étiquette déjà présente.
+    image: postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
     restart: unless-stopped
     logging: *logging
     environment:
