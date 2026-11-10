@@ -15,7 +15,7 @@
 
     <ItemGroup>
         <PackageReference Include="Aspire.StackExchange.Redis" Version="13.6.4" />
-        <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="*" />
+        <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.15" />
     </ItemGroup>
 
     <!-- SolverBench references the worker, whose appsettings.json would otherwise collide
