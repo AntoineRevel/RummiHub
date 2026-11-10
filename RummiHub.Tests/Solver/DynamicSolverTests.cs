@@ -100,6 +100,47 @@ public class DynamicSolverTests
         result.Score.Should().Be(0);
     }
 
+    // ── tables kept from one solve to the next ───────────────────────────────────────
+
+    [Fact]
+    public void ReusedTables_GiveTheSameAnswer_WhateverWasSolvedBefore()
+    {
+        // The sweep keeps its tables per thread. Solving positions with other joker counts in
+        // between, or a solve cancelled before it starts, must leave no trace in them.
+        var rng = new Random(77);
+        var positions = Enumerable.Range(0, 60).Select(_ => RandomPosition(rng, withBoard: true)).ToList();
+
+        string Solve((Solution board, Set rack) position) =>
+            Signature(DynamicSolver.Create(position.board.ToSet(), new Set(position.rack)).SearchSolution());
+
+        var alone = positions.Select(Solve).ToList();
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        for (var i = positions.Count - 1; i >= 0; i--)
+        {
+            DynamicSolver.Create(positions[i].board.ToSet(), new Set(positions[i].rack))
+                .SearchSolution(cancelled.Token).Found.Should().BeFalse();
+            DynamicSolver.CreateFirst(new Set(positions[(i + 7) % positions.Count].rack)).SearchSolution();
+
+            Solve(positions[i]).Should().Be(alone[i]);
+        }
+    }
+
+    [Fact]
+    public void ManyJokers_AreSolved_OutsideTheKeptTables()
+    {
+        // Only two jokers exist, but nothing stops a caller from sending more.
+        var rack = new Set([new Tile(5, TileColor.Red)]);
+        for (var i = 0; i < 4; i++) rack.AddTile(new Tile(isJoker: true));
+
+        var result = DynamicSolver.CreateFirst(new Set(rack)).SearchSolution();
+
+        result.Found.Should().BeTrue();
+        result.JokersToPlay.Should().Be(4);
+        SolutionValidator.IsValid(result, new Set(), rack, hasPlayed: false).Should().BeTrue();
+    }
+
     // ── differential: during game ──────────────────────────────────────────────────
 
     [Fact]
@@ -177,6 +218,11 @@ public class DynamicSolverTests
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────────
+
+    private static string Signature(SolverResult result) =>
+        $"{result.Found} {result.Score} {result.JokersToPlay} [{string.Join(",", result.TilesToPlay)}] " +
+        string.Join(" / ", result.BestSolution.Sets.Select(set =>
+            string.Join(",", set.Tiles.Select(t => t.IsJoker ? $"J{t}" : t.ToString()))));
 
     private static int Count(SolverResult result) => result.TilesToPlay.Count(t => !t.IsJoker);
 
@@ -303,7 +349,7 @@ public class DynamicSolverPerformanceTests(ITestOutputHelper output)
                          $"Found={dp.Found}, tiles={dp.TilesToPlay.Count()}, score={dp.Score}");
 
         dp.Found.Should().BeTrue();
-        // Generous headroom over the ~50 ms typical so CI contention never flakes; a real
+        // Generous headroom over the few ms typical so CI contention never flakes; a real
         // (exponential) regression would blow far past this.
         perSolve.Should().BeLessThan(1000, because: "the polynomial DP must stay fast on a full table");
     }
