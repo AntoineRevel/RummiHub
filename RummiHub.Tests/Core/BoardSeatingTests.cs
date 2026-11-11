@@ -34,4 +34,42 @@ public class BoardSeatingTests
         // 7B and 7Bk come from the hand, 7R leaves the run.
         BoardSeating.MovedTiles([red], [shortRed, sevens]).Should().Be(3);
     }
+
+    [Fact]
+    public void Pair_GoesToTheLargestOverlapFirst_WhateverTheBoardOrder()
+    {
+        // The long run is the old blue run plus 7B and 8B. The sevens come first on the board
+        // and share 7B with it, but must not take it away from the run it grew out of.
+        var sevens = Set(T(7, TileColor.Blue), T(7, TileColor.Red), T(7, TileColor.Black), T(7, TileColor.Mango));
+        var blue = Set(T(3, TileColor.Blue), T(4, TileColor.Blue), T(5, TileColor.Blue), T(6, TileColor.Blue));
+
+        var longBlue = Set(T(3, TileColor.Blue), T(4, TileColor.Blue), T(5, TileColor.Blue), T(6, TileColor.Blue),
+            T(7, TileColor.Blue), T(8, TileColor.Blue));
+        var threeSevens = Set(T(7, TileColor.Red), T(7, TileColor.Black), T(7, TileColor.Mango));
+
+        BoardSeating.Pair([sevens, blue], [longBlue, threeSevens]).Should().Equal((1, 4), (0, 3));
+        BoardSeating.MovedTiles([sevens, blue], [longBlue, threeSevens]).Should().Be(2);
+    }
+
+    [Fact]
+    public void Pair_KeepsASetWholeRatherThanGiveItsSeatToOneThatSharesAsMuch()
+    {
+        var three = Set(T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Mango));
+        var four = Set(T(13, TileColor.Red), T(13, TileColor.Mango), T(13, TileColor.Black), T(13, TileColor.Blue));
+
+        BoardSeating.Seat([three, four], [four, three]).Should().Equal(three, four);
+    }
+
+    [Fact]
+    public void Seat_KeepsTheHalvesOfACutRunLowEndFirst()
+    {
+        var run = Set(T(6, TileColor.Black), T(7, TileColor.Black), T(8, TileColor.Black),
+            T(9, TileColor.Black), T(10, TileColor.Black));
+        var ones = Set(T(1, TileColor.Blue), T(1, TileColor.Red), T(1, TileColor.Mango));
+
+        var low = Set(T(6, TileColor.Black), T(7, TileColor.Black), T(8, TileColor.Black));
+        var high = Set(T(8, TileColor.Black), T(9, TileColor.Black), T(10, TileColor.Black));
+
+        BoardSeating.Seat([run, ones], [high, ones, low]).Should().Equal(low, high, ones);
+    }
 }

@@ -213,27 +213,29 @@ function overlap(aTiles, bTiles) {
     return shared;
 }
 
-// Level 1 — pair board sets prev↔next greedily by overlap (ties go to the nearest), then
+// Level 1 — pair board sets prev↔next by overlap, largest first (ties go to the pair with
+// the fewest other tiles, then to the nearest), like the server's BoardSeating.Pair; then
 // match their common tiles occurrence-by-occurrence in set order: the set keeps them.
 function matchSets(snap, prev) {
-    const taken = new Set();
+    const overlaps = [];
     for (const prevSet of prev.sets) {
-        let best = null, bestShared = 0, bestDist = Infinity;
         for (const set of snap.sets) {
-            if (taken.has(set)) continue;
             const shared = overlap(prevSet.tiles, set.tiles);
             if (shared === 0) continue;
             const dist = (set.tiles[0].x - prevSet.tiles[0].x) ** 2
                        + (set.tiles[0].y - prevSet.tiles[0].y) ** 2;
-            if (shared > bestShared || (shared === bestShared && dist < bestDist)) {
-                best = set; bestShared = shared; bestDist = dist;
-            }
+            overlaps.push({ prevSet, set, shared, dist, others: prevSet.tiles.length + set.tiles.length - 2 * shared });
         }
-        if (!best) continue;
-        taken.add(best);
+    }
+    overlaps.sort((a, b) => b.shared - a.shared || a.others - b.others || a.dist - b.dist);
+
+    const taken = new Set();
+    for (const { prevSet, set } of overlaps) {
+        if (taken.has(prevSet) || taken.has(set)) continue;
+        taken.add(prevSet).add(set);
         const pool = new Map();
         for (const t of prevSet.tiles) bucket(pool, t.type).push(t);
-        for (const tile of best.tiles) {
+        for (const tile of set.tiles) {
             const from = pool.get(tile.type)?.shift();
             if (from) { tile.from = from; tile.kept = true; from.used = true; }
         }

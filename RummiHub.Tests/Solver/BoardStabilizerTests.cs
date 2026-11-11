@@ -10,7 +10,8 @@ namespace RummiHub.Tests.Solver;
 
 /// <summary>
 /// The stabilizer must return the same MOVE the solver found (same tiles played) while
-/// keeping every set not involved in the move literally identical. Frozen sets are asserted
+/// moving as few tiles as possible and keeping every set not involved in the move literally
+/// identical. Frozen sets are asserted
 /// by REFERENCE: only the stabilizer reuses the previous board's ValidSet instances, so a
 /// reference match proves the set was frozen rather than accidentally rebuilt equal.
 /// </summary>
@@ -127,12 +128,11 @@ public class BoardStabilizerTests
     }
 
     [Fact]
-    public void MoveNeedingTheWholeTable_KeepsTheSolverSetsSeatedOnTheOldOnes()
+    public void MoveTheSolverSpreadsOverTwoRuns_OnlyOpensOne()
     {
-        // Playing [5Bk, 5M, 8B, 8R] only works by dismantling BOTH runs (group the fives,
-        // extend both 6-7 tails with the eights). No proper subset of sets recomposes, so
-        // the solver's own sets stand, each run in its old seat and the fives beside the
-        // first run they came from.
+        // The solver groups the fives by taking 5B and 5R off both runs. One 5 is enough
+        // (5R, 5Bk, 5M): the blue run just grows by its 8, the red one gives its 5, takes its
+        // 8, and the fives sit beside it.
         var blueRun = VSet(T(5, TileColor.Blue), T(6, TileColor.Blue), T(7, TileColor.Blue));
         var redRun = VSet(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
         var board = new Solution { IsValid = true, Sets = [blueRun, redRun] };
@@ -147,9 +147,11 @@ public class BoardStabilizerTests
         result.TilesToPlay.Should().BeEquivalentTo(solved.TilesToPlay);
         var sets = result.BestSolution.Sets;
         sets.Should().HaveCount(3);
-        sets[0].Tiles.Should().AllSatisfy(t => t.Color.Should().Be(TileColor.Blue));
-        sets[1].IsGroup.Should().BeTrue();
-        sets[2].Tiles.Should().AllSatisfy(t => t.Color.Should().Be(TileColor.Red));
+        sets[0].Tiles.Select(t => (t.Color, t.Value)).Should().Equal(
+            (TileColor.Blue, 5), (TileColor.Blue, 6), (TileColor.Blue, 7), (TileColor.Blue, 8));
+        sets[1].Tiles.Select(t => (t.Color, t.Value)).Should().Equal(
+            (TileColor.Red, 6), (TileColor.Red, 7), (TileColor.Red, 8));
+        sets[2].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(5)).And.HaveCount(3);
         ShouldBeLegalOver(result, board, rack);
     }
 
@@ -395,5 +397,134 @@ public class BoardStabilizerTests
         sets[1].Should().BeSameAs(board.Sets[1]);
         sets[2].Should().BeSameAs(board.Sets[2]);
         ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void TileTakenFromTheEndOfARun_LeavesTheRestInOneRun()
+    {
+        // 3M and 3K need 3R, the end of the long red run. Nothing else has to move: the run
+        // must not come back cut in two.
+        var red = VSet(T(3, TileColor.Red), T(4, TileColor.Red), T(5, TileColor.Red), T(6, TileColor.Red),
+            T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red));
+        var elevens = VSet(T(11, TileColor.Blue), T(11, TileColor.Mango), T(11, TileColor.Black));
+        var board = new Solution { IsValid = true, Sets = [red, elevens] };
+        var rack = new Set([T(3, TileColor.Mango), T(3, TileColor.Black)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(3);
+        sets[0].Tiles.Select(t => t.Value).Should().Equal(4, 5, 6, 7, 8, 9);
+        sets[1].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(3)).And.HaveCount(3);
+        sets[2].Should().BeSameAs(elevens);
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void MoveChainingThroughSeveralSets_MovesOnlyTheTilesItNeeds()
+    {
+        // 1M needs 1R and 1K. 1K is the end of a run of four; 1R leaves the joker run short,
+        // which the 5 of the fives group repairs (3R J 5R), sending 5B and 5K to the ends
+        // of two runs. Five board tiles change set, no fewer will do, and every other set
+        // (the twin mango runs included) is left alone.
+        var mangoA = VSet(T(4, TileColor.Mango), T(5, TileColor.Mango), T(6, TileColor.Mango), T(7, TileColor.Mango));
+        var mangoB = VSet(T(4, TileColor.Mango), T(5, TileColor.Mango), T(6, TileColor.Mango), T(7, TileColor.Mango));
+        var blue = VSet(T(2, TileColor.Blue), T(3, TileColor.Blue), T(4, TileColor.Blue));
+        var fives = VSet(T(5, TileColor.Blue), T(5, TileColor.Red), T(5, TileColor.Black));
+        var jokerRun = VSet(T(1, TileColor.Red), new Tile(2, TileColor.Red, isJoker: true), T(3, TileColor.Red));
+        var nines = VSet(T(9, TileColor.Blue), T(9, TileColor.Mango), T(9, TileColor.Black));
+        var black = VSet(T(1, TileColor.Black), T(2, TileColor.Black), T(3, TileColor.Black), T(4, TileColor.Black));
+        var board = new Solution { IsValid = true, Sets = [mangoA, mangoB, blue, fives, jokerRun, nines, black] };
+        var rack = new Set([T(1, TileColor.Mango)]);
+
+        var solved = SolveFor(board, rack);
+        solved.TilesToPlay.Should().ContainSingle();
+
+        var result = BoardStabilizer.Stabilize(board, solved);
+
+        var sets = result.BestSolution.Sets;
+        sets.Should().Contain(s => ReferenceEquals(s, mangoA))
+            .And.Contain(s => ReferenceEquals(s, mangoB))
+            .And.Contain(s => ReferenceEquals(s, nines));
+        BoardSeating.MovedTiles(board.Sets, sets).Should().Be(6, "the played tile and five board tiles");
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void RealTileJoiningAGroup_TakesTheSeatOfTheJokerThatStoodForIt()
+    {
+        var thirteens = VSet(T(13, TileColor.Blue), new Tile(13, TileColor.Red, isJoker: true), T(13, TileColor.Mango));
+        var blue = VSet(T(1, TileColor.Blue), T(2, TileColor.Blue), T(3, TileColor.Blue));
+        var board = new Solution { IsValid = true, Sets = [blue, thirteens] };
+        var rack = new Set([T(13, TileColor.Red)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(2);
+        sets[0].Should().BeSameAs(blue);
+        sets[1].Tiles.Select(t => (t.Color, t.IsJoker)).Should().Equal(
+            (TileColor.Blue, false), (TileColor.Red, false), (TileColor.Mango, false), (TileColor.Black, true));
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Theory]
+    [InlineData(1, 2)]
+    [InlineData(2, 4)]
+    [InlineData(3, 4)]
+    public void WholeGames_EveryMoveStaysLegalAndNeverMovesMoreThanTheSolversOwnSets(int seed, int players)
+    {
+        // Real positions, crowded tables and jokers included: some moves are answered at
+        // once, some exhaust the search budget and take the last pass or the solver's sets.
+        var rng = new Random(seed);
+        var tiles = Enum.GetValues<TileColor>()
+            .SelectMany(color => Enumerable.Range(1, 13).SelectMany(value => new[] { T(value, color), T(value, color) }))
+            .Append(new Tile(isJoker: true)).Append(new Tile(isJoker: true))
+            .OrderBy(_ => rng.Next()).ToList();
+        var racks = Enumerable.Range(0, players).Select(p => new Set(tiles.Skip(p * 14).Take(14).ToList())).ToArray();
+        var pool = new Queue<Tile>(tiles.Skip(players * 14));
+        var hasPlayed = new bool[players];
+        var board = new Solution { IsValid = true };
+        var stabilized = 0;
+
+        for (var (turn, idle) = (0, 0); turn < 400 && idle < players; turn++)
+        {
+            var seat = turn % players;
+            var rack = racks[seat];
+            var solved = hasPlayed[seat]
+                ? DynamicSolver.Create(board.ToSet(), new Set(rack)).SearchSolution()
+                : DynamicSolver.CreateFirst(new Set(rack)).SearchSolution();
+            if (!solved.Found)
+            {
+                idle = pool.Count > 0 ? 0 : idle + 1;
+                if (pool.Count > 0) rack.AddTile(pool.Dequeue());
+                continue;
+            }
+
+            idle = 0;
+            var result = solved;
+            if (hasPlayed[seat] && board.Sets.Count > 0)
+            {
+                result = BoardStabilizer.Stabilize(board, solved);
+                stabilized++;
+
+                var playedRack = new Set(solved.TilesToPlay.Where(t => !t.IsJoker).ToList());
+                var jokers = solved.JokersToPlay + solved.TilesToPlay.Count(t => t.IsJoker);
+                for (var i = 0; i < jokers; i++) playedRack.AddTile(new Tile(isJoker: true));
+                ShouldBeLegalOver(result, board, playedRack);
+                (result.TilesToPlay.Count() + result.JokersToPlay).Should().Be(playedRack.Tiles.Count + jokers);
+                BoardSeating.MovedTiles(board.Sets, result.BestSolution.Sets).Should().BeLessThanOrEqualTo(
+                    BoardSeating.MovedTiles(board.Sets, BoardSeating.Seat(board.Sets, solved.BestSolution.Sets)));
+            }
+
+            foreach (var tile in result.TilesToPlay) rack.Remove(tile);
+            for (var i = 0; i < result.JokersToPlay; i++) rack.Remove(new Tile(isJoker: true));
+            board = hasPlayed[seat] ? result.BestSolution : result.BestSolution.AddSolution(board);
+            board.IsValid = true;
+            hasPlayed[seat] = true;
+            if (rack.Tiles.Count == 0 && rack.Jokers == 0) break;
+        }
+
+        stabilized.Should().BeGreaterThan(10);
     }
 }
