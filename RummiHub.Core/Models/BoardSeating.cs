@@ -3,7 +3,7 @@ namespace RummiHub.Core.Models;
 /// <summary>
 /// Orders a new board after the previous one so the table moves as little as possible.
 /// Runs and groups are one list: a set keeps the seat of the previous set it shares the most
-/// tiles with, and a set rebuilt out of another set's tiles sits right beside it. Only sets
+/// tiles with (<see cref="Pair"/>), and a set rebuilt out of another set's tiles sits right beside it. Only sets
 /// made entirely of new tiles go last. The order is cosmetic: which tiles form which set is
 /// never changed.
 /// </summary>
@@ -11,8 +11,9 @@ public static class BoardSeating
 {
     /// <summary>
     /// <paramref name="next"/> reordered after <paramref name="previous"/>: each previous set,
-    /// in board order, is followed by the set that took its seat (see <see cref="Pair"/>), then
-    /// by the unseated sets whose tiles mostly came from it. Same instances, new order.
+    /// in board order, gives its seat to the set paired with it (see <see cref="Pair"/>), then
+    /// to the unpaired sets whose tiles mostly came from it. The pieces of a run cut into
+    /// runs stay in the order they had in it, low end first. Same instances, new order.
     /// </summary>
     public static List<ValidSet> Seat(IReadOnlyList<ValidSet> previous, IReadOnlyList<ValidSet> next)
     {
@@ -34,10 +35,12 @@ public static class BoardSeating
         var ordered = new List<ValidSet>(next.Count);
         for (var i = 0; i < previous.Count; i++)
         {
-            for (var j = 0; j < next.Count; j++)
-                if (pairs[j].PrevIndex == i) ordered.Add(next[j]);
-            for (var j = 0; j < next.Count; j++)
-                if (pairs[j].PrevIndex < 0 && home[j] == i) ordered.Add(next[j]);
+            ordered.AddRange(Enumerable.Range(0, next.Count)
+                .Where(j => home[j] == i)
+                .OrderBy(j => previous[i].IsGroup || next[j].IsGroup
+                    ? pairs[j].PrevIndex == i ? -1 : int.MaxValue
+                    : FirstSharedSeat(previous[i], next[j]))
+                .Select(j => next[j]));
         }
 
         for (var j = 0; j < next.Count; j++)
@@ -46,28 +49,50 @@ public static class BoardSeating
         return ordered;
     }
 
+    /// <summary>Where in <paramref name="from"/> the first tile it shares with <paramref name="set"/> sits.</summary>
+    private static int FirstSharedSeat(ValidSet from, ValidSet set)
+    {
+        for (var seat = 0; seat < from.Tiles.Length; seat++)
+        {
+            var key = TileKey(from.Tiles[seat]);
+            if (set.Tiles.Any(tile => TileKey(tile) == key)) return seat;
+        }
+
+        return from.Tiles.Length;
+    }
+
     /// <summary>
-    /// Pairs each next set with a previous set by maximal multiset overlap, greedy in board
-    /// order: every previous set takes the remaining next set it shares the most tiles with
-    /// (at least one). Unpaired next sets get (-1, 0). The client pairs sets the same way.
+    /// Pairs next sets with previous sets by multiset overlap, largest overlap first: the two
+    /// sets sharing the most tiles are paired, then the two sharing the most among the rest,
+    /// until no two share a tile. Ties go to the pair with the fewest other tiles (a set kept
+    /// whole before one that grew), then to board order. Unpaired next sets get (-1, 0). The
+    /// client pairs sets the same way.
     /// </summary>
     public static (int PrevIndex, int Shared)[] Pair(IReadOnlyList<ValidSet> previous, IReadOnlyList<ValidSet> next)
     {
         var pairs = new (int PrevIndex, int Shared)[next.Count];
         Array.Fill(pairs, (-1, 0));
 
+        var overlaps = new List<(int Shared, int Others, int Prev, int Next)>();
         for (var i = 0; i < previous.Count; i++)
+        for (var j = 0; j < next.Count; j++)
         {
-            var best = -1;
-            var bestShared = 0;
-            for (var j = 0; j < next.Count; j++)
-            {
-                if (pairs[j].PrevIndex >= 0) continue;
-                var shared = SharedTiles(previous[i], next[j]);
-                if (shared > bestShared) (best, bestShared) = (j, shared);
-            }
+            var shared = SharedTiles(previous[i], next[j]);
+            if (shared > 0)
+                overlaps.Add((shared, previous[i].Tiles.Length + next[j].Tiles.Length - 2 * shared, i, j));
+        }
 
-            if (best >= 0) pairs[best] = (i, bestShared);
+        overlaps.Sort((a, b) => a.Shared != b.Shared ? b.Shared.CompareTo(a.Shared)
+            : a.Others != b.Others ? a.Others.CompareTo(b.Others)
+            : a.Prev != b.Prev ? a.Prev.CompareTo(b.Prev)
+            : a.Next.CompareTo(b.Next));
+
+        var taken = new bool[previous.Count];
+        foreach (var (shared, _, i, j) in overlaps)
+        {
+            if (taken[i] || pairs[j].PrevIndex >= 0) continue;
+            taken[i] = true;
+            pairs[j] = (i, shared);
         }
 
         return pairs;
