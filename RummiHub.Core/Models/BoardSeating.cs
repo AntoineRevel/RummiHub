@@ -3,8 +3,9 @@ namespace RummiHub.Core.Models;
 /// <summary>
 /// Orders a new board after the previous one so the table moves as little as possible.
 /// Runs and groups are one list: a set keeps the seat of the previous set it shares the most
-/// tiles with (<see cref="Pair"/>), and a set rebuilt out of another set's tiles sits right beside it. Only sets
-/// made entirely of new tiles go last. The order is cosmetic: which tiles form which set is
+/// tiles with (<see cref="Pair"/>), and a set rebuilt out of another set's tiles sits right beside it. Sets
+/// that take nothing from the board go last, after everything already there, even when the
+/// board holds the twins of their tiles. The order is cosmetic: which tiles form which set is
 /// never changed.
 /// </summary>
 public static class BoardSeating
@@ -12,12 +13,22 @@ public static class BoardSeating
     /// <summary>
     /// <paramref name="next"/> reordered after <paramref name="previous"/>: each previous set,
     /// in board order, gives its seat to the set paired with it (see <see cref="Pair"/>), then
-    /// to the unpaired sets whose tiles mostly came from it. The pieces of a run cut into
+    /// to the unpaired sets that took the most of the tiles it gave away. The pieces of a run cut into
     /// runs stay in the order they had in it, low end first. Same instances, new order.
     /// </summary>
     public static List<ValidSet> Seat(IReadOnlyList<ValidSet> previous, IReadOnlyList<ValidSet> next)
     {
         var pairs = Pair(previous, next);
+
+        // What each previous set gave away: its tiles minus those the set paired with it
+        // keeps. Only these can have gone to another set. A tile that merely looks like one
+        // still sitting in its set (the second copy, played from the hand) came from nowhere
+        // on the board.
+        var given = new Dictionary<int, int>[previous.Count];
+        for (var i = 0; i < previous.Count; i++) given[i] = Counts(previous[i]);
+        for (var j = 0; j < next.Count; j++)
+            if (pairs[j].PrevIndex >= 0) Take(given[pairs[j].PrevIndex], next[j], commit: true);
+
         var home = new int[next.Count];
         for (var j = 0; j < next.Count; j++)
         {
@@ -27,9 +38,11 @@ public static class BoardSeating
             var bestShared = 0;
             for (var i = 0; i < previous.Count; i++)
             {
-                var shared = SharedTiles(previous[i], next[j]);
+                var shared = Take(given[i], next[j], commit: false);
                 if (shared > bestShared) (home[j], bestShared) = (i, shared);
             }
+
+            if (home[j] >= 0) Take(given[home[j]], next[j], commit: true);
         }
 
         var ordered = new List<ValidSet>(next.Count);
@@ -132,6 +145,40 @@ public static class BoardSeating
             }
         }
 
+        return shared;
+    }
+
+    private static Dictionary<int, int> Counts(ValidSet set)
+    {
+        var counts = new Dictionary<int, int>();
+        foreach (var tile in set.Tiles)
+        {
+            var key = TileKey(tile);
+            counts[key] = counts.GetValueOrDefault(key) + 1;
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// How many tiles of <paramref name="set"/> can be drawn from <paramref name="available"/>;
+    /// with <paramref name="commit"/>, they are drawn.
+    /// </summary>
+    private static int Take(Dictionary<int, int> available, ValidSet set, bool commit)
+    {
+        var taken = new Dictionary<int, int>();
+        var shared = 0;
+        foreach (var tile in set.Tiles)
+        {
+            var key = TileKey(tile);
+            var used = taken.GetValueOrDefault(key);
+            if (available.GetValueOrDefault(key) <= used) continue;
+            taken[key] = used + 1;
+            shared++;
+        }
+
+        if (commit)
+            foreach (var (key, count) in taken) available[key] -= count;
         return shared;
     }
 
