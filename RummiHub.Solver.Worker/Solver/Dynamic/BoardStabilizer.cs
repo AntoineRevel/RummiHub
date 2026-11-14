@@ -14,8 +14,8 @@ namespace RummiHub.Solver.Worker.Solver.Dynamic;
 /// tiles, then the fewest sets, the way a player would do it by hand. Runs and groups are
 /// one list: a run may come back as groups and the other way round. Every set the move
 /// leaves alone is returned as the same instance, a set that keeps tiles keeps them in the
-/// order they were in, and every rebuilt set sits beside the set its tiles came from
-/// (<see cref="BoardSeating"/>).
+/// order they were in, and new sets are laid where they push the rest of the board the
+/// least, most often last (<see cref="BoardSeating"/>).
 /// </para>
 /// <para>
 /// A move that reworks so much of the table that the search runs out of budget gets the

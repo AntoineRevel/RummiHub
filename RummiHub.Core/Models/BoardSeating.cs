@@ -3,9 +3,11 @@ namespace RummiHub.Core.Models;
 /// <summary>
 /// Orders a new board after the previous one so the table moves as little as possible.
 /// Runs and groups are one list: a set keeps the seat of the previous set it shares the most
-/// tiles with (<see cref="Pair"/>), and a set rebuilt out of another set's tiles sits right beside it. Sets
-/// that take nothing from the board go last, after everything already there, even when the
-/// board holds the twins of their tiles. The order is cosmetic: which tiles form which set is
+/// tiles with (<see cref="Pair"/>). Every other set goes last, after everything already there,
+/// so laying it pushes nothing: a set played from the hand (even when the board holds the
+/// twins of its tiles), and a set built around a tile taken from a set that stays. The one
+/// exception is a set that fills the room its origin left, like the second half of a run
+/// cut in two: it stays beside it. The order is cosmetic: which tiles form which set is
 /// never changed.
 /// </summary>
 public static class BoardSeating
@@ -13,8 +15,9 @@ public static class BoardSeating
     /// <summary>
     /// <paramref name="next"/> reordered after <paramref name="previous"/>: each previous set,
     /// in board order, gives its seat to the set paired with it (see <see cref="Pair"/>), then
-    /// to the unpaired sets that took the most of the tiles it gave away. The pieces of a run cut into
-    /// runs stay in the order they had in it, low end first. Same instances, new order.
+    /// to the unpaired sets made of the tiles it gave away, as long as they fit the room it
+    /// left. The pieces of a run cut into runs stay in the order they had in it, low end
+    /// first. All the other sets follow. Same instances, new order.
     /// </summary>
     public static List<ValidSet> Seat(IReadOnlyList<ValidSet> previous, IReadOnlyList<ValidSet> next)
     {
@@ -45,11 +48,29 @@ public static class BoardSeating
             if (home[j] >= 0) Take(given[home[j]], next[j], commit: true);
         }
 
+        // A set rebuilt from a previous set's tiles sits beside it only when that pushes the
+        // sets after it less than leaving its seat empty would: a run cut in two stays
+        // together, a new set that took one tile from a set left whole goes last.
+        var beside = new bool[next.Count];
+        for (var i = 0; i < previous.Count; i++)
+        {
+            var width = -SetGap;
+            foreach (var j in Enumerable.Range(0, next.Count).Where(j => home[j] == i)
+                         .OrderByDescending(j => pairs[j].PrevIndex == i)
+                         .ThenByDescending(j => SharedTiles(previous[i], next[j])))
+            {
+                var grown = width + SetGap + Width(next[j]);
+                beside[j] = pairs[j].PrevIndex == i
+                            || Math.Abs(grown - Width(previous[i])) < Math.Abs(width - Width(previous[i]));
+                if (beside[j]) width = grown;
+            }
+        }
+
         var ordered = new List<ValidSet>(next.Count);
         for (var i = 0; i < previous.Count; i++)
         {
             ordered.AddRange(Enumerable.Range(0, next.Count)
-                .Where(j => home[j] == i)
+                .Where(j => home[j] == i && beside[j])
                 .OrderBy(j => previous[i].IsGroup || next[j].IsGroup
                     ? pairs[j].PrevIndex == i ? -1 : int.MaxValue
                     : FirstSharedSeat(previous[i], next[j]))
@@ -57,10 +78,16 @@ public static class BoardSeating
         }
 
         for (var j = 0; j < next.Count; j++)
-            if (home[j] < 0) ordered.Add(next[j]);
+            if (!beside[j]) ordered.Add(next[j]);
 
         return ordered;
     }
+
+    /// <summary>Room between two sets on a row, in half tiles (see <see cref="Width"/>).</summary>
+    private const int SetGap = 1;
+
+    /// <summary>Room a set takes on its row, in half tiles.</summary>
+    private static int Width(ValidSet set) => 2 * set.Tiles.Length;
 
     /// <summary>Where in <paramref name="from"/> the first tile it shares with <paramref name="set"/> sits.</summary>
     private static int FirstSharedSeat(ValidSet from, ValidSet set)
