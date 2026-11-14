@@ -156,10 +156,10 @@ public class BoardStabilizerTests
     }
 
     [Fact]
-    public void RunTurnedIntoAGroup_SitsBesideTheRunItCameFrom()
+    public void GroupBuiltAroundATileTakenFromARun_GoesLast()
     {
-        // 7B and 7Bk only fit by taking 7R off the red run: the new group is made of that
-        // run's tile, so it lands right after the run, not after every other set.
+        // 7B and 7Bk only fit by taking 7R off the red run. The new group goes after every
+        // other set: laid beside the run, it would push the rest of the board.
         var mango = VSet(T(1, TileColor.Mango), T(2, TileColor.Mango), T(3, TileColor.Mango));
         var red = VSet(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
         var blue = VSet(T(11, TileColor.Blue), T(12, TileColor.Blue), T(13, TileColor.Blue));
@@ -172,8 +172,8 @@ public class BoardStabilizerTests
         sets.Should().HaveCount(4);
         sets[0].Should().BeSameAs(mango);
         sets[1].Tiles.Select(t => t.Value).Should().Equal(8, 9, 10);
-        sets[2].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(7)).And.HaveCount(3);
-        sets[3].Should().BeSameAs(blue);
+        sets[2].Should().BeSameAs(blue);
+        sets[3].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(7)).And.HaveCount(3);
         ShouldBeLegalOver(result, board, rack);
     }
 
@@ -415,8 +415,8 @@ public class BoardStabilizerTests
         var sets = result.BestSolution.Sets;
         sets.Should().HaveCount(3);
         sets[0].Tiles.Select(t => t.Value).Should().Equal(4, 5, 6, 7, 8, 9);
-        sets[1].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(3)).And.HaveCount(3);
-        sets[2].Should().BeSameAs(elevens);
+        sets[1].Should().BeSameAs(elevens);
+        sets[2].Tiles.Should().AllSatisfy(t => t.Value.Should().Be(3)).And.HaveCount(3);
         ShouldBeLegalOver(result, board, rack);
     }
 

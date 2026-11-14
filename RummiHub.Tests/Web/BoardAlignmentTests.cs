@@ -43,7 +43,7 @@ public class BoardAlignmentTests
     }
 
     [Fact]
-    public void Align_PutsAGroupBuiltFromARunsTileBesideThatRun()
+    public void Align_PutsAGroupBuiltAroundARunsTileLast()
     {
         var mango = Set(T(1, TileColor.Mango), T(2, TileColor.Mango), T(3, TileColor.Mango));
         var red = Set(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
@@ -56,7 +56,7 @@ public class BoardAlignmentTests
 
         var aligned = BoardAlignment.Align(previous, next);
 
-        aligned.Sets.Should().Equal(mango, shortRed, sevens, blue);
+        aligned.Sets.Should().Equal(mango, shortRed, blue, sevens);
     }
 
     [Fact]

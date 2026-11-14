@@ -9,7 +9,7 @@ public class BoardSeatingTests
     private static ValidSet Set(params Tile[] tiles) => new(tiles);
 
     [Fact]
-    public void Seat_PutsASetBuiltFromAnotherSetsTilesRightBesideIt()
+    public void Seat_PutsASetBuiltAroundATileTakenFromASetLast_SoNothingIsPushed()
     {
         var first = Set(T(1, TileColor.Mango), T(2, TileColor.Mango), T(3, TileColor.Mango));
         var red = Set(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
@@ -21,7 +21,7 @@ public class BoardSeatingTests
 
         var seated = BoardSeating.Seat([first, red, last], [fresh, sevens, last, shortRed, first]);
 
-        seated.Should().Equal(first, shortRed, sevens, last, fresh);
+        seated.Should().Equal(first, shortRed, last, fresh, sevens);
     }
 
     [Fact]
@@ -52,6 +52,13 @@ public class BoardSeatingTests
 
         BoardSeating.Seat([shortRun, middle, longRun], [sevens, shortRun, middle, cut])
             .Should().Equal(shortRun, middle, cut, sevens);
+
+        // Had the lookalike been taken for the origin, the halves of this cut would be apart.
+        var low = Set(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red));
+        var high = Set(T(9, TileColor.Red), T(10, TileColor.Red), T(11, TileColor.Red));
+        var longer = Set(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red), T(11, TileColor.Red));
+        BoardSeating.Seat([shortRun, longer, middle], [high, shortRun, middle, low])
+            .Should().Equal(shortRun, low, high, middle);
     }
 
     [Fact]
@@ -101,5 +108,18 @@ public class BoardSeatingTests
         var high = Set(T(8, TileColor.Black), T(9, TileColor.Black), T(10, TileColor.Black));
 
         BoardSeating.Seat([run, ones], [high, ones, low]).Should().Equal(low, high, ones);
+    }
+
+    [Fact]
+    public void Seat_PutsTheSetBuiltWithAJokerTakenFromAGroupLast_AndLeavesTheGroupInPlace()
+    {
+        // 13 13 joker: a 13 from the hand takes the joker's place, the joker leaves for 1 2 3.
+        var thirteens = Set(T(13, TileColor.Blue), T(13, TileColor.Red), new Tile(13, TileColor.Black, isJoker: true));
+        var after = Set(T(4, TileColor.Mango), T(5, TileColor.Mango), T(6, TileColor.Mango));
+
+        var full = Set(T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Black));
+        var low = Set(T(1, TileColor.Red), new Tile(2, TileColor.Red, isJoker: true), T(3, TileColor.Red));
+
+        BoardSeating.Seat([thirteens, after], [low, full, after]).Should().Equal(full, after, low);
     }
 }
