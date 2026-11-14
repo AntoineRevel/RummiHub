@@ -86,7 +86,6 @@ public partial class Bench
         }
 
         _running = true;
-        StateHasChanged();
 
         try
         {

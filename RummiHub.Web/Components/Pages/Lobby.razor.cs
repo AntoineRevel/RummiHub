@@ -68,7 +68,7 @@ public partial class Lobby
         if (!_startArmed && _isHost && !_gameStarted)
         {
             _startArmed = true;
-            await InvokeSeatModuleAsync(m => m.InvokeVoidAsync("armStart", _startButton));
+            await InvokeSeatModuleAsync("armStart", _startButton);
         }
     }
 
@@ -95,7 +95,6 @@ public partial class Lobby
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
             _inviteCopied = true;
-            StateHasChanged();
 
             _inviteCopiedResetCts?.Cancel();
             _inviteCopiedResetCts?.Dispose();
@@ -212,7 +211,7 @@ public partial class Lobby
             InvokeAsync(async () =>
             {
                 // A failed Start leaves the blank tab its click opened with nothing to show.
-                await InvokeSeatModuleAsync(m => m.InvokeVoidAsync("discardPendingTab"));
+                await InvokeSeatModuleAsync("discardPendingTab");
                 StateHasChanged();
             });
         });
@@ -302,8 +301,16 @@ public partial class Lobby
         if (_hubConnection is null || SelectedSeed is not { } selected)
             return;
 
-        if (!await JS.InvokeAsync<bool>("confirm", $"Remove {SeedTitle(selected)} from the list?"))
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("confirm", $"Remove {SeedTitle(selected)} from the list?"))
+                return;
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException)
+        {
+            // No answer from the browser: the seed stays.
             return;
+        }
 
         SeedChoice = RandomSeed;
         await _hubConnection.SendAsync(HubEvents.RemoveSeed, selected.Id);
@@ -385,16 +392,16 @@ public partial class Lobby
     /// who joined has no click to open a tab with), in this tab, so no browser setting is needed.
     /// </summary>
     private Task OpenGameAsync() =>
-        _gameUrl is null ? Task.CompletedTask : InvokeSeatModuleAsync(m => m.InvokeVoidAsync("openGame", _gameUrl));
+        _gameUrl is null ? Task.CompletedTask : InvokeSeatModuleAsync("openGame", _gameUrl);
 
-    private async Task InvokeSeatModuleAsync(Func<IJSObjectReference, ValueTask> call)
+    private async Task InvokeSeatModuleAsync(string function, params object?[] args)
     {
         try
         {
             var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/seat-token.js");
             try
             {
-                await call(module);
+                await module.InvokeVoidAsync(function, args);
             }
             finally
             {

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFramework>net11.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
     </PropertyGroup>
@@ -14,8 +14,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aspire.StackExchange.Redis" Version="13.6.4" />
-        <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.15" />
+        <PackageReference Include="Aspire.StackExchange.Redis" Version="13.6.5" />
+        <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="11.0.0" />
     </ItemGroup>
 
     <!-- SolverBench references the worker, whose appsettings.json would otherwise collide

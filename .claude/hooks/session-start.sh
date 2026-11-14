@@ -2,7 +2,7 @@
 # SessionStart hook for Claude Code cloud sessions (claude.ai/code).
 # Brings the container up to what .devcontainer/ gives a local developer, so
 # `dotnet build`, `dotnet test`, `aspire run` and the /verify skill all work:
-#   - .NET 10 SDK + NuGet restore
+#   - .NET 11 SDK + NuGet restore
 #   - Aspire CLI (also backs the `aspire` MCP server declared in .mcp.json)
 #   - Docker daemon + the Redis 8 image the AppHost needs
 #   - ASP.NET dev certificate
@@ -23,10 +23,10 @@ log() { echo "[session-start] $*" >&2; }
 DOTNET_DIR="$HOME/.dotnet"
 # (Checks capture output first: `cmd | grep -q` under pipefail fails when grep exits early.)
 sdks="$("$DOTNET_DIR/dotnet" --list-sdks 2>/dev/null || true)"
-if ! grep -q '^10\.' <<< "$sdks"; then
-  log "Installing .NET 10 SDK..."
+if ! grep -q '^11\.' <<< "$sdks"; then
+  log "Installing .NET 11 SDK..."
   curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-  bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$DOTNET_DIR" >&2
+  bash /tmp/dotnet-install.sh --channel 11.0 --install-dir "$DOTNET_DIR" >&2
   rm -f /tmp/dotnet-install.sh
 fi
 

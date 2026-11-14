@@ -558,7 +558,6 @@ public partial class GamePage : IAsyncDisposable
         if (_hubConnection is null || !AwaitingMyConfirmation) return;
 
         _isLoading = true;
-        StateHasChanged();
 
         try
         {
@@ -584,7 +583,6 @@ public partial class GamePage : IAsyncDisposable
                 if (_canReplay)
                 {
                     _canReplay = false;
-                    StateHasChanged();
                 }
                 return;
             }
@@ -596,7 +594,6 @@ public partial class GamePage : IAsyncDisposable
             {
                 _highlightIndices = [.._lastHighlightIndices];
                 SetupHighlightTimer(_lastHighlightMs);
-                StateHasChanged();
             }
         }
         catch (Exception e) when (e is JSDisconnectedException or JSException or TaskCanceledException or ObjectDisposedException)
@@ -697,7 +694,6 @@ public partial class GamePage : IAsyncDisposable
         if (_hubConnection is null) return;
 
         _isLoading = true;
-        StateHasChanged();
 
         try
         {
@@ -841,7 +837,6 @@ public partial class GamePage : IAsyncDisposable
     private void OnClearSelection()
     {
         ClearSelection();
-        StateHasChanged();
     }
 
     private void ClearSelection()
