@@ -1,6 +1,6 @@
 {
   "name": "RummiHub (.NET Aspire)",
-  "image": "mcr.microsoft.com/devcontainers/dotnet:10.0-noble",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:11.0-resolute",
   "hostRequirements": {
     "cpus": 4,
     "memory": "8gb"

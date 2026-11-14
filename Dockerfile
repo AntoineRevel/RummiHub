@@ -1,7 +1,7 @@
 # Multi-stage image for the three runtime processes (webfrontend, apiservice, solver-worker).
 # Build args select the project. The AppHost is not included: Compose replaces Aspire.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 COPY nuget.config ./
@@ -24,7 +24,7 @@ ARG PROJECT
 RUN test -n "$PROJECT" \
     && dotnet publish "$PROJECT" -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
 ARG ASSEMBLY
 RUN test -n "$ASSEMBLY" \
     && apt-get update \
