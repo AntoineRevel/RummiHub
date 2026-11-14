@@ -25,6 +25,36 @@ public class BoardSeatingTests
     }
 
     [Fact]
+    public void Seat_PutsASetPlayedFromTheHandLast_EvenWhenTheBoardHoldsTheSameTiles()
+    {
+        // Each tile exists twice: the sevens played from the hand look like the 7R of the
+        // red run and the 7B of the blue one, but take nothing from them.
+        var red = Set(T(6, TileColor.Red), T(7, TileColor.Red), T(8, TileColor.Red));
+        var blue = Set(T(7, TileColor.Blue), T(8, TileColor.Blue), T(9, TileColor.Blue));
+        var last = Set(T(11, TileColor.Black), T(12, TileColor.Black), T(13, TileColor.Black));
+
+        var sevens = Set(T(7, TileColor.Red), T(7, TileColor.Blue), T(7, TileColor.Mango));
+
+        BoardSeating.Seat([red, blue, last], [sevens, red, blue, last]).Should().Equal(red, blue, last, sevens);
+    }
+
+    [Fact]
+    public void Seat_SeatsEachRebuiltSetBesideTheSetThatGaveItsTiles_NotBesideALookalike()
+    {
+        // The 7R of the new sevens leaves the long run; the short run that also holds a 7R
+        // keeps all its tiles and gives nothing.
+        var shortRun = Set(T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red));
+        var middle = Set(T(1, TileColor.Black), T(2, TileColor.Black), T(3, TileColor.Black));
+        var longRun = Set(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
+
+        var cut = Set(T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
+        var sevens = Set(T(7, TileColor.Red), T(7, TileColor.Blue), T(7, TileColor.Black));
+
+        BoardSeating.Seat([shortRun, middle, longRun], [sevens, shortRun, middle, cut])
+            .Should().Equal(shortRun, middle, cut, sevens);
+    }
+
+    [Fact]
     public void MovedTiles_CountsNewTilesAndTilesChangingSet()
     {
         var red = Set(T(7, TileColor.Red), T(8, TileColor.Red), T(9, TileColor.Red), T(10, TileColor.Red));
