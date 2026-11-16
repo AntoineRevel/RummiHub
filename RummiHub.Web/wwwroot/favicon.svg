@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- A game tile: light grey face, bold red 7 (drawn as a shape, no font needed). -->
+  <rect x="11" y="5" width="42" height="56" rx="8" fill="#000" opacity=".18"/>
+  <rect x="11" y="3" width="42" height="56" rx="8" fill="#e4e3e1" stroke="#a9a9a9" stroke-width="2"/>
+  <polygon points="20,12 44,12 44,19 33,50 24,50 35,19 20,19" fill="#d61f1f"/>
+</svg>
