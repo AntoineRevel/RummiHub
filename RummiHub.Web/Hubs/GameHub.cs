@@ -37,7 +37,7 @@ public partial class GameHub(
     {
         var seeds = gameManager.GetSeedList()
             .Select(s => new SeedListItemDto(
-                s.ListId, DistributionSeeds.Abbreviate(s.Seed), s.Name, s.Players, s.Seat, s.AddedAt))
+                s.ListId, DistributionSeeds.Abbreviate(s.Seed), s.Name, s.Players, s.Seat, s.AddedAt, s.NoJokers))
             .ToList();
         await Clients.Caller.SendAsync(HubEvents.SeedList, seeds);
     }
@@ -84,9 +84,10 @@ public partial class GameHub(
     /// <summary>
     /// Creates a game dealt from a pasted seed, from a list entry (named by its list id: the
     /// lobby never holds a listed seed; the table is then set as it was saved), or, with both
-    /// empty, from a fresh random seed.
+    /// empty, from a fresh random seed. <paramref name="noJokers"/> deals without the two
+    /// jokers; a list entry ignores it and replays the option it was saved with.
     /// </summary>
-    public async Task CreateGame(string playerName, string? pastedSeed, string? listedSeedId)
+    public async Task CreateGame(string playerName, string? pastedSeed, string? listedSeedId, bool noJokers)
     {
         try
         {
@@ -119,7 +120,7 @@ public partial class GameHub(
                     return;
                 }
 
-                game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed);
+                game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed, noJokers);
             }
 
             var seatToken = game.GetPlayers().Single(p => !p.IsAuto).SeatToken;

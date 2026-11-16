@@ -26,17 +26,18 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         if (seat < 0 || seat >= engine.Players.Count)
             return;
 
-        seedStore.Add(seed, engine.Players.Count, seat, name);
+        seedStore.Add(seed, engine.Players.Count, seat, name, game.NoJokers);
         game.MarkSeedSaved(seat);
     }
 
-    public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null)
+    public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false)
     {
         var seed = ResolveDistributionSeed(distributionSeed);
         return CreateGame(playerName, connectionId, new Game
         {
             HostConnectionId = connectionId,
-            DistributionSeed = seed
+            DistributionSeed = seed,
+            NoJokers = noJokers
         });
     }
 
@@ -46,6 +47,7 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         {
             HostConnectionId = connectionId,
             DistributionSeed = saved.Seed,
+            NoJokers = saved.NoJokers,
             SavedFrom = saved
         });
 
@@ -194,7 +196,7 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         var playerNames = players.Select(p => p.Name).ToList();
         var autoPlayers = players.Select(p => p.IsAuto).ToList();
         var engine = new GameEngine { GameId = game.Id };
-        engine.Initialize(playerNames, game.DistributionSeed, autoPlayers);
+        engine.Initialize(playerNames, game.DistributionSeed, autoPlayers, jokers: !game.NoJokers);
         game.Engine = engine;
 
         // Replaying a list entry at its table size: the host's seat holds that entry.

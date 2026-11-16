@@ -35,7 +35,8 @@ public sealed class GameEngine
     public void Initialize(
         List<string> playerNames,
         string? distributionSeed = null,
-        IReadOnlyList<bool>? autoPlayers = null)
+        IReadOnlyList<bool>? autoPlayers = null,
+        bool jokers = true)
     {
         ArgumentNullException.ThrowIfNull(playerNames);
         if (distributionSeed is not null && !DistributionSeeds.IsValid(distributionSeed))
@@ -52,7 +53,7 @@ public sealed class GameEngine
         Players.Clear();
         _tilePool.Clear();
 
-        var tiles = GenerateTiles();
+        var tiles = GenerateTiles(jokers);
         // A seed deals deterministically so a saved seed replays the same game. It drives a
         // SHA-256 stream: recovering it from a dealt rack means searching all 256 bits. With
         // no seed, the shuffle draws from a CSPRNG.
@@ -247,9 +248,14 @@ public sealed class GameEngine
         return await resultSubscriber.WaitForResult(accepted.ContentHash, ct);
     }
 
-    private static Tile[] GenerateTiles()
+    /// <summary>
+    /// The 104 numbered tiles, then the two jokers unless the game is played without them
+    /// (lobby option). The seeded shuffle runs over this array, so a seed deals differently
+    /// with and without jokers: a saved seed remembers which (<see cref="SavedSeed.NoJokers"/>).
+    /// </summary>
+    private static Tile[] GenerateTiles(bool jokers)
     {
-        var tiles = new Tile[106];
+        var tiles = new Tile[jokers ? 106 : 104];
         var index = 0;
 
         foreach (var color in Enum.GetValues<TileColor>())
@@ -259,8 +265,11 @@ public sealed class GameEngine
                 tiles[index++] = new Tile(i, color);
             }
 
-        tiles[index++] = new Tile(isJoker: true);
-        tiles[index] = new Tile(isJoker: true);
+        if (jokers)
+        {
+            tiles[index++] = new Tile(isJoker: true);
+            tiles[index] = new Tile(isJoker: true);
+        }
 
         return tiles;
     }

@@ -60,9 +60,10 @@ public record PlayerInfoDto
 /// <summary>
 /// A deal offered in the lobby: its list id and short form, never the seed itself (the hub is
 /// public), its name if any, the table size and seat it was saved with (seat 0 = first player),
-/// and when it was added to the list.
+/// when it was added to the list, and whether it is dealt without jokers.
 /// </summary>
-public record SeedListItemDto(string Id, string Short, string? Name, int Players, int Seat, DateTimeOffset AddedAt);
+public record SeedListItemDto(
+    string Id, string Short, string? Name, int Players, int Seat, DateTimeOffset AddedAt, bool NoJokers = false);
 
 /// <summary>A seat in the waiting room, in seat order.</summary>
 public record LobbyPlayerDto(string Name, bool IsAuto);
