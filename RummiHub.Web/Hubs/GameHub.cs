@@ -330,6 +330,7 @@ public partial class GameHub(
 
             // Make sure an optimal solve is in flight for whoever's turn it currently is.
             // Idempotent — won't relaunch if one already runs for this (turn, playerIndex).
+            GameStateDto state;
             await game.ActionLock.WaitAsync();
             try
             {
@@ -337,6 +338,9 @@ public partial class GameHub(
                 // Seed the alignment baseline with the initial board so the first move animates
                 // from it (and isn't treated as a from-nothing board with no animation).
                 game.LastBroadcastBoard ??= game.Engine!.Board;
+                // Built under the lock: a move landing meanwhile must not take the board
+                // layouts back to an older board.
+                state = BuildGameState(game);
             }
             finally
             {
@@ -344,7 +348,6 @@ public partial class GameHub(
             }
 
             // Send initial game state
-            var state = BuildGameState(game);
             await Clients.Caller.SendAsync(HubEvents.GameStateUpdated, state);
 
             // Send this player's private rack
@@ -535,6 +538,18 @@ public partial class GameHub(
         gameManager.GetGame(gameId)?.BoardSettling.Report(Context.ConnectionId, boardVersion, busyMs);
 
     /// <summary>
+    /// A player's page says how many columns (half tiles) its table is wide: the game keeps
+    /// the board laid out for that width from now on (<see cref="BoardLayouts"/>), and every
+    /// state carries it. Until the next state, the page lays the board out itself, the same way.
+    /// </summary>
+    public void UseBoardColumns(string gameId, int columns)
+    {
+        var game = gameManager.GetGame(gameId);
+        if (game?.FindPlayerIndexByConnection(Context.ConnectionId) is null) return;
+        game.BoardLayouts.Use(Context.ConnectionId, columns);
+    }
+
+    /// <summary>
     /// Ends a "play &amp; review" turn: the move was already applied and broadcast by
     /// <see cref="PlayTiles"/>; this just advances to the next player.
     /// </summary>
@@ -573,7 +588,10 @@ public partial class GameHub(
             // Keyed by the game this page joined: after a reconnect the seat holds a newer
             // connection, so FindGameByConnection no longer knows this one.
             if (Context.Items.TryGetValue(WatchedGameKey, out var watched) && watched is string watchedId)
+            {
                 gameManager.GetGame(watchedId)?.BoardSettling.Forget(Context.ConnectionId);
+                gameManager.GetGame(watchedId)?.BoardLayouts.Release(Context.ConnectionId);
+            }
 
             var game = gameManager.FindGameByConnection(Context.ConnectionId);
             if (game != null)
@@ -605,6 +623,9 @@ public partial class GameHub(
     {
         var engine = game.Engine!;
         var winnerName = engine.IsGameOver ? engine.WinnerName : null;
+        // LastBroadcastBoard is the post-move board seated so unchanged sets stay put.
+        // engine.Board mirrors it, which is what the next solve stabilizes against.
+        var board = game.LastBroadcastBoard ?? engine.Board;
 
         return new GameStateDto
         {
@@ -624,9 +645,8 @@ public partial class GameHub(
             }).ToList(),
             CurrentPlayerIndex = engine.PlayerIndex,
             Turn = engine.Turn,
-            // LastBroadcastBoard is the post-move board seated so unchanged sets stay put.
-            // engine.Board mirrors it, which is what the next solve stabilizes against.
-            Board = game.LastBroadcastBoard ?? engine.Board,
+            Board = board,
+            BoardSpots = game.BoardLayouts.SnapshotFor(board.Sets),
             BoardVersion = game.BoardSettling.Version,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,

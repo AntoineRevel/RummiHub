@@ -86,6 +86,11 @@ public partial class GamePage : IAsyncDisposable
     // play → make room → place.
     private IJSObjectReference? _tileAnimations;
 
+    // How many columns (half tiles) the table is wide on this screen; 0 until the browser has
+    // measured it. The board is laid out on a grid that wide (BoardGrid).
+    private int _boardColumns;
+    private DotNetObjectReference<GamePage>? _self;
+
     [Inject] private IServer Server { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
     [Inject] private IJSRuntime JS { get; set; } = null!;
@@ -194,6 +199,7 @@ public partial class GamePage : IAsyncDisposable
             try
             {
                 await _hubConnection.SendAsync(HubEvents.JoinGameSession, GameId, PlayerName, _seatToken);
+                await SendBoardColumnsAsync();
             }
             catch (Exception ex)
             {
@@ -253,6 +259,12 @@ public partial class GamePage : IAsyncDisposable
             // long the board keeps moving.
             if (_tileAnimations is not null)
             {
+                if (_boardColumns == 0 && _gameState is not null)
+                {
+                    _self ??= DotNetObjectReference.Create(this);
+                    await OnBoardColumns(await _tileAnimations.InvokeAsync<int>("boardColumns", _self));
+                }
+
                 boardBusyMs = await _tileAnimations.InvokeAsync<int?>("animate") ?? 0;
                 var canReplay = _tileAnimations is not null && await _tileAnimations.InvokeAsync<bool>("canReplay");
                 if (canReplay != _canReplay)
@@ -284,6 +296,47 @@ public partial class GamePage : IAsyncDisposable
             _releaseHeldAfterRender = false;
             ScheduleHeldDrain(boardBusyMs);
         }
+    }
+
+    /// <summary>
+    /// The browser measured how many columns the table is wide (first render, then every
+    /// resize): the board is laid out again for that width, and the game is told to keep it.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnBoardColumns(int columns)
+    {
+        if (columns <= 0) return;
+        columns = BoardLayouts.Clamp(columns);
+        if (columns == _boardColumns) return;
+        _boardColumns = columns;
+        await InvokeAsync(StateHasChanged);
+        await SendBoardColumnsAsync();
+    }
+
+    private async Task SendBoardColumnsAsync()
+    {
+        if (_boardColumns == 0 || _hubConnection is not { State: HubConnectionState.Connected } hub) return;
+        try
+        {
+            await hub.SendAsync(HubEvents.UseBoardColumns, GameId, _boardColumns);
+        }
+        catch (Exception)
+        {
+            // Best-effort: the page lays the board out itself meanwhile.
+        }
+    }
+
+    /// <summary>
+    /// Where the sets of the board on screen lie: the game's layout for this table width, or,
+    /// until a state carries it (a width no page used before), the same layout from scratch.
+    /// </summary>
+    private BoardSpot[]? BoardSpots()
+    {
+        if (_gameState is null || _boardColumns == 0) return null;
+        var sets = _gameState.Board.Sets;
+        if (_gameState.BoardSpots.TryGetValue(_boardColumns, out var flat) && flat.Length == 2 * sets.Count)
+            return Enumerable.Range(0, sets.Count).Select(i => new BoardSpot(flat[2 * i], flat[2 * i + 1])).ToArray();
+        return BoardGrid.Place([], [], sets, _boardColumns);
     }
 
     private void RegisterHubEvents()
@@ -417,6 +470,7 @@ public partial class GamePage : IAsyncDisposable
             _gameState = _gameState with
             {
                 Board = state.Board,
+                BoardSpots = state.BoardSpots,
                 Players = state.Players,
                 TilePoolCount = state.TilePoolCount
             };
@@ -978,6 +1032,8 @@ public partial class GamePage : IAsyncDisposable
 
         if (_hubConnection is not null)
             await _hubConnection.DisposeAsync();
+
+        _self?.Dispose();
 
         if (tileAnimations is not null)
         {

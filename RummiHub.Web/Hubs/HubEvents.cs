@@ -37,4 +37,5 @@ public static class HubEvents
     public const string ConfirmEndTurn = nameof(ConfirmEndTurn);
     public const string SaveSeed = nameof(SaveSeed);
     public const string BoardShown = nameof(BoardShown);
+    public const string UseBoardColumns = nameof(UseBoardColumns);
 }

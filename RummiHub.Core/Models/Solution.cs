@@ -2,8 +2,7 @@ namespace RummiHub.Core.Models;
 
 /// <summary>
 /// Represents a complete board state as one ordered list of valid sets, runs and groups
-/// mixed. The order is the reading order on screen: a set the move rebuilt sits where its
-/// tiles came from, whatever its kind.
+/// mixed. Where each set lies on the table is not this order: see <see cref="BoardGrid"/>.
 /// Used both as solver output and as the canonical board representation.
 /// </summary>
 public class Solution
