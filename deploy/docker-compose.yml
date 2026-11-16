@@ -243,7 +243,7 @@ services:
   # Les deux sites (production et test) écrivent ici, chacun sous son identifiant
   # (RummiHub.Web/appsettings.json, Umami:Websites).
   umami:
-    image: ghcr.io/umami-software/umami:3.4.1
+    image: ghcr.io/umami-software/umami:3.5.0
     restart: unless-stopped
     logging: *logging
     init: true
