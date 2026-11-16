@@ -25,6 +25,12 @@ public record GameStateDto
     public required Solution Board { get; init; }
 
     /// <summary>
+    /// Where the board's sets lie on the table, per table width in columns
+    /// (<see cref="BoardLayouts.Snapshot"/>): each page reads the width it shows.
+    /// </summary>
+    public Dictionary<int, int[]> BoardSpots { get; init; } = [];
+
+    /// <summary>
     /// Which broadcast this board is (<see cref="BoardSettling.Version"/>): the page names it
     /// when it reports how long the board keeps moving (<c>BoardShown</c>).
     /// </summary>

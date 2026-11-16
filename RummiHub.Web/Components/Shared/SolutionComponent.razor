@@ -1,14 +1,22 @@
 @using RummiHub.Core.Models
-<div class="solution-container">
-    @foreach (var setWithIndex in GetSetsWithIndices())
+@* The board as a table: every set lies on its own spot of a grid (BoardGrid) and stays there
+   from one move to the next. Nothing is drawn until the page knows how wide the table is. *@
+<div class="solution-grid" style="height: calc(@Rows * (var(--tile-h) + var(--board-lane)))">
+    @foreach (var seat in GetSeats())
     {
-        <ValidSetComponent ValidSet="setWithIndex.Set" StartIndex="setWithIndex.StartIndex"
-                           HighlightIndices="HighlightIndices"/>
+        <div class="solution-seat"
+             style="left: calc(@seat.Spot.Col * var(--tile-w) / @BoardGrid.TileWidth); top: calc(@seat.Spot.Row * (var(--tile-h) + var(--board-lane)))">
+            <ValidSetComponent ValidSet="seat.Set" StartIndex="seat.StartIndex"
+                               HighlightIndices="HighlightIndices"/>
+        </div>
     }
 </div>
 
 @code {
     [Parameter] public required Solution Solution { get; set; }
+
+    /// <summary>The spot of each set, in <see cref="Solution"/> order; null while the table width is unknown.</summary>
+    [Parameter] public BoardSpot[]? Spots { get; set; }
 
     /// <summary>
     /// Reading-order indices of the tiles to highlight. Computed server-side (see
@@ -17,34 +25,48 @@
     /// </summary>
     [Parameter] public HashSet<int>? HighlightIndices { get; set; }
 
-    private List<(ValidSet Set, int StartIndex)> GetSetsWithIndices()
-    {
-        var result = new List<(ValidSet, int)>();
-        var currentIndex = 0;
+    private int Rows => Spots is { Length: > 0 } ? Spots.Max(spot => spot.Row) + 1 : 0;
 
-        foreach (var set in Solution.Sets)
+    /// <summary>
+    /// The sets top to bottom, left to right (the order the animation tells a move in); each
+    /// keeps the tile index it has in the solution's own order, which the highlight counts in.
+    /// </summary>
+    private IEnumerable<(ValidSet Set, int StartIndex, BoardSpot Spot)> GetSeats()
+    {
+        if (Spots is null || Spots.Length != Solution.Sets.Count) return [];
+
+        var result = new List<(ValidSet Set, int StartIndex, BoardSpot Spot)>();
+        var currentIndex = 0;
+        for (var i = 0; i < Solution.Sets.Count; i++)
         {
-            result.Add((set, currentIndex));
-            currentIndex += set.Tiles.Length;
+            result.Add((Solution.Sets[i], currentIndex, Spots[i]));
+            currentIndex += Solution.Sets[i].Tiles.Length;
         }
 
-        return result;
+        return result.OrderBy(seat => seat.Spot.Row).ThenBy(seat => seat.Spot.Col);
     }
 }
 
 <style>
-    .solution-container {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: flex-start;
+    /* Between two rows: the lane a lifted or hovering tile rests in during a move (LIFT in
+       tile-animations.js, plus its slight scale-up). It must clear the row above, so a tile
+       at rest never covers another. */
+    .solution-grid {
+        --board-lane: 36px;
+        position: relative;
+        text-align: left;
     }
 
-    /* The bottom margin is the lane a lifted or hovering tile rests in during a move
-       (LIFT in tile-animations.js, plus its slight scale-up): it must clear the row above,
-       so a tile at rest never covers another. */
-    .solution-container > * {
-        flex: 0 0 auto;
-        margin-right: 10px;
-        margin-bottom: 36px;
+    .solution-seat {
+        position: absolute;
+    }
+
+    .solution-seat .valid-set-container {
+        display: block;
+        padding: 0;
+    }
+
+    .solution-seat .valid-tiles {
+        display: flex;
     }
 </style>

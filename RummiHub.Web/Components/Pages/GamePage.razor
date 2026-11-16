@@ -195,10 +195,12 @@ else
             </div>
         }
 
-        <!-- Board. Staged: each change plays as lift → make room → place, so a tile at rest
+        <!-- Board: a grid on which every set keeps its spot (BoardGrid), as wide as the screen
+             allows. Staged: each change plays as lift → make room → place, so a tile at rest
              never covers another. -->
-        <div class="solution-section" data-anim-scope="board" data-anim-staged data-anim-enter-from="mover">
-            <SolutionComponent Solution="_gameState.Board" HighlightIndices="_highlightIndices"/>
+        <div class="solution-section" data-anim-scope="board" data-anim-staged data-anim-enter-from="mover"
+             data-board-columns="@_boardColumns">
+            <SolutionComponent Solution="_gameState.Board" Spots="BoardSpots()" HighlightIndices="_highlightIndices"/>
         </div>
 
         <!-- Error play -->
@@ -818,7 +820,7 @@ else
     }
 
     /* Board: every spare pixel. Taller on top: the first row's lift lane (see
-       SolutionComponent). The last row's margin already spaces the bottom. */
+       SolutionComponent). The last row's lane already spaces the bottom. */
     .solution-section {
         flex: 1 1 auto;
         padding: 36px 8px 0;

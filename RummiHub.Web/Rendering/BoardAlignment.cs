@@ -4,7 +4,8 @@ namespace RummiHub.Web.Rendering;
 
 /// <summary>
 /// Cosmetically reorders a freshly-solved board so its sets line up with the board previously
-/// shown to the player. The solver rebuilds the board from scratch (and sorts runs by length),
+/// shown to the player. Since the board is drawn on a grid (<see cref="BoardGrid"/>), this
+/// order no longer places the sets on screen; it keeps the set list stable from move to move. The solver rebuilds the board from scratch (and sorts runs by length),
 /// so unchanged sets would otherwise jump to new screen positions and animate for no reason.
 /// Aligning (<see cref="BoardSeating.Seat"/>) keeps unchanged sets in place and lays new sets
 /// after them, so only genuinely relocated or new tiles move and the rest of the board is

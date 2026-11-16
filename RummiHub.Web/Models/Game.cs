@@ -114,6 +114,9 @@ public class Game
     /// </summary>
     public BoardSettling BoardSettling { get; } = new();
 
+    /// <summary>Where the sets of the broadcast board lie on the table, per screen width.</summary>
+    public BoardLayouts BoardLayouts { get; } = new();
+
     public int PlayerCount
     {
         get

@@ -17,11 +17,13 @@
 // sliding over) — so every move can be followed. A change is told step by step: one step per
 // group of sets that change together — a set the move builds or touches, plus every set a
 // tile passes to or from it (a tile taken from one set for two new ones links all three).
-// Steps follow the reading order of their first set. In each step, the board goes from its
-// layout before the step to its layout after it (later steps' sets keep their old shape;
-// each intermediate layout is measured on a hidden copy of the board), one move at a time:
-//   - a block whose new spot is free goes there: it slides along its row, or — changing set,
-//     or row — rises, travels in the lane between rows and drops in;
+// Steps follow the reading order of their first set. The board is a grid on which every set
+// has its own spot (Core's BoardGrid, drawn by SolutionComponent), so a step only moves its
+// own sets: the others stay where they are — the sets of later steps on their old spot, which
+// BoardGrid keeps clear until then. In each step, one move at a time:
+//   - a block whose new spot is free goes there: it slides along its row when nothing stands
+//     in the way, or — changing set or row, or passing other tiles — rises, travels in the
+//     lane between rows and drops in;
 //   - when every block waits for another one's spot, the first one rises and hovers above its
 //     new spot until that spot is free, then drops;
 //   - then the step's played tiles fly in one after the other, out of the play zone (or the
@@ -88,7 +90,54 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 document.addEventListener('touchstart', () => {}, { passive: true });
 
 // A resize reflows the whole page; the next render must re-snapshot, not "animate" it.
-window.addEventListener('resize', () => reset());
+// It may also change how many columns the table fits: the page is told once it settles, and
+// lays the board out again (a render that changes the columns just re-snapshots, see run()).
+let page = null;        // .NET reference of the game page
+let columnsTold = 0;
+let resizeTimer = 0;
+window.addEventListener('resize', () => {
+    reset();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+        const columns = measureColumns();
+        if (!columns || columns === columnsTold) return;
+        columnsTold = columns;
+        page?.invokeMethodAsync('OnBoardColumns', columns).catch(() => { /* page gone */ });
+    }, 200);
+});
+
+// How many grid columns (half tiles) fit across the board. While the page has no vertical
+// scrollbar yet, room is left for one: the board growing must not push its last column out.
+function measureColumns() {
+    const el = document.querySelector('[data-board-columns]');
+    if (!el) return 0;
+    const style = getComputedStyle(el);
+    const tileW = parseFloat(style.getPropertyValue('--tile-w'));
+    if (!(tileW > 0)) return 0;
+    let width = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    if (window.innerWidth === document.documentElement.clientWidth) width -= scrollbarWidth();
+    return Math.max(0, Math.floor(width / (tileW / 2)));
+}
+
+let scrollbar = null;
+function scrollbarWidth() {
+    if (scrollbar === null) {
+        const probe = document.createElement('div');
+        Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', overflow: 'scroll',
+                                     width: '50px', height: '50px' });
+        document.body.append(probe);
+        scrollbar = probe.offsetWidth - probe.clientWidth;
+        probe.remove();
+        observer?.takeRecords();
+    }
+    return scrollbar;
+}
+
+// Called by the page until it knows the table width; `dotnet` is told later changes.
+export function boardColumns(dotnet) {
+    page = dotnet;
+    return columnsTold = measureColumns();
+}
 
 // A hidden tab renders no frames: finish everything so nothing replays as a ghost show
 // when the player comes back (renders meanwhile just snapshot, see run()).
@@ -183,7 +232,8 @@ function collect(root) {
             if (setIndex >= 0) sets[setIndex].tiles.push(tile);
         }
     }
-    return { tiles, sets, origins, scopes };
+    const boardColumns = root.querySelector('[data-board-columns]')?.dataset.boardColumns ?? null;
+    return { tiles, sets, origins, scopes, boardColumns };
 }
 
 // Plain-data copy of a snapshot: fresh tile objects (no DOM refs, no matching flags),
@@ -194,7 +244,7 @@ function toPlainData(snap) {
     const sets = snap.sets.map(() => ({ tiles: [] }));
     for (const tile of tiles) if (tile.setIndex >= 0) sets[tile.setIndex].tiles.push(tile);
     const scopes = Object.fromEntries(Object.entries(snap.scopes ?? {}).map(([k, v]) => [k, { h: v.h }]));
-    return { tiles, sets, origins: { ...snap.origins }, scopes };
+    return { tiles, sets, origins: { ...snap.origins }, scopes, boardColumns: snap.boardColumns };
 }
 
 function store(snap) {
@@ -446,7 +496,8 @@ function holdHeights(departedAt, snap, prev) {
 // Splits the board story into steps (see the top of this file): union-find over the next
 // board's sets (0..m-1) and the previous board's (m..m+n-1), linking a set to the previous set
 // it keeps tiles of, and to every previous set a tile of it comes from. A group with a set
-// that gains or loses tiles is a step; steps follow the reading order of their first set.
+// that gains or loses tiles is a step; steps follow the reading order of their first set
+// (the page draws the sets in reading order).
 function stepsOf(snap, prev) {
     const m = snap.sets.length, n = prev.sets.length;
     const up = [...Array(m + n).keys()];
@@ -474,68 +525,7 @@ function stepsOf(snap, prev) {
         if (changed[j] && !stepOf.has(find(j))) stepOf.set(find(j), stepOf.size);
     }
 
-    // Board tiles still in their previous set, by previous set, in their old order.
-    const prevOrder = new Map();
-    prev.sets.forEach(set => set.tiles.forEach((tile, i) => prevOrder.set(tile, i)));
-    const stillIn = Array.from({ length: n }, () => []);
-    for (const tile of board) if (fromBoard(tile)) stillIn[tile.from.setIndex].push(tile);
-    for (const list of stillIn) list.sort((a, b) => prevOrder.get(a.from) - prevOrder.get(b.from));
-
-    // The board once `done` steps are over: their sets (and unchanged ones) as they end up,
-    // every later step's previous sets as they were, where its first set will stand.
-    const layoutAfter = done => {
-        const sets = [], shown = new Set();
-        for (let j = 0; j < m; j++) {
-            const group = find(j), step = stepOf.get(group);
-            if (step === undefined || step < done) { sets.push(snap.sets[j].tiles); continue; }
-            if (shown.has(group)) continue;
-            shown.add(group);
-            for (let i = 0; i < n; i++) {
-                if (find(m + i) === group && stillIn[i].length) sets.push(stillIn[i]);
-            }
-        }
-        return sets;
-    };
-
-    return { count: stepOf.size, stepOfSet: j => stepOf.get(find(j)), layoutAfter };
-}
-
-// Where each tile of `layout` (lists of next-board tiles, one per set) would stand, as an
-// offset from its real (final) spot: the layout is built on a hidden copy of the board, made
-// of copies of its own elements so it wraps exactly like it, measured, then removed before
-// the browser paints. The observer is told to forget those mutations.
-function measure(root, snap, layout) {
-    const template = snap.sets[0]?.el;
-    const real = template?.parentElement;
-    const at = new Map();
-    if (!real) return at;
-
-    const ghost = real.cloneNode(false);
-    Object.assign(ghost.style, {
-        position: 'absolute', visibility: 'hidden', pointerEvents: 'none',
-        left: `${real.offsetLeft}px`, top: `${real.offsetTop}px`, width: `${real.offsetWidth}px`,
-    });
-    const copies = new Map();
-    for (const tiles of layout) {
-        const setEl = template.cloneNode(false);
-        const row = template.firstElementChild.cloneNode(false);
-        setEl.append(row);
-        for (const tile of tiles) {
-            const copy = tile.el.cloneNode(true);
-            copy.removeAttribute('style');
-            row.append(copy);
-            copies.set(tile, copy);
-        }
-        ghost.append(setEl);
-    }
-    real.parentElement.append(ghost);
-    for (const [tile, copy] of copies) {
-        const { x, y } = positionIn(root, copy);
-        at.set(tile, { x: x - tile.x, y: y - tile.y });
-    }
-    ghost.remove();
-    observer?.takeRecords();
-    return at;
+    return { count: stepOf.size, stepOfSet: j => stepOf.get(find(j)) };
 }
 
 // Screen rectangle of `tile` standing at `offset` from its final spot.
@@ -548,7 +538,9 @@ const reading = (a, b) => (Math.abs(a.y - b.y) > a.h / 2 ? a.y - b.y : a.x - b.x
 
 // The moving blocks of one step, among the tiles on the board before it: the step's tiles
 // changing set (as they fly together, see joinBlock), then every run of tiles consecutive in
-// reading order on one row that move by the same amount — a set, or a row's tail, sliding.
+// reading order on one row that move by the same amount — a set moving to another spot. It
+// slides along its row when the way is clear; changing row, or with tiles in the way, it is
+// carried over them.
 function blocksOf(present, before, after, carried) {
     const blocks = carried.map(tiles => ({ tiles, lifted: true }));
     const inCarried = new Set(carried.flat());
@@ -567,12 +559,21 @@ function blocksOf(present, before, after, carried) {
         run = { tiles: [tile], dx, dy, lifted: Math.abs(dy) > tile.h / 2 }; // changing row: carried
         blocks.push(run);
     }
+    for (const block of blocks) {
+        if (block.lifted) continue;
+        const mine = new Set(block.tiles);
+        block.lifted = block.tiles.some(tile => {
+            const from = rectOf(tile, before.get(tile)), to = rectOf(tile, after.get(tile));
+            const swept = { x: Math.min(from.x, to.x), y: from.y, w: Math.abs(to.x - from.x) + tile.w, h: tile.h };
+            return present.some(other => !mine.has(other) && overlaps(swept, rectOf(other, before.get(other))));
+        });
+    }
     return blocks;
 }
 
 // Schedules the board story, step by step and one move at a time, to start when the story
 // already playing ends. Returns false when nothing on the board moves.
-function tell(story, snap, prev, root) {
+function tell(story, snap, prev) {
     const units = [...story.entering, ...story.migrating];
     if (units.length === 0 && story.room.length === 0) return false;
 
@@ -594,7 +595,17 @@ function tell(story, snap, prev, root) {
             offsets[0].set(tile, { x: dx, y: dy });
         }
     }
-    for (let k = 1; k < count; k++) offsets.push(measure(root, snap, steps.layoutAfter(k)));
+    // In between: the sets of the steps done (and the ones no step changes) on their spot,
+    // the tiles of later steps where they were.
+    for (let k = 1; k < count; k++) {
+        const at = new Map();
+        for (const tile of board) {
+            const step = tile.setIndex >= 0 ? steps.stepOfSet(tile.setIndex) : undefined;
+            if (step === undefined || step < k) at.set(tile, { x: 0, y: 0 });
+            else if (offsets[0].has(tile)) at.set(tile, offsets[0].get(tile));
+        }
+        offsets.push(at);
+    }
     offsets.push(new Map(board.map(tile => [tile, { x: 0, y: 0 }])));
 
     // Each tile's poses, in time. A tile holds its last pose until its next move.
@@ -760,6 +771,14 @@ function run() {
         return;
     }
 
+    // The table changed width: the board was laid out afresh, there is no move to tell.
+    if (last.boardColumns !== snap.boardColumns) {
+        fastForward();
+        replayFrom = null;
+        store(snap);
+        return;
+    }
+
     // Kept clean (matching flags prev) so the board story can be replayed on demand.
     const prev = last;
     const prevClean = toPlainData(prev);
@@ -768,7 +787,7 @@ function run() {
 
     // Board first: a runaway backlog fast-forwards in tell(), which must not swallow the
     // hand's fresh moves.
-    if (tell(story, snap, prev, root)) replayFrom = prevClean;
+    if (tell(story, snap, prev)) replayFrom = prevClean;
     playHand(hand, snap, prevClean);
 }
 
@@ -793,5 +812,5 @@ export function replayLast() {
     const { story } = diff(snap, prev);
     store(snap);
     // The page holds the next move for this long, so a replay is not cancelled mid-flight.
-    return tell(story, snap, prev, root) ? Math.max(1, boardIdleIn()) : 0;
+    return tell(story, snap, prev) ? Math.max(1, boardIdleIn()) : 0;
 }

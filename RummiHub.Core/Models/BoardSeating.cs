@@ -1,7 +1,10 @@
 namespace RummiHub.Core.Models;
 
 /// <summary>
-/// Orders a new board after the previous one so the table moves as little as possible.
+/// Orders a new board after the previous one. Where a set is drawn is decided by
+/// <see cref="BoardGrid"/>, on which every set keeps its spot; this order is the one sets are
+/// laid in on a table laid from scratch, and the one played sets take free rooms in. The
+/// rules below date from the list layout, where the order was the place on screen.
 /// Runs and groups are one list: a set keeps the seat of the previous set it shares the most
 /// tiles with (<see cref="Pair"/>). Every other set goes last, after everything already there,
 /// so laying it pushes nothing: a set played from the hand (even when the board holds the
@@ -209,5 +212,5 @@ public static class BoardSeating
         return shared;
     }
 
-    private static int TileKey(Tile tile) => tile.IsJoker ? -1 : (tile.Value << 2) | (int)tile.Color;
+    internal static int TileKey(Tile tile) => tile.IsJoker ? -1 : (tile.Value << 2) | (int)tile.Color;
 }

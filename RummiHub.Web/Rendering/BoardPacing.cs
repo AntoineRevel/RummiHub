@@ -7,7 +7,7 @@ namespace RummiHub.Web.Rendering;
 /// module (<c>wwwroot/js/tile-animations.js</c>) via its <c>configure()</c> export, and
 /// <see cref="EstimateMs"/> estimates the client's board story so AI pacing
 /// (<see cref="Models.Game.PendingAnimationMs"/>) waits for it. It is an estimate, not a bound:
-/// how many blocks the board shifts depends on the client's layout (line wrapping); a board
+/// it still counts the sets a list layout would shift, and the grid (BoardGrid) moves fewer; a board
 /// arriving early waits on the client until the running story is over.
 /// </summary>
 /// <remarks>
