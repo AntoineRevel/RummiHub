@@ -9,12 +9,15 @@ internal sealed class InMemorySeedStore : ISeedStore
 
     public IReadOnlyList<SavedSeed> GetAll() => Seeds.ToList();
 
-    public void Add(string seed, int players, int seat, string? name)
+    public void Add(string seed, int players, int seat, string? name, bool noJokers = false)
     {
         if (!SavedSeed.IsValid(seed, players, seat))
             return;
 
-        var entry = new SavedSeed(seed, players, seat, SavedSeed.NormalizeName(name), DateTimeOffset.UtcNow);
+        var entry = new SavedSeed(seed, players, seat, SavedSeed.NormalizeName(name), DateTimeOffset.UtcNow)
+        {
+            NoJokers = noJokers
+        };
         var previous = Seeds.FirstOrDefault(s => s.ListId == entry.ListId);
         Seeds.RemoveAll(s => s.ListId == entry.ListId);
         Seeds.Insert(0, entry with { Name = entry.Name ?? previous?.Name });

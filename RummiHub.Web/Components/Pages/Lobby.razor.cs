@@ -29,6 +29,12 @@ public partial class Lobby
     private string _seedChoice = RandomSeed;
     private string _pastedSeed = string.Empty;
 
+    /// <summary>The "Play without jokers" box, for a random or pasted seed.</summary>
+    private bool _noJokers;
+
+    /// <summary>The game this lobby created is dealt without jokers.</summary>
+    private bool _gameNoJokers;
+
     /// <summary>The short form of the seed the game was created with, shown in the waiting room.</summary>
     private string? _gameSeed;
 
@@ -284,6 +290,9 @@ public partial class Lobby
 
     private SeedListItemDto? SelectedSeed => IsListedSeed ? _seeds.FirstOrDefault(s => s.Id == _seedChoice) : null;
 
+    /// <summary>What the box shows: the selected list entry's option, else the player's choice.</summary>
+    private bool NoJokersChoice => SelectedSeed?.NoJokers ?? _noJokers;
+
     /// <summary>The select's value; picking another entry leaves a rename in progress.</summary>
     private string SeedChoice
     {
@@ -345,8 +354,9 @@ public partial class Lobby
     /// <summary>Its name, else its short seed.</summary>
     private static string SeedTitle(SeedListItemDto item) => item.Name ?? item.Short;
 
-    /// <summary>What the deal replays: the table size and the seat (counted from 1) it was saved from.</summary>
-    private static string SeedTable(SeedListItemDto item) => $"{item.Players} players, seat {item.Seat + 1}";
+    /// <summary>What the deal replays: the table size, the seat (counted from 1) it was saved from, no jokers.</summary>
+    private static string SeedTable(SeedListItemDto item) =>
+        $"{item.Players} players, seat {item.Seat + 1}{(item.NoJokers ? ", no jokers" : "")}";
 
     private static string SeedOptionLabel(SeedListItemDto item) =>
         $"{SeedTitle(item)} · {SeedTable(item)} · {item.AddedAt.UtcDateTime:d MMM yyyy}";
@@ -359,7 +369,8 @@ public partial class Lobby
         var pasted = PastedSeed;
         _gameSaved = SelectedSeed;
         _gameSeed = pasted is not null ? DistributionSeeds.Abbreviate(pasted) : _gameSaved?.Short;
-        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id);
+        _gameNoJokers = NoJokersChoice;
+        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id, _noJokers);
     }
 
     private async Task JoinGame()

@@ -70,6 +70,48 @@ public sealed class SeedStoreTests : IDisposable
     }
 
     [Fact]
+    public void TheSameDeal_WithoutJokers_IsAnotherEntry_AndKeepsTheOptionAcrossInstances()
+    {
+        var store = CreateStore();
+
+        store.Add(SeedA, 2, 0, null);
+        store.Add(SeedA, 2, 0, null, noJokers: true);
+
+        var seeds = CreateStore().GetAll();
+        seeds.Should().HaveCount(2);
+        seeds.Single(s => s.NoJokers).ListId.Should().Be(DistributionSeeds.ListId(SeedA, 2, 0, noJokers: true));
+        seeds.Single(s => !s.NoJokers).ListId.Should().Be(Id(SeedA));
+        Id(SeedA).Should().NotBe(DistributionSeeds.ListId(SeedA, 2, 0, noJokers: true));
+    }
+
+    [Fact]
+    public void Read_AnEntryWithoutTheJokerOption_IsDealtWithJokers_AndKeepsItsId()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(SeedsFile)!);
+        File.WriteAllText(SeedsFile, $$"""
+            { "seeds": [ { "seed": "{{SeedA}}", "players": 3, "seat": 1, "addedAt": "2026-10-27T15:42:27Z" } ] }
+            """);
+
+        var entry = CreateStore().GetAll().Single();
+
+        entry.NoJokers.Should().BeFalse();
+        entry.ListId.Should().Be(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes($"{SeedA}/3/1")))[..16].ToLowerInvariant());
+    }
+
+    [Fact]
+    public void AnEntryWithJokers_IsWrittenWithoutTheOption()
+    {
+        var store = CreateStore();
+        store.Add(SeedA, 2, 0, null);
+        store.Add(SeedB, 2, 0, null, noJokers: true);
+
+        var json = File.ReadAllText(SeedsFile);
+
+        json.Split("noJokers").Should().HaveCount(2);
+    }
+
+    [Fact]
     public void Read_DropsEntriesWithoutATableSize_LikeTheOldSeedFile()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(SeedsFile)!);

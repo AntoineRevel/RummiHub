@@ -6,13 +6,15 @@ public interface IGameManager
 {
     /// <summary>
     /// Creates a game dealt from <paramref name="distributionSeed"/>, or from a fresh random seed
-    /// when empty. Throws <see cref="ArgumentException"/> (message for the player) on a malformed seed.
+    /// when empty, without the two jokers when <paramref name="noJokers"/>. Throws
+    /// <see cref="ArgumentException"/> (message for the player) on a malformed seed.
     /// </summary>
-    Game CreateGame(string playerName, string connectionId, string? distributionSeed = null);
+    Game CreateGame(string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false);
 
     /// <summary>
     /// Creates a game replaying a list entry: its seed, AI seats up to its table size, and the
-    /// host on its seat, so the host gets the same rack and the same draws.
+    /// host on its seat, so the host gets the same rack and the same draws (with or without
+    /// jokers, as it was saved).
     /// </summary>
     Game CreateGame(string playerName, string connectionId, SavedSeed saved);
 
