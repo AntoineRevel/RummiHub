@@ -66,6 +66,19 @@ public sealed class BoardLayouts
         lock (_lock) _users.Remove(connectionId);
     }
 
+    /// <summary>
+    /// Moves every layout forward to <paramref name="board"/> and returns them, in one step:
+    /// the spots handed out always belong to that board.
+    /// </summary>
+    public Dictionary<int, int[]> SnapshotFor(IReadOnlyList<ValidSet> board)
+    {
+        lock (_lock)
+        {
+            Sync(board);
+            return Snapshot();
+        }
+    }
+
     /// <summary>Per table width, the spots of the board's sets, in order: row, column, row, column…</summary>
     public Dictionary<int, int[]> Snapshot()
     {

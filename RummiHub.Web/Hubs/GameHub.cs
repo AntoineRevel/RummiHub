@@ -330,6 +330,7 @@ public partial class GameHub(
 
             // Make sure an optimal solve is in flight for whoever's turn it currently is.
             // Idempotent — won't relaunch if one already runs for this (turn, playerIndex).
+            GameStateDto state;
             await game.ActionLock.WaitAsync();
             try
             {
@@ -337,6 +338,9 @@ public partial class GameHub(
                 // Seed the alignment baseline with the initial board so the first move animates
                 // from it (and isn't treated as a from-nothing board with no animation).
                 game.LastBroadcastBoard ??= game.Engine!.Board;
+                // Built under the lock: a move landing meanwhile must not take the board
+                // layouts back to an older board.
+                state = BuildGameState(game);
             }
             finally
             {
@@ -344,7 +348,6 @@ public partial class GameHub(
             }
 
             // Send initial game state
-            var state = BuildGameState(game);
             await Clients.Caller.SendAsync(HubEvents.GameStateUpdated, state);
 
             // Send this player's private rack
@@ -623,7 +626,6 @@ public partial class GameHub(
         // LastBroadcastBoard is the post-move board seated so unchanged sets stay put.
         // engine.Board mirrors it, which is what the next solve stabilizes against.
         var board = game.LastBroadcastBoard ?? engine.Board;
-        game.BoardLayouts.Sync(board.Sets);
 
         return new GameStateDto
         {
@@ -644,7 +646,7 @@ public partial class GameHub(
             CurrentPlayerIndex = engine.PlayerIndex,
             Turn = engine.Turn,
             Board = board,
-            BoardSpots = game.BoardLayouts.Snapshot(),
+            BoardSpots = game.BoardLayouts.SnapshotFor(board.Sets),
             BoardVersion = game.BoardSettling.Version,
             IsGameOver = engine.IsGameOver,
             WinnerName = winnerName,
