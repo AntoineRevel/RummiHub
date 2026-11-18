@@ -28,9 +28,13 @@ var cache = builder.AddRedis("cache")
     .WithModule(RedisModules.Json)
     .WithRedisInsight(insight => insight.WithHostPort(41245));
 
+// Services are registered by project path (Aspire 17 DotnetProjectResource), relative
+// to this directory. Aspire builds them before launch. `aspire run --watch` is not
+// supported for these resources yet.
+
 // The solver API is an internal service. Do not call WithExternalHttpEndpoints on it:
 // only the web frontend is reachable from the public internet.
-var apiService = builder.AddProject<Projects.RummiHub_ApiService>("apiservice")
+var apiService = builder.AddDotnetProject("apiservice", "../RummiHub.ApiService/RummiHub.ApiService.csproj")
     .WithReference(cache)
     .WaitFor(cache)
     .WithHttpHealthCheck("/health")
@@ -38,12 +42,12 @@ var apiService = builder.AddProject<Projects.RummiHub_ApiService>("apiservice")
     .WithEndpoint("http", endpoint => endpoint.IsExternal = false, createIfNotExists: false)
     .WithEndpoint("https", endpoint => endpoint.IsExternal = false, createIfNotExists: false);
 
-builder.AddProject<Projects.RummiHub_Solver_Worker>("solver-worker")
+builder.AddDotnetProject("solver-worker", "../RummiHub.Solver.Worker/RummiHub.Solver.Worker.csproj")
     .WithReference(cache)
     .WaitFor(cache)
     .WithReplicas(2);
 
-builder.AddProject<Projects.RummiHub_Web>("webfrontend")
+builder.AddDotnetProject("webfrontend", "../RummiHub.Web/RummiHub.Web.csproj")
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health")
     .WithReference(cache)

@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -8,14 +8,12 @@
         <UserSecretsId>1e08f647-4e32-440b-89eb-0083365166e0</UserSecretsId>
     </PropertyGroup>
 
+    <!-- The services are registered by path in AppHost.cs (AddDotnetProject): no
+         ProjectReference and no generated Projects.* types. Aspire builds them itself. -->
     <ItemGroup>
-        <ProjectReference Include="..\RummiHub.ApiService\RummiHub.ApiService.csproj" />
-        <ProjectReference Include="..\RummiHub.Web\RummiHub.Web.csproj" />
-        <ProjectReference Include="..\RummiHub.Solver.Worker\RummiHub.Solver.Worker.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <PackageReference Include="Aspire.Hosting.Redis" Version="13.6.5" />
+        <PackageReference Include="Aspire.Hosting.AppHost" Version="17.0.0" />
+        <PackageReference Include="Aspire.Hosting.Dotnet" Version="17.0.0" />
+        <PackageReference Include="Aspire.Hosting.Redis" Version="17.0.0" />
     </ItemGroup>
 
 </Project>
