@@ -1,4 +1,15 @@
 {
+  "extraKnownMarketplaces": {
+    "aspire-skills": {
+      "source": {
+        "source": "github",
+        "repo": "microsoft/aspire-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "aspire@aspire-skills": true
+  },
   "hooks": {
     "SessionStart": [
       {
