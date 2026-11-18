@@ -12,6 +12,8 @@ aspire run          # start the full application
 
 The AppHost is a plain `Microsoft.NET.Sdk` project on Aspire 17 (no `Aspire.AppHost.Sdk`): the orchestrator comes from the Aspire CLI bundle, so `dotnet run` on the AppHost without the CLI installed fails with "The Aspire orchestration component is not installed". Services are registered by path with `AddDotnetProject`, which does not support `aspire run --watch` yet.
 
+Aspire's agent skills come from Microsoft's `aspire@aspire-skills` plugin (marketplace `microsoft/aspire-skills`), enabled in `.claude/settings.json`: Claude Code offers to install it when the repository is trusted, and `/plugin update aspire@aspire-skills` brings it up to date. Do not copy the skills into the repository: on Aspire 17 the skills treat local copies as stale.
+
 If prompted about an existing instance, stop it. Restart is only required when `RummiHub.AppHost/AppHost.cs` changes.
 
 **Cloud sessions (claude.ai/code)**: `.claude/hooks/session-start.sh` provisions the container (the cloud counterpart of `.devcontainer/`): .NET 11 SDK, Aspire CLI, NuGet restore, dev cert, Docker daemon, Python Playwright. Docker pulls `docker.io` images through the `mirror.gcr.io` mirror because anonymous Docker Hub pulls are rate-limited there. Use `aspire run --non-interactive`, in the background.
