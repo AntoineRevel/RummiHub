@@ -65,5 +65,11 @@ public record PlayerInfoDto
 public record SeedListItemDto(
     string Id, string Short, string? Name, int Players, int Seat, DateTimeOffset AddedAt, bool NoJokers = false);
 
-/// <summary>A seat in the waiting room, in seat order.</summary>
-public record LobbyPlayerDto(string Name, bool IsAuto);
+/// <summary>A seat in the waiting room, in seat order; <paramref name="IsHost"/> marks who may start.</summary>
+public record LobbyPlayerDto(string Name, bool IsAuto, bool IsHost = false);
+
+/// <summary>
+/// A game anyone may join, as the lobby lists it: its code, the host's name, the seats taken
+/// by humans and by AIs, whether it is dealt without jokers, and when it was created.
+/// </summary>
+public record OpenGameDto(string Id, string Host, int Humans, int Ais, bool NoJokers, DateTimeOffset CreatedAt);

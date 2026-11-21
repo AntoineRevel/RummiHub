@@ -32,7 +32,24 @@ public partial class GameHub(
     /// <summary>The game whose board a connection's page watches (<c>Context.Items</c> key).</summary>
     private const string WatchedGameKey = "watched-game";
 
+    /// <summary>The SignalR group of the lobby pages, which show the open games as they change.</summary>
+    private const string OpenGamesGroup = "open-games";
+
     // ========== LOBBY PHASE ==========
+
+    /// <summary>
+    /// A lobby page asks for the games anyone may join: it gets the list now, and again each
+    /// time it changes (<see cref="HubEvents.OpenGames"/>).
+    /// </summary>
+    public async Task WatchOpenGames()
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, OpenGamesGroup);
+        await Clients.Caller.SendAsync(HubEvents.OpenGames, gameManager.GetOpenGames());
+    }
+
+    /// <summary>Sends every lobby page the open games, after a change to a public game.</summary>
+    private Task BroadcastOpenGamesAsync() =>
+        Clients.Group(OpenGamesGroup).SendAsync(HubEvents.OpenGames, gameManager.GetOpenGames());
 
     public async Task GetSeedList()
     {
@@ -88,9 +105,11 @@ public partial class GameHub(
     /// empty, from a fresh random seed. <paramref name="noJokers"/> deals without the two
     /// jokers; a list entry ignores it and replays the option it was saved with.
     /// <paramref name="visitorId"/> is the browser's anonymous id (stats.js), for the game journal.
+    /// A <paramref name="isPublic"/> game shows in every lobby's open games until it starts.
     /// </summary>
     public async Task CreateGame(
-        string playerName, string? pastedSeed, string? listedSeedId, bool noJokers, string? visitorId)
+        string playerName, string? pastedSeed, string? listedSeedId, bool noJokers, string? visitorId,
+        bool isPublic = false)
     {
         try
         {
@@ -111,7 +130,7 @@ public partial class GameHub(
                     return;
                 }
 
-                game = gameManager.CreateGame(playerName, Context.ConnectionId, saved, visitorId);
+                game = gameManager.CreateGame(playerName, Context.ConnectionId, saved, visitorId, isPublic);
             }
             else
             {
@@ -123,7 +142,8 @@ public partial class GameHub(
                     return;
                 }
 
-                game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed, noJokers, visitorId);
+                game = gameManager.CreateGame(
+                    playerName, Context.ConnectionId, requestedSeed, noJokers, visitorId, isPublic);
             }
 
             var seatToken = game.GetPlayers().Single(p => !p.IsAuto).SeatToken;
@@ -131,6 +151,8 @@ public partial class GameHub(
             // Seat secret goes to the creator only — never on the shared player list.
             await Clients.Caller.SendAsync(HubEvents.SeatIssued, game.Id, seatToken);
             await Clients.Caller.SendAsync(HubEvents.GameCreated, game.Id, game.GetLobbyPlayers());
+            if (game.IsPublic)
+                await BroadcastOpenGamesAsync();
         }
         catch (Exception ex)
         {
@@ -190,6 +212,8 @@ public partial class GameHub(
             await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
             await Clients.Caller.SendAsync(HubEvents.SeatIssued, gameId, player.SeatToken);
             await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetLobbyPlayers());
+            if (game.IsPublic)
+                await BroadcastOpenGamesAsync();
         }
         catch (Exception ex)
         {
@@ -225,6 +249,8 @@ public partial class GameHub(
             }
 
             await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetLobbyPlayers());
+            if (game.IsPublic)
+                await BroadcastOpenGamesAsync();
         }
         catch (Exception ex)
         {
@@ -248,6 +274,8 @@ public partial class GameHub(
                 return;
 
             await Clients.Group(gameId).SendAsync(HubEvents.PlayerLeft, game.GetLobbyPlayers());
+            if (game.IsPublic)
+                await BroadcastOpenGamesAsync();
         }
         catch (Exception ex)
         {
@@ -293,6 +321,8 @@ public partial class GameHub(
 
             // Broadcast: all lobby clients navigate to the game page
             await Clients.Group(gameId).SendAsync(HubEvents.GameStarted, gameId, game.GetPlayerNames());
+            if (game.IsPublic)
+                await BroadcastOpenGamesAsync();
         }
         catch (Exception ex)
         {
@@ -612,10 +642,14 @@ public partial class GameHub(
                     var gameId = game.Id;
                     gameManager.RemovePlayer(Context.ConnectionId);
 
+                    // The list names the new host when the host left. A game left with AI
+                    // seats only is gone, and leaves the open games.
                     var updatedGame = gameManager.GetGame(gameId);
                     if (updatedGame != null)
                         await Clients.Group(gameId)
                             .SendAsync(HubEvents.PlayerLeft, updatedGame.GetLobbyPlayers());
+                    if (game.IsPublic)
+                        await BroadcastOpenGamesAsync();
                 }
             }
         }

@@ -32,7 +32,7 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
     public Game CreateGame(
         string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false,
-        string? visitorId = null)
+        string? visitorId = null, bool isPublic = false)
     {
         var seed = ResolveDistributionSeed(distributionSeed);
         return CreateGame(playerName, connectionId, visitorId,
@@ -41,18 +41,21 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
             {
                 HostConnectionId = connectionId,
                 DistributionSeed = seed,
-                NoJokers = noJokers
+                NoJokers = noJokers,
+                IsPublic = isPublic
             });
     }
 
-    public Game CreateGame(string playerName, string connectionId, SavedSeed saved, string? visitorId = null)
+    public Game CreateGame(
+        string playerName, string connectionId, SavedSeed saved, string? visitorId = null, bool isPublic = false)
     {
         var game = CreateGame(playerName, connectionId, visitorId, "list", new Game
         {
             HostConnectionId = connectionId,
             DistributionSeed = saved.Seed,
             NoJokers = saved.NoJokers,
-            SavedFrom = saved
+            SavedFrom = saved,
+            IsPublic = isPublic
         });
 
         // The table as it was saved: AI seats around the host, who sits on the saved seat.
@@ -85,7 +88,8 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
             Visitor = player.VisitorId,
             Name = playerName,
             Seed = seedKind,
-            NoJokers = game.NoJokers ? true : null
+            NoJokers = game.NoJokers ? true : null,
+            Public = game.IsPublic ? true : null
         });
         return game;
     }
@@ -151,6 +155,17 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
     public IReadOnlyList<Game> GetGames() => [.._games.Values];
 
+    public IReadOnlyList<OpenGameDto> GetOpenGames() =>
+        _games.Values
+            .Select(g => g.GetOpenGameEntry())
+            .OfType<OpenGameDto>()
+            .OrderBy(g => g.CreatedAt)
+            .Take(MaxOpenGamesListed)
+            .ToList();
+
+    /// <summary>How many open games the lobby lists, oldest first: those are waiting the longest.</summary>
+    public const int MaxOpenGamesListed = 20;
+
     public Player? AddPlayer(string gameId, string playerName, string connectionId, string? visitorId = null)
     {
         if (!_games.TryGetValue(gameId, out var game))
@@ -190,7 +205,8 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
             LogPlayerRemoved(removed!.Name, game.Id);
 
-            if (game.PlayerCount != 0) return true;
+            // Once no human is left in the lobby, nobody can start it: AI seats alone keep nothing.
+            if (game.IsStarted ? game.PlayerCount != 0 : game.HasHumanPlayer) return true;
 
             _games.TryRemove(game.Id, out _);
             LogGameRemoved(game.Id);
@@ -252,7 +268,7 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
     [LoggerMessage(Level = LogLevel.Information, Message = "Player {PlayerName} removed from game {GameId}")]
     private partial void LogPlayerRemoved(string playerName, string gameId);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} removed (no players left)")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} removed (no human player left)")]
     private partial void LogGameRemoved(string gameId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Engine initialized for game {GameId} with {PlayerCount} players")]
