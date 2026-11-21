@@ -85,9 +85,6 @@ services:
       - dataprotection_keys:/var/rummihub/keys
       # Liste des graines du lobby, commune à la production et au site de test.
       - seeds:/var/rummihub/seeds
-      # Journal des parties (/admin/statistiques) : un volume par projet, la
-      # production et le site de test gardent chacun le leur.
-      - stats:/var/rummihub/stats
     networks:
       - internal
     depends_on:
@@ -321,8 +318,6 @@ volumes:
   dataprotection_keys:
   # Base d'Umami : visites et événements, gardés d'un déploiement à l'autre.
   umami_db:
-  # Journal des parties. Sans nom fixe : rummihub_stats et rummihub-test_stats.
-  stats:
   # Nom fixe : les projets rummihub et rummihub-test montent le même volume. Le
   # second affiche « already exists but was created for project rummihub » : normal.
   seeds:
