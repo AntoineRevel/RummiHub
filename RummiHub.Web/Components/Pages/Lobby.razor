@@ -38,6 +38,41 @@
                        @ref="_nameInput" />
             </div>
 
+            @if (string.IsNullOrWhiteSpace(_joinGameId))
+            {
+                @* Games created « Open to anyone », waiting for players: no need to know the
+                   host or to have their link. The list follows the server live. *@
+                <div class="form-group">
+                    <span class="group-label">Open games</span>
+                    @if (_openGames.Count == 0)
+                    {
+                        <small class="seed-help">
+                            No open game right now. A game you create shows here for everyone, unless you untick « Open to anyone ».
+                        </small>
+                    }
+                    else
+                    {
+                        <div class="open-games">
+                            @foreach (var game in _openGames)
+                            {
+                                <div class="open-game">
+                                    <div class="open-game-info">
+                                        <strong>@game.Host's table</strong>
+                                        <small>@OpenGameSeats(game)</small>
+                                    </div>
+                                    <button type="button" class="btn-join-open"
+                                            disabled="@string.IsNullOrWhiteSpace(_playerName)"
+                                            title="@(string.IsNullOrWhiteSpace(_playerName) ? "Enter your name first" : $"Join {game.Host}'s table")"
+                                            @onclick="() => JoinOpenGame(game)">
+                                        Join
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
             <div class="form-group">
                 <label for="gameCode">Game code <span class="optional">(optional)</span></label>
                 <input id="gameCode"
@@ -127,6 +162,14 @@
                            @onchange="e => _noJokers = e.Value is true" />
                     <span>Play without jokers</span>
                 </label>
+
+                <label class="option-check">
+                    <input id="isPublic"
+                           type="checkbox"
+                           checked="@_isPublic"
+                           @onchange="e => _isPublic = e.Value is true" />
+                    <span>Open to anyone <span class="optional">· listed in open games until it starts</span></span>
+                </label>
             }
 
             <button class="btn-action @(string.IsNullOrWhiteSpace(_joinGameId) ? "btn-create" : "btn-join")"
@@ -165,6 +208,29 @@
                         <strong class="info-value seed-value">@(_gameSaved?.Name ?? _gameSeed)</strong>
                     </div>
                 }
+                <div class="info-row">
+                    <span class="info-label">Open to</span>
+                    @if (_isHost && !_gameStarted)
+                    {
+                        @* The host decides until the start: listed for anyone, or code and link only. *@
+                        <div class="visibility-switch" role="group" aria-label="Who can join">
+                            <button type="button" class="@(_gamePublic ? "active" : null)"
+                                    aria-pressed="@(_gamePublic ? "true" : "false")"
+                                    @onclick="() => SetGamePublic(true)">
+                                Anyone
+                            </button>
+                            <button type="button" class="@(_gamePublic ? null : "active")"
+                                    aria-pressed="@(_gamePublic ? "false" : "true")"
+                                    @onclick="() => SetGamePublic(false)">
+                                Invite only
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <strong class="info-value">@(_gamePublic ? "anyone" : "invite only")</strong>
+                    }
+                </div>
                 @if (_gameNoJokers)
                 {
                     <div class="info-row">
@@ -213,6 +279,10 @@
                     <div class="player-row @(player.Name == _playerName ? "me" : "")">
                         <span class="player-dot"></span>
                         <span>@player.Name</span>
+                        @if (player.IsHost)
+                        {
+                            <span class="host-badge">host</span>
+                        }
                         @if (player.Name == _playerName)
                         {
                             <span class="you-badge">you</span>
@@ -227,6 +297,15 @@
                     </div>
                 }
             </div>
+
+            @if (!_gameStarted)
+            {
+                <p class="hint">
+                    @(_gamePublic
+                        ? "Listed in the lobby's open games: anyone can join until the game starts."
+                        : "Not listed: only players with the game code or the invite link can join.")
+                </p>
+            }
 
             @if (_gameStarted)
             {
@@ -270,7 +349,7 @@
             {
                 <p class="waiting-hint">
                     <span class="dot-pulse"></span>
-                    Waiting for the host to start the game…
+                    Waiting for @(HostName ?? "the host") to start the game…
                 </p>
             }
         </div>
@@ -342,6 +421,72 @@
         font-weight: 600;
         color: #3a3a3a;
         font-size: 0.95rem;
+    }
+
+    .group-label {
+        font-weight: 600;
+        color: #3a3a3a;
+        font-size: 0.95rem;
+    }
+
+    .open-games {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 260px;
+        overflow-y: auto;
+    }
+
+    .open-game {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        background: #f8f9fa;
+        border: 2px solid #e9ecef;
+        border-radius: 10px;
+    }
+
+    .open-game-info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .open-game-info strong {
+        color: #3a3a3a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .open-game-info small {
+        color: #888;
+        font-size: 0.8rem;
+    }
+
+    .btn-join-open {
+        flex-shrink: 0;
+        padding: 8px 18px;
+        font-family: inherit;
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: white;
+        background: linear-gradient(135deg, #4caf50, #388e3c);
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+    }
+
+    .btn-join-open:hover:not(:disabled) {
+        background: linear-gradient(135deg, #43a047, #2e7d32);
+    }
+
+    .btn-join-open:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
     }
 
     .optional {
@@ -656,6 +801,48 @@
         border: 1px solid #90caf9;
         border-radius: 10px;
         padding: 2px 8px;
+    }
+
+    .visibility-switch {
+        display: inline-flex;
+        border: 2px solid #90caf9;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    .visibility-switch button {
+        padding: 5px 12px;
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #1565c0;
+        background: #fff;
+        border: none;
+        cursor: pointer;
+    }
+
+    .visibility-switch button + button {
+        border-left: 2px solid #90caf9;
+    }
+
+    .visibility-switch button.active {
+        color: #fff;
+        background: #1976d2;
+    }
+
+    .host-badge {
+        margin-left: auto;
+        font-size: 0.75rem;
+        color: #6d4c41;
+        font-weight: 600;
+        background: #fff8e1;
+        border: 1px solid #ffcc80;
+        border-radius: 10px;
+        padding: 2px 8px;
+    }
+
+    .host-badge + .you-badge {
+        margin-left: 0;
     }
 
     /* Start button */

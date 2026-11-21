@@ -42,7 +42,23 @@ public class Game
 
     /// <summary>Set when the host starts the game; null in the lobby.</summary>
     public DateTimeOffset? StartedAt { get; set; }
-    public string HostConnectionId { get; init; } = string.Empty;
+    private string _hostConnectionId = string.Empty;
+
+    /// <summary>
+    /// The connection of the player who may add AIs and start the game. When the host leaves
+    /// the lobby, the next human seat takes over (<see cref="RemovePlayer"/>), so players who
+    /// joined an open game are never left waiting for someone who is gone.
+    /// </summary>
+    public string HostConnectionId
+    {
+        get { lock (_playersLock) return _hostConnectionId; }
+        init => _hostConnectionId = value;
+    }
+
+    /// <summary>
+    /// Listed in the lobby's open games while it waits for players (« Open to anyone »), so
+    /// players who do not know each other can sit at the same table. The host can switch it in the waiting room until the start (<c>SetGamePublic</c>).
+    public bool IsPublic { get; set; }
 
     /// <summary>
     /// Server-side game engine, initialized when the game starts.
@@ -152,7 +168,9 @@ public class Game
     {
         lock (_playersLock)
         {
-            return Players.Select(p => new LobbyPlayerDto(p.Name, p.IsAuto)).ToList();
+            return Players
+                .Select(p => new LobbyPlayerDto(p.Name, p.IsAuto, p.ConnectionId == _hostConnectionId && !p.IsAuto))
+                .ToList();
         }
     }
 
@@ -178,6 +196,38 @@ public class Game
         lock (_savedSeats)
         {
             _savedSeats.Add(seat);
+        }
+    }
+
+    /// <summary>A human seat is still taken: once only AIs remain, nobody can start the game.</summary>
+    public bool HasHumanPlayer
+    {
+        get
+        {
+            lock (_playersLock)
+            {
+                return Players.Any(p => !p.IsAuto);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The lobby's entry for this game while anyone may join it: public, not started, with
+    /// a host and a free seat; null otherwise.
+    /// </summary>
+    public OpenGameDto? GetOpenGameEntry()
+    {
+        lock (_playersLock)
+        {
+            if (!IsPublic || IsStarted || Players.Count >= GameLimits.MaxPlayers)
+                return null;
+
+            var host = Players.FirstOrDefault(p => !p.IsAuto && p.ConnectionId == _hostConnectionId);
+            if (host is null)
+                return null;
+
+            return new OpenGameDto(
+                Id, host.Name, Players.Count(p => !p.IsAuto), Players.Count(p => p.IsAuto), NoJokers, CreatedAt);
         }
     }
 
@@ -232,7 +282,7 @@ public class Game
         if (SavedFrom is null || IsStarted)
             return;
 
-        var host = Players.FirstOrDefault(p => p.ConnectionId == HostConnectionId);
+        var host = Players.FirstOrDefault(p => p.ConnectionId == _hostConnectionId);
         if (host is null)
             return;
 
@@ -255,6 +305,8 @@ public class Game
             removed = Players.FirstOrDefault(p => p.ConnectionId == connectionId);
             if (removed == null) return false;
             Players.Remove(removed);
+            if (!IsStarted && connectionId == _hostConnectionId)
+                _hostConnectionId = Players.FirstOrDefault(p => !p.IsAuto)?.ConnectionId ?? string.Empty;
             KeepHostSeat();
             return true;
         }

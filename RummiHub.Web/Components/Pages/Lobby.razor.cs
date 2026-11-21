@@ -25,6 +25,21 @@ public partial class Lobby
     private List<LobbyPlayerDto> _players = [];
     private List<SeedListItemDto> _seeds = [];
 
+    /// <summary>The games anyone may join, as the server last sent them (oldest first).</summary>
+    private List<OpenGameDto> _openGames = [];
+
+    /// <summary>The "Open to anyone" box of the create form, ticked by default (user's choice).</summary>
+    private bool _isPublic = true;
+
+    /// <summary>
+    /// The game this lobby sits in is listed in the open games, as the server last said
+    /// (<see cref="HubEvents.GameVisibility"/>); the host switches it with <see cref="SetGamePublic"/>.
+    /// </summary>
+    private bool _gamePublic;
+
+    /// <summary>The game code a Join was sent for, until the server seats this page.</summary>
+    private string? _pendingJoinId;
+
     /// <summary>The seed select: <see cref="RandomSeed"/>, <see cref="PasteSeed"/> or a listed seed.</summary>
     private string _seedChoice = RandomSeed;
     private string _pastedSeed = string.Empty;
@@ -154,6 +169,18 @@ public partial class Lobby
             InvokeAsync(StateHasChanged);
         });
 
+        _hubConnection.On<List<OpenGameDto>>(HubEvents.OpenGames, games =>
+        {
+            _openGames = games;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hubConnection.On<bool>(HubEvents.GameVisibility, isPublic =>
+        {
+            _gamePublic = isPublic;
+            InvokeAsync(StateHasChanged);
+        });
+
         _hubConnection.On<string, string>(HubEvents.SeatIssued, (gameId, token) =>
             InvokeAsync(async () =>
             {
@@ -164,8 +191,7 @@ public partial class Lobby
         _hubConnection.On<string, List<LobbyPlayerDto>>(HubEvents.GameCreated, (gameId, players) =>
         {
             _gameId = gameId;
-            _players = players;
-            _isHost = true;
+            SetPlayers(players);
             _error = null;
             InvokeAsync(async () =>
             {
@@ -176,9 +202,9 @@ public partial class Lobby
 
         _hubConnection.On<string, List<LobbyPlayerDto>>(HubEvents.PlayerJoined, (playerName, players) =>
         {
-            _players = players;
             var joined = _gameId == null;
-            if (joined) _gameId = _joinGameId;
+            if (joined) _gameId = _pendingJoinId;
+            SetPlayers(players);
             _error = null;
             InvokeAsync(async () =>
             {
@@ -190,7 +216,7 @@ public partial class Lobby
 
         _hubConnection.On<List<LobbyPlayerDto>>(HubEvents.PlayerLeft, players =>
         {
-            _players = players;
+            SetPlayers(players);
             InvokeAsync(StateHasChanged);
         });
 
@@ -232,12 +258,26 @@ public partial class Lobby
             await _hubConnection.StartAsync();
             _isConnected = true;
             await _hubConnection.SendAsync(HubEvents.GetSeedList);
+            await _hubConnection.SendAsync(HubEvents.WatchOpenGames);
         }
         catch (Exception ex)
         {
             _error = $"Could not connect to server: {ex.Message}";
         }
     }
+
+    /// <summary>
+    /// Takes the waiting room's list. Whoever the server marks as host may add AIs and start:
+    /// when the host leaves before the start, the next human takes over.
+    /// </summary>
+    private void SetPlayers(List<LobbyPlayerDto> players)
+    {
+        _players = players;
+        _isHost = players.Any(p => p.IsHost && p.Name == _playerName);
+    }
+
+    /// <summary>The host's name, as the waiting room shows it to the other players.</summary>
+    private string? HostName => _players.FirstOrDefault(p => p.IsHost)?.Name;
 
     /// <summary>
     /// Keeps the seat secret in this browser tab so the game page can reclaim the seat
@@ -277,7 +317,7 @@ public partial class Lobby
         if (string.IsNullOrWhiteSpace(_joinGameId))
             await CreateGame();
         else
-            await JoinGame();
+            await JoinGame(_joinGameId);
     }
 
     /// <summary>The pasted seed, normalized; null when not pasting or not valid yet.</summary>
@@ -371,19 +411,40 @@ public partial class Lobby
         if (_hubConnection is null || !CanCreate)
             return;
 
+        // The server keeps the name trimmed; the waiting room compares names to find "you".
+        _playerName = _playerName.Trim();
         var pasted = PastedSeed;
         _gameSaved = SelectedSeed;
         _gameSeed = pasted is not null ? DistributionSeeds.Abbreviate(pasted) : _gameSaved?.Short;
         _gameNoJokers = NoJokersChoice;
+        _gamePublic = _isPublic;
         await _hubConnection.SendAsync(
-            HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id, _noJokers, await VisitorIdAsync());
+            HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id, _noJokers, await VisitorIdAsync(), _isPublic);
     }
 
-    private async Task JoinGame()
+    private async Task JoinGame(string gameId)
     {
-        if (_hubConnection is not null)
-            await _hubConnection.SendAsync(HubEvents.JoinGame, _joinGameId, _playerName, await VisitorIdAsync());
+        if (_hubConnection is null || string.IsNullOrWhiteSpace(_playerName))
+            return;
+
+        _playerName = _playerName.Trim();
+        _pendingJoinId = gameId.Trim();
+        await _hubConnection.SendAsync(HubEvents.JoinGame, _pendingJoinId, _playerName, await VisitorIdAsync());
     }
+
+    /// <summary>Sits at a game picked from the open games, under the name typed above.</summary>
+    private async Task JoinOpenGame(OpenGameDto game)
+    {
+        _gamePublic = true;
+        _gameNoJokers = game.NoJokers;
+        await JoinGame(game.Id);
+    }
+
+    /// <summary>"2/4 players (1 AI)": the seats taken out of <see cref="GameLimits.MaxPlayers"/>.</summary>
+    private static string OpenGameSeats(OpenGameDto game) =>
+        $"{game.Humans + game.Ais}/{GameLimits.MaxPlayers} players"
+        + (game.Ais > 0 ? $" ({game.Ais} AI)" : "")
+        + (game.NoJokers ? " · no jokers" : "");
 
     /// <summary>This browser's anonymous id (stats.js), for the game journal; null when the script failed.</summary>
     private async Task<string?> VisitorIdAsync()
@@ -396,6 +457,19 @@ public partial class Lobby
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Host only, before the start: opens the game to anyone or keeps it to the code and the
+    /// invite link. Shown at once; the server's answer confirms it for every player.
+    /// </summary>
+    private async Task SetGamePublic(bool isPublic)
+    {
+        if (_hubConnection is null || _gameId is null || !_isHost || _gameStarted)
+            return;
+
+        _gamePublic = isPublic;
+        await _hubConnection.SendAsync(HubEvents.SetGamePublic, _gameId, isPublic);
     }
 
     private async Task AddAiPlayer()

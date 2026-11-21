@@ -67,6 +67,9 @@ public sealed record JournalEntry
 
     public bool? NoJokers { get; init; }
 
+    /// <summary>Created « Open to anyone »: listed in the lobby for players who do not know the host.</summary>
+    public bool? Public { get; init; }
+
     /// <summary>Rounds played when the game ended (<see cref="GameEngine.Turn"/>).</summary>
     public int? Turns { get; init; }
 

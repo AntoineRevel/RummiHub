@@ -9,17 +9,19 @@ public interface IGameManager
     /// when empty, without the two jokers when <paramref name="noJokers"/>. Throws
     /// <see cref="ArgumentException"/> (message for the player) on a malformed seed.
     /// <paramref name="visitorId"/> is the host's browser id for the game journal (<see cref="VisitorIds"/>).
+    /// A <paramref name="isPublic"/> game is listed in the lobby (<see cref="GetOpenGames"/>).
     /// </summary>
     Game CreateGame(
         string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false,
-        string? visitorId = null);
+        string? visitorId = null, bool isPublic = false);
 
     /// <summary>
     /// Creates a game replaying a list entry: its seed, AI seats up to its table size, and the
     /// host on its seat, so the host gets the same rack and the same draws (with or without
     /// jokers, as it was saved).
     /// </summary>
-    Game CreateGame(string playerName, string connectionId, SavedSeed saved, string? visitorId = null);
+    Game CreateGame(
+        string playerName, string connectionId, SavedSeed saved, string? visitorId = null, bool isPublic = false);
 
     /// <summary>
     /// Adds an AI (auto-play) seat to a not-yet-started game. Returns null if the game is
@@ -53,6 +55,12 @@ public interface IGameManager
 
     Game? GetGame(string gameId);
 
+    /// <summary>
+    /// The games anyone may join from the lobby: public, not started, with a host and a free
+    /// seat, oldest first (<see cref="GameManager.MaxOpenGamesListed"/> at most).
+    /// </summary>
+    IReadOnlyList<OpenGameDto> GetOpenGames();
+
     /// <summary>Every game still in memory, in the lobby or started (admin page).</summary>
     IReadOnlyList<Game> GetGames();
 
@@ -61,6 +69,10 @@ public interface IGameManager
     /// has <see cref="GameLimits.MaxPlayers"/> seats.
     /// </summary>
     Player? AddPlayer(string gameId, string playerName, string connectionId, string? visitorId = null);
+    /// <summary>
+    /// Frees the seat of a player who left. A game in the lobby goes once no human is left;
+    /// when its host leaves, the next human becomes host.
+    /// </summary>
     bool RemovePlayer(string connectionId);
     Game? FindGameByConnection(string connectionId);
 

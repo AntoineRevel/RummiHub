@@ -102,7 +102,7 @@ public class GameManagerTests
         game.DistributionSeed.Should().Be(SeedA);
         var seats = game.GetLobbyPlayers();
         seats.Should().HaveCount(players);
-        seats[seat].Should().Be(new LobbyPlayerDto("Alice", false));
+        seats[seat].Should().Be(new LobbyPlayerDto("Alice", false, IsHost: true));
         seats.Where((_, i) => i != seat).Should().OnlyContain(p => p.IsAuto);
     }
 

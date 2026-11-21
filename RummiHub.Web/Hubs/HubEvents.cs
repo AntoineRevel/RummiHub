@@ -9,6 +9,8 @@ public static class HubEvents
     public const string GameStarted = nameof(GameStarted);
     public const string SeedList = nameof(SeedList);
     public const string SeatIssued = nameof(SeatIssued);
+    public const string OpenGames = nameof(OpenGames);
+    public const string GameVisibility = nameof(GameVisibility);
     public const string Error = nameof(Error);
 
     // === Lobby phase: Client -> Server ===
@@ -20,6 +22,8 @@ public static class HubEvents
     public const string GetSeedList = nameof(GetSeedList);
     public const string RemoveSeed = nameof(RemoveSeed);
     public const string RenameSeed = nameof(RenameSeed);
+    public const string WatchOpenGames = nameof(WatchOpenGames);
+    public const string SetGamePublic = nameof(SetGamePublic);
 
     // === Game phase: Server -> Client ===
     public const string GameStateUpdated = nameof(GameStateUpdated);
