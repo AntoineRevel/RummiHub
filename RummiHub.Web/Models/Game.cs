@@ -57,9 +57,8 @@ public class Game
 
     /// <summary>
     /// Listed in the lobby's open games while it waits for players (« Open to anyone »), so
-    /// players who do not know each other can sit at the same table.
-    /// </summary>
-    public bool IsPublic { get; init; }
+    /// players who do not know each other can sit at the same table. The host can switch it in the waiting room until the start (<c>SetGamePublic</c>).
+    public bool IsPublic { get; set; }
 
     /// <summary>
     /// Server-side game engine, initialized when the game starts.

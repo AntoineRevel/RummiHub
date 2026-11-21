@@ -47,7 +47,7 @@
                     @if (_openGames.Count == 0)
                     {
                         <small class="seed-help">
-                            No open game right now. Create one with « Open to anyone » ticked: it shows here for everyone.
+                            No open game right now. A game you create shows here for everyone, unless you untick « Open to anyone ».
                         </small>
                     }
                     else
@@ -208,13 +208,29 @@
                         <strong class="info-value seed-value">@(_gameSaved?.Name ?? _gameSeed)</strong>
                     </div>
                 }
-                @if (_gamePublic)
-                {
-                    <div class="info-row">
-                        <span class="info-label">Open to</span>
-                        <strong class="info-value">anyone</strong>
-                    </div>
-                }
+                <div class="info-row">
+                    <span class="info-label">Open to</span>
+                    @if (_isHost && !_gameStarted)
+                    {
+                        @* The host decides until the start: listed for anyone, or code and link only. *@
+                        <div class="visibility-switch" role="group" aria-label="Who can join">
+                            <button type="button" class="@(_gamePublic ? "active" : null)"
+                                    aria-pressed="@(_gamePublic ? "true" : "false")"
+                                    @onclick="() => SetGamePublic(true)">
+                                Anyone
+                            </button>
+                            <button type="button" class="@(_gamePublic ? null : "active")"
+                                    aria-pressed="@(_gamePublic ? "false" : "true")"
+                                    @onclick="() => SetGamePublic(false)">
+                                Invite only
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <strong class="info-value">@(_gamePublic ? "anyone" : "invite only")</strong>
+                    }
+                </div>
                 @if (_gameNoJokers)
                 {
                     <div class="info-row">
@@ -282,9 +298,13 @@
                 }
             </div>
 
-            @if (_gamePublic && !_gameStarted)
+            @if (!_gameStarted)
             {
-                <p class="hint">Listed in the lobby's open games: anyone can join until the game starts.</p>
+                <p class="hint">
+                    @(_gamePublic
+                        ? "Listed in the lobby's open games: anyone can join until the game starts."
+                        : "Not listed: only players with the game code or the invite link can join.")
+                </p>
             }
 
             @if (_gameStarted)
@@ -781,6 +801,33 @@
         border: 1px solid #90caf9;
         border-radius: 10px;
         padding: 2px 8px;
+    }
+
+    .visibility-switch {
+        display: inline-flex;
+        border: 2px solid #90caf9;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    .visibility-switch button {
+        padding: 5px 12px;
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #1565c0;
+        background: #fff;
+        border: none;
+        cursor: pointer;
+    }
+
+    .visibility-switch button + button {
+        border-left: 2px solid #90caf9;
+    }
+
+    .visibility-switch button.active {
+        color: #fff;
+        background: #1976d2;
     }
 
     .host-badge {

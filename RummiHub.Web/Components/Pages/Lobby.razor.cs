@@ -28,10 +28,13 @@ public partial class Lobby
     /// <summary>The games anyone may join, as the server last sent them (oldest first).</summary>
     private List<OpenGameDto> _openGames = [];
 
-    /// <summary>The "Open to anyone" box of the create form.</summary>
-    private bool _isPublic;
+    /// <summary>The "Open to anyone" box of the create form, ticked by default (user's choice).</summary>
+    private bool _isPublic = true;
 
-    /// <summary>The game this lobby sits in is listed in the open games.</summary>
+    /// <summary>
+    /// The game this lobby sits in is listed in the open games, as the server last said
+    /// (<see cref="HubEvents.GameVisibility"/>); the host switches it with <see cref="SetGamePublic"/>.
+    /// </summary>
     private bool _gamePublic;
 
     /// <summary>The game code a Join was sent for, until the server seats this page.</summary>
@@ -169,6 +172,12 @@ public partial class Lobby
         _hubConnection.On<List<OpenGameDto>>(HubEvents.OpenGames, games =>
         {
             _openGames = games;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hubConnection.On<bool>(HubEvents.GameVisibility, isPublic =>
+        {
+            _gamePublic = isPublic;
             InvokeAsync(StateHasChanged);
         });
 
@@ -448,6 +457,19 @@ public partial class Lobby
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Host only, before the start: opens the game to anyone or keeps it to the code and the
+    /// invite link. Shown at once; the server's answer confirms it for every player.
+    /// </summary>
+    private async Task SetGamePublic(bool isPublic)
+    {
+        if (_hubConnection is null || _gameId is null || !_isHost || _gameStarted)
+            return;
+
+        _gamePublic = isPublic;
+        await _hubConnection.SendAsync(HubEvents.SetGamePublic, _gameId, isPublic);
     }
 
     private async Task AddAiPlayer()

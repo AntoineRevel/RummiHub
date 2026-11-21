@@ -46,6 +46,22 @@ public class OpenGamesTests
     }
 
     [Fact]
+    public void TheHostSwitch_ListsOrHidesTheGame_InPlace()
+    {
+        var manager = CreateManager();
+        var game = manager.CreateGame("Alice", "conn-1");
+        manager.AddPlayer(game.Id, "Bob", "conn-2");
+        manager.GetOpenGames().Should().BeEmpty();
+
+        game.IsPublic = true;
+        manager.GetOpenGames().Should().ContainSingle().Which.Humans.Should().Be(2);
+
+        game.IsPublic = false;
+        manager.GetOpenGames().Should().BeEmpty();
+        game.GetPlayerNames().Should().Equal("Alice", "Bob");
+    }
+
+    [Fact]
     public void WhenTheHostLeaves_TheNextHumanBecomesHost()
     {
         var manager = CreateManager();

@@ -211,6 +211,7 @@ public partial class GameHub(
 
             await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
             await Clients.Caller.SendAsync(HubEvents.SeatIssued, gameId, player.SeatToken);
+            await Clients.Caller.SendAsync(HubEvents.GameVisibility, game.IsPublic);
             await Clients.Group(gameId).SendAsync(HubEvents.PlayerJoined, player.Name, game.GetLobbyPlayers());
             if (game.IsPublic)
                 await BroadcastOpenGamesAsync();
@@ -219,6 +220,36 @@ public partial class GameHub(
         {
             LogHubError(ex, nameof(JoinGame), Context.ConnectionId);
             await Clients.Caller.SendAsync(HubEvents.Error, "An error occurred while joining the game.");
+        }
+    }
+
+    /// <summary>
+    /// Host opens the game to anyone (listed in the lobby's open games) or keeps it to the code
+    /// and invite link, until the start. Every seated player is told.
+    /// </summary>
+    public async Task SetGamePublic(string gameId, bool isPublic)
+    {
+        try
+        {
+            gameId = gameId?.Trim() ?? string.Empty;
+
+            var game = gameManager.GetGame(gameId);
+            if (game == null || game.HostConnectionId != Context.ConnectionId || game.IsStarted)
+                return;
+
+            if (game.IsPublic != isPublic)
+            {
+                game.IsPublic = isPublic;
+                LogGameVisibility(gameId, isPublic);
+                await BroadcastOpenGamesAsync();
+            }
+
+            await Clients.Group(gameId).SendAsync(HubEvents.GameVisibility, game.IsPublic);
+        }
+        catch (Exception ex)
+        {
+            LogHubError(ex, nameof(SetGamePublic), Context.ConnectionId);
+            await Clients.Caller.SendAsync(HubEvents.Error, "An error occurred while changing who can join.");
         }
     }
 
@@ -971,6 +1002,9 @@ public partial class GameHub(
             : [];
 
     // ========== LOGGING ==========
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} open to anyone: {IsPublic}")]
+    private partial void LogGameVisibility(string gameId, bool isPublic);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Game {GameId} started")]
     private partial void LogGameStarted(string gameId);
