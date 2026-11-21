@@ -468,6 +468,49 @@ public class BoardStabilizerTests
         ShouldBeLegalOver(result, board, rack);
     }
 
+    [Fact]
+    public void TileJoiningAGroup_TakesTheSeatATileLeavingItLeft()
+    {
+        // 7B leaves the middle of the group for the run, 7M joins the group: colors in a
+        // group have no order, so 7M takes 7B's seat and 7K does not move.
+        var sevens = VSet(T(7, TileColor.Red), T(7, TileColor.Blue), T(7, TileColor.Black));
+        var blueRun = VSet(T(8, TileColor.Blue), T(9, TileColor.Blue), T(10, TileColor.Blue));
+        var board = new Solution { IsValid = true, Sets = [sevens, blueRun] };
+        var rack = new Set([T(7, TileColor.Mango), T(6, TileColor.Blue)]);
+
+        var solved = SolveFor(board, rack);
+        solved.TilesToPlay.Should().HaveCount(2);
+
+        var result = BoardStabilizer.Stabilize(board, solved);
+
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(2);
+        sets[0].Tiles.Select(t => t.Color).Should().Equal(TileColor.Red, TileColor.Mango, TileColor.Black);
+        sets[1].Tiles.Select(t => t.Value).Should().Equal(6, 7, 8, 9, 10);
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Theory]
+    // Nothing leaves: newcomers go at the end.
+    [InlineData(new[] { 0, 1, 2, -1 }, 3, new[] { 0, 1, 2, 3 })]
+    // A newcomer fills the seat a departed tile left.
+    [InlineData(new[] { 0, 2, -1 }, 3, new[] { 0, 2, 1 })]
+    [InlineData(new[] { 1, 2, -1 }, 3, new[] { 2, 0, 1 })]
+    [InlineData(new[] { 0, 3, -1, -1 }, 4, new[] { 0, 2, 3, 1 })]
+    // Only shrinking, 7B gone from R B K M: R steps into the gap, K and M stay.
+    [InlineData(new[] { 0, 2, 3 }, 4, new[] { 0, 1, 2 })]
+    // 7K gone from R B K M: M steps into the gap.
+    [InlineData(new[] { 0, 1, 3 }, 4, new[] { 0, 1, 2 })]
+    public void GroupTiles_KeepTheirSeatsAndNewcomersFillTheGaps(int[] seats, int oldCount, int[] expected)
+    {
+        var colors = Enum.GetValues<TileColor>();
+        var tiles = seats.Select((seat, i) => (T(5, colors[i]), seat)).ToList();
+
+        var laid = BoardStabilizer.InPlace(tiles, oldCount);
+
+        laid.Should().Equal(expected.Select(i => tiles[i].Item1));
+    }
+
     [Theory]
     [InlineData(1, 2)]
     [InlineData(2, 4)]
