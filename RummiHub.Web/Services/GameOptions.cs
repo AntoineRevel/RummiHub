@@ -9,4 +9,11 @@ public class GameOptions
     /// older seeds.json (seeds alone) is no longer read.
     /// </summary>
     public string SeedsFile { get; set; } = "App_Data/seed-configs.json";
+
+    /// <summary>
+    /// The game journal (<see cref="FileGameJournal"/>), relative to the content root. The
+    /// container image points it at a volume of its own Compose project: production and the
+    /// test site each keep theirs.
+    /// </summary>
+    public string JournalFile { get; set; } = "App_Data/game-journal.jsonl";
 }

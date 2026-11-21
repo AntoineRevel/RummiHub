@@ -151,6 +151,13 @@ public static class BoardGrid
     /// first. <paramref name="unchanged"/>: the previous set a next set is, tile for tile, or
     /// -1. <paramref name="givers"/>: the previous sets each next set takes tiles from.
     /// </summary>
+    /// <summary>
+    /// Where each tile of each next set comes from: (previous set, seat in it), or (-1, -1)
+    /// for a tile from the hand; the same matching <see cref="Place"/> lays the sets with.
+    /// </summary>
+    public static (int Prev, int Seat)[][] Sources(IReadOnlyList<ValidSet> previous, IReadOnlyList<ValidSet> next) =>
+        Sources(previous, next, out _, out _);
+
     private static (int Prev, int Seat)[][] Sources(IReadOnlyList<ValidSet> previous, IReadOnlyList<ValidSet> next,
         out int[] unchanged, out HashSet<int>[] givers)
     {

@@ -76,6 +76,14 @@ builder.Services.AddSingleton<ISeedStore>(sp =>
         TimeProvider.System,
         sp.GetRequiredService<ILogger<FileSeedStore>>());
 });
+builder.Services.AddSingleton<IGameJournal>(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<GameOptions>>().Value;
+    return new FileGameJournal(
+        Path.Combine(builder.Environment.ContentRootPath, options.JournalFile),
+        TimeProvider.System,
+        sp.GetRequiredService<ILogger<FileGameJournal>>());
+});
 var benchAccess = SolverBenchAccess.From(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(benchAccess);
 builder.Services.AddSingleton<IGameManager, GameManager>();

@@ -10,7 +10,7 @@ public class GameManagerTests
     private static GameManager CreateManager() => CreateManager(new InMemorySeedStore());
 
     private static GameManager CreateManager(ISeedStore seedStore) =>
-        new(NullLogger<GameManager>.Instance, seedStore);
+        new(NullLogger<GameManager>.Instance, seedStore, new InMemoryGameJournal());
 
     private static readonly string SeedA = new('a', DistributionSeeds.Length);
     private static readonly string SeedB = new('b', DistributionSeeds.Length);

@@ -15,10 +15,11 @@
 <h1 class="h3">Parties en cours</h1>
 <p class="text-muted small">
     @_rows.Count partie(s) en mémoire · @_rows.Count(r => r.Started) lancée(s) ·
-    page rechargée toutes les 15 s · heures UTC
+    page rechargée toutes les 15 s · heures UTC ·
+    <a href="/admin/statistiques">Statistiques des parties</a>
     @if (!string.IsNullOrWhiteSpace(Umami.Value.DashboardUrl))
     {
-        <text> · </text><a href="@Umami.Value.DashboardUrl">Statistiques (Umami)</a>
+        <text> · </text><a href="@Umami.Value.DashboardUrl">Visites (Umami)</a>
     }
 </p>
 
