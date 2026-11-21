@@ -26,7 +26,10 @@
 {
     @* Served by Caddy from Umami (deploy/Caddyfile). The URL is sent without its query and
        fragment: the game link carries the player name and the seat secret (#seat=). *@
+    @* data-distinct-id: the browser's anonymous id (stats.js, VisitorIds), so Umami counts one
+       player once across days and networks. Absent on a first visit: stats.js then identifies. *@
     <script defer src="/stats/script.js" data-website-id="@_umamiWebsite"
+            data-distinct-id="@_visitorId"
             data-exclude-search="true" data-exclude-hash="true"></script>
 }
 </body>
@@ -36,6 +39,7 @@
     [CascadingParameter] private HttpContext? HttpContext { get; set; }
 
     private string? _umamiWebsite;
+    private string? _visitorId;
 
     protected override void OnInitialized()
     {
@@ -44,5 +48,6 @@
             return;
 
         _umamiWebsite = Umami.Value.WebsiteFor(HttpContext?.Request.Host.Host);
+        _visitorId = VisitorIds.Normalize(HttpContext?.Request.Cookies[VisitorIds.CookieName]);
     }
 }
