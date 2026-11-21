@@ -468,6 +468,97 @@ public class BoardStabilizerTests
         ShouldBeLegalOver(result, board, rack);
     }
 
+    [Fact]
+    public void TileJoiningAGroup_TakesTheSeatATileLeavingItLeft()
+    {
+        // 7B leaves the middle of the group for the run, 7M joins the group: colors in a
+        // group have no order, so 7M takes 7B's seat and 7K does not move.
+        var sevens = VSet(T(7, TileColor.Red), T(7, TileColor.Blue), T(7, TileColor.Black));
+        var blueRun = VSet(T(8, TileColor.Blue), T(9, TileColor.Blue), T(10, TileColor.Blue));
+        var board = new Solution { IsValid = true, Sets = [sevens, blueRun] };
+        var rack = new Set([T(7, TileColor.Mango), T(6, TileColor.Blue)]);
+
+        var solved = SolveFor(board, rack);
+        solved.TilesToPlay.Should().HaveCount(2);
+
+        var result = BoardStabilizer.Stabilize(board, solved);
+
+        var sets = result.BestSolution.Sets;
+        sets.Should().HaveCount(2);
+        sets[0].Tiles.Select(t => t.Color).Should().Equal(TileColor.Red, TileColor.Mango, TileColor.Black);
+        sets[1].Tiles.Select(t => t.Value).Should().Equal(6, 7, 8, 9, 10);
+        ShouldBeLegalOver(result, board, rack);
+    }
+
+    [Fact]
+    public void NewGroupAroundATileTakenFromTheEndOfARun_LeavesThatTileOnItsCell()
+    {
+        // Test site, game 51b6039b turn 7: the AI takes 10R off the end of the red run and
+        // lays 10B 10M from its hand beside it. The red 10 must not budge: the 10s from the
+        // hand go on its free side, not around it (the run keeps 4R-8R right before it).
+        Tile J(int value, TileColor color) => new(value, color, isJoker: true);
+        var redRun = VSet(T(4, TileColor.Red), T(5, TileColor.Red), T(6, TileColor.Red), T(7, TileColor.Red),
+            T(8, TileColor.Red), J(9, TileColor.Red), T(10, TileColor.Red));
+        var board = new Solution
+        {
+            IsValid = true,
+            Sets =
+            [
+                VSet(T(5, TileColor.Blue), T(5, TileColor.Mango), T(5, TileColor.Black), T(5, TileColor.Red)),
+                VSet(T(9, TileColor.Black), T(10, TileColor.Black), T(11, TileColor.Black)),
+                VSet(T(2, TileColor.Black), T(3, TileColor.Black), T(4, TileColor.Black)),
+                redRun,
+                VSet(T(12, TileColor.Mango), T(12, TileColor.Black), T(12, TileColor.Red)),
+                VSet(T(1, TileColor.Mango), T(2, TileColor.Mango), T(3, TileColor.Mango)),
+                VSet(T(13, TileColor.Blue), T(13, TileColor.Red), T(13, TileColor.Mango), T(13, TileColor.Black)),
+                VSet(T(4, TileColor.Blue), T(4, TileColor.Red), T(4, TileColor.Mango)),
+            ]
+        };
+        var rack = new Set([T(6, TileColor.Blue), T(10, TileColor.Blue), T(12, TileColor.Blue), T(9, TileColor.Blue),
+            T(4, TileColor.Black), T(2, TileColor.Black), T(6, TileColor.Black), T(10, TileColor.Mango),
+            T(10, TileColor.Mango), T(5, TileColor.Mango), T(11, TileColor.Mango), T(8, TileColor.Mango),
+            T(1, TileColor.Blue), T(5, TileColor.Blue)]);
+
+        var result = BoardStabilizer.Stabilize(board, SolveFor(board, rack));
+        ShouldBeLegalOver(result, board, rack);
+
+        var sets = result.BestSolution.Sets;
+        var tens = sets.Single(s => s.IsGroup && s.Tiles.Any(t => t.Value == 10 && t.Color == TileColor.Red));
+        tens.Tiles[0].Color.Should().Be(TileColor.Red, "the red 10 stays where it was, the others go on its right");
+
+        // One set per row, room after each, like the red run on the test site.
+        var before = board.Sets.Select((_, row) => new BoardSpot(row, 0)).ToArray();
+        var after = BoardGrid.Place(board.Sets, before, sets, 44);
+        var now = after[sets.IndexOf(tens)];
+        (now.Row, now.Col).Should().Be((3, BoardGrid.TileWidth * 6), "the red 10 keeps its cell");
+    }
+
+    [Theory]
+    // Nothing leaves: newcomers go at the end.
+    [InlineData(new[] { 0, 1, 2, -1 }, 3, new[] { 0, 1, 2, 3 })]
+    // A newcomer fills the seat a departed tile left.
+    [InlineData(new[] { 0, 2, -1 }, 3, new[] { 0, 2, 1 })]
+    [InlineData(new[] { 1, 2, -1 }, 3, new[] { 2, 0, 1 })]
+    [InlineData(new[] { 0, 3, -1, -1 }, 4, new[] { 0, 2, 3, 1 })]
+    // Only shrinking, 7B gone from R B K M: R steps into the gap, K and M stay.
+    [InlineData(new[] { 0, 2, 3 }, 4, new[] { 0, 1, 2 })]
+    // 7K gone from R B K M: M steps into the gap.
+    [InlineData(new[] { 0, 1, 3 }, 4, new[] { 0, 1, 2 })]
+    // A tile taken from the end of a run whose first seats another set keeps: the
+    // newcomers go on its free side.
+    [InlineData(new[] { -1, 6, -1 }, 7, new[] { 1, 0, 2 }, 0, 1, 2, 3, 4)]
+    public void GroupTiles_KeepTheirSeatsAndNewcomersFillTheGaps(int[] seats, int oldCount, int[] expected,
+        params int[] keptElsewhere)
+    {
+        var colors = Enum.GetValues<TileColor>();
+        var tiles = seats.Select((seat, i) => (T(5, colors[i]), seat)).ToList();
+        var blocked = keptElsewhere.SelectMany(seat => new[] { seat - 1, seat, seat + 1 }).ToHashSet();
+
+        var laid = BoardStabilizer.InPlace(tiles, oldCount, blocked);
+
+        laid.Should().Equal(expected.Select(i => tiles[i].Item1));
+    }
+
     [Theory]
     [InlineData(1, 2)]
     [InlineData(2, 4)]
