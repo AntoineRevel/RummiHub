@@ -77,13 +77,47 @@ public static class BoardStabilizer
             laid[j] = kept ? home! : LaidLike(home, laid[j].Tiles) ?? laid[j];
         }
 
+        AroundTakenTiles(previous, laid, pairs);
         return new Solution { IsValid = true, Sets = BoardSeating.Seat(previous, laid) };
     }
 
     /// <summary>
+    /// Orders each new group (one that carries on no previous set) around the tiles it takes
+    /// from the board, so they stay on their cell: the group lies where the most of them are
+    /// (<see cref="BoardGrid"/>), and colors have no order. A 10 taken from the end of a run
+    /// stays put and the 10s from the hand go on its free side; written in the solver's order
+    /// (blue, red, mango), the red 10 would be pushed half a tile away from the rest of the run.
+    /// The cells the rest of that previous set keeps, and the gap beside them, are not free.
+    /// </summary>
+    private static void AroundTakenTiles(List<ValidSet> previous, List<ValidSet> laid, (int PrevIndex, int Shared)[] pairs)
+    {
+        var sources = BoardGrid.Sources(previous, laid);
+        for (var j = 0; j < laid.Count; j++)
+        {
+            if (pairs[j].PrevIndex >= 0 || !laid[j].IsGroup) continue;
+            var from = sources[j].Where(source => source.Prev >= 0).GroupBy(source => source.Prev)
+                .OrderByDescending(group => group.Count()).ThenBy(group => group.Key).FirstOrDefault()?.Key;
+            if (from is not { } frame) continue;
+
+            var blocked = new HashSet<int>();
+            for (var k = 0; k < laid.Count; k++)
+            {
+                if (pairs[k].PrevIndex != frame) continue;
+                foreach (var (prev, seat) in sources[k])
+                    if (prev == frame) blocked.UnionWith([seat - 1, seat, seat + 1]);
+            }
+
+            var tiles = laid[j].Tiles
+                .Select((tile, b) => (tile, sources[j][b].Prev == frame ? sources[j][b].Seat : -1)).ToList();
+            laid[j] = new ValidSet(InPlace(tiles, previous[frame].Tiles.Length, blocked));
+        }
+    }
+
+    /// <summary>
     /// The valid set made of <paramref name="tiles"/>, written so the tiles it keeps from
-    /// <paramref name="home"/> do not move: a group keeps them in their seats and appends
-    /// the newcomers, a run keeps a spare joker on the end it was on. Jokers take whatever
+    /// <paramref name="home"/> do not move: a group keeps them in their seats and puts the
+    /// newcomers in the seats left free first (<see cref="InPlace"/>), a run keeps a spare
+    /// joker on the end it was on. Jokers take whatever
     /// tile the set needs them to stand for.
     /// </summary>
     private static ValidSet? LaidLike(ValidSet? home, IReadOnlyList<Tile> tiles)
@@ -139,20 +173,21 @@ public static class BoardStabilizer
                                 || reals.Select(t => t.Color).Distinct().Count() != reals.Count)
             return null;
 
-        // Tiles that were already together keep their seats. A joker gives its seat to the
-        // real tile it stood for when that one joins; else it keeps its color if no real
-        // tile of the group has it.
+        // The tiles it keeps, with their seat in it. A joker gives its seat to the real tile
+        // it stood for when that one joins; else it keeps its color if no real tile of the
+        // group has it.
         var free = Enum.GetValues<TileColor>().Except(reals.Select(t => t.Color)).ToList();
         var pending = reals.ToList();
         var jokersLeft = jokers;
-        var tiles = new List<Tile>(count);
-        foreach (var tile in home?.Tiles ?? [])
+        var tiles = new List<(Tile Tile, int Seat)>(count);
+        for (var seat = 0; seat < (home?.Tiles.Length ?? 0); seat++)
         {
-            var stoodFor = home!.IsGroup ? pending.FindIndex(t => t.Color == tile.Color) : -1;
+            var tile = home!.Tiles[seat];
+            var stoodFor = home.IsGroup ? pending.FindIndex(t => t.Color == tile.Color) : -1;
             if (!tile.IsJoker || stoodFor >= 0)
             {
                 var real = tile.IsJoker ? pending[stoodFor] : tile;
-                if (pending.Remove(real)) tiles.Add(real);
+                if (pending.Remove(real)) tiles.Add((real, seat));
                 continue;
             }
 
@@ -160,17 +195,80 @@ public static class BoardStabilizer
             jokersLeft--;
             var color = home.IsGroup && free.Contains(tile.Color) ? tile.Color : free[0];
             free.Remove(color);
-            tiles.Add(new Tile(value, color, isJoker: true));
+            tiles.Add((new Tile(value, color, isJoker: true), seat));
         }
 
-        tiles.AddRange(pending);
+        tiles.AddRange(pending.Select(t => (t, -1)));
         for (; jokersLeft > 0; jokersLeft--)
         {
-            tiles.Add(new Tile(value, free[0], isJoker: true));
+            tiles.Add((new Tile(value, free[0], isJoker: true), -1));
             free.RemoveAt(0);
         }
 
-        return new ValidSet(tiles.ToArray());
+        return new ValidSet(InPlace(tiles, home?.Tiles.Length ?? 0));
+    }
+
+    /// <summary>
+    /// The order of a group's <paramref name="tiles"/> that leaves the most of the tiles it
+    /// keeps on their seat (out of the <paramref name="seats"/> it had), then moves the others
+    /// the least: colors in a group have no order, so a tile joining it takes the seat a
+    /// departed tile left instead of being added at the end while its neighbours close the
+    /// gap. A group that only shrinks closes the gap from the nearest end. No tile lies on a
+    /// <paramref name="blocked"/> seat (another set keeps it) while that leaves a choice.
+    /// Ties keep the kept tiles in seat order and the newcomers in the order given, after them.
+    /// </summary>
+    internal static Tile[] InPlace(IReadOnlyList<(Tile Tile, int Seat)> tiles, int seats,
+        IReadOnlySet<int>? blocked = null)
+    {
+        var count = tiles.Count;
+        var order = Enumerable.Range(0, count).ToArray();
+        if (tiles.All(t => t.Seat < 0)) return tiles.Select(t => t.Tile).ToArray();
+
+        int[]? best = null;
+        (int Moved, int Distance, int Shift, int Left) bestCost = default;
+        var starts = Enumerable.Range(-count, seats + 2 * count).ToList();
+        var open = starts.Where(start => blocked is null
+                                         || !Enumerable.Range(start, count).Any(blocked.Contains)).ToList();
+        if (open.Count > 0) starts = open;
+
+        foreach (var permutation in Permutations(order, 0))
+        foreach (var start in starts)
+        {
+            var (moved, distance) = (0, 0);
+            for (var p = 0; p < count; p++)
+            {
+                var seat = tiles[permutation[p]].Seat;
+                if (seat < 0 || seat == start + p) continue;
+                moved++;
+                distance += Math.Abs(seat - (start + p));
+            }
+
+            var cost = (moved, distance, Math.Abs(start), start < 0 ? 1 : 0);
+            if (best is not null && cost.CompareTo(bestCost) >= 0) continue;
+            (best, bestCost) = (permutation.ToArray(), cost);
+        }
+
+        return best!.Select(i => tiles[i].Tile).ToArray();
+    }
+
+    /// <summary>Every order of <paramref name="items"/> from <paramref name="from"/> on, in lexicographic order.</summary>
+    private static IEnumerable<int[]> Permutations(int[] items, int from)
+    {
+        if (from == items.Length)
+        {
+            yield return items;
+            yield break;
+        }
+
+        for (var i = from; i < items.Length; i++)
+        {
+            var rotated = items.ToArray();
+            var picked = rotated[i];
+            Array.Copy(rotated, from, rotated, from + 1, i - from);
+            rotated[from] = picked;
+            foreach (var permutation in Permutations(rotated, from + 1))
+                yield return permutation;
+        }
     }
 
     private static SolverResult? Finish(SolverResult solved, Solution previousBoard, List<Tile> played,

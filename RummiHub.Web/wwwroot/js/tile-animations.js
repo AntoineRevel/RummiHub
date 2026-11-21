@@ -559,15 +559,6 @@ function blocksOf(present, before, after, carried) {
         run = { tiles: [tile], dx, dy, lifted: Math.abs(dy) > tile.h / 2 }; // changing row: carried
         blocks.push(run);
     }
-    for (const block of blocks) {
-        if (block.lifted) continue;
-        const mine = new Set(block.tiles);
-        block.lifted = block.tiles.some(tile => {
-            const from = rectOf(tile, before.get(tile)), to = rectOf(tile, after.get(tile));
-            const swept = { x: Math.min(from.x, to.x), y: from.y, w: Math.abs(to.x - from.x) + tile.w, h: tile.h };
-            return present.some(other => !mine.has(other) && overlaps(swept, rectOf(other, before.get(other))));
-        });
-    }
     return blocks;
 }
 
@@ -645,6 +636,25 @@ function tell(story, snap, prev) {
                     || other.tiles.every(o => !overlaps(spot, rectOf(o, (other.state === 'after' ? after : before).get(o)))));
         });
 
+        // Whether a block sliding along its row would pass over a tile lying there right now.
+        // Asked when the block moves, not before: a tile that has already left (the one
+        // whose seat it takes) is no longer in the way, so the block slides instead of being
+        // lifted over nothing.
+        const blockOf = new Map(blocks.flatMap(b => b.tiles.map(tile => [tile, b])));
+        const lyingAt = tile => {
+            const state = blockOf.get(tile)?.state ?? 'before';
+            return state === 'hover' ? null : rectOf(tile, (state === 'after' ? after : before).get(tile));
+        };
+        const inTheWay = block => block.tiles.some(tile => {
+            const from = rectOf(tile, before.get(tile)), to = rectOf(tile, after.get(tile));
+            const swept = { x: Math.min(from.x, to.x), y: from.y, w: Math.abs(to.x - from.x) + tile.w, h: tile.h };
+            return present.some(other => {
+                if (blockOf.get(other) === block) return false;
+                const rect = lyingAt(other);
+                return rect !== null && overlaps(swept, rect);
+            });
+        });
+
         const slide = block => {
             for (const tile of block.tiles) {
                 pose(tile, t, before.get(tile), { easing: ROOM_EASING });
@@ -673,7 +683,7 @@ function tell(story, snap, prev) {
             if (block) { drop(block); block.state = 'after'; continue; }
             block = order.find(b => b.state === 'before' && free(b));
             if (block) {
-                if (block.lifted) { rise(block); drop(block); } else slide(block);
+                if (block.lifted || inTheWay(block)) { rise(block); drop(block); } else slide(block);
                 block.state = 'after';
                 continue;
             }
