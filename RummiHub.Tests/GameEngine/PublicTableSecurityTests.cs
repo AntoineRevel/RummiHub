@@ -11,7 +11,7 @@ namespace RummiHub.Tests.GameEngineTests;
 public class PublicTableSecurityTests
 {
     private static GameManager CreateManager() =>
-        new(NullLogger<GameManager>.Instance, new InMemorySeedStore());
+        new(NullLogger<GameManager>.Instance, new InMemorySeedStore(), new InMemoryGameJournal());
 
     [Fact]
     public void CreateGame_DrawsACryptographicSeed_WhenTheClientDoesNotAsk()

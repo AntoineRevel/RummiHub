@@ -205,9 +205,14 @@ public partial class Lobby
             {
                 await OpenGameAsync();
                 StateHasChanged();
-                // Once per game: only the host's lobby sends it (AI seats included in the count).
+                // Once per game: only the host's lobby sends it. joueurs counts every seat, AI included.
                 if (_isHost)
-                    await JS.TrackAsync(StatsEvents.GameStarted, new { joueurs = _players.Count });
+                    await JS.TrackAsync(StatsEvents.GameStarted, new
+                    {
+                        joueurs = _players.Count,
+                        humains = _players.Count(p => !p.IsAuto),
+                        ia = _players.Count(p => p.IsAuto)
+                    });
             });
         });
 
@@ -370,13 +375,27 @@ public partial class Lobby
         _gameSaved = SelectedSeed;
         _gameSeed = pasted is not null ? DistributionSeeds.Abbreviate(pasted) : _gameSaved?.Short;
         _gameNoJokers = NoJokersChoice;
-        await _hubConnection.SendAsync(HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id, _noJokers);
+        await _hubConnection.SendAsync(
+            HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id, _noJokers, await VisitorIdAsync());
     }
 
     private async Task JoinGame()
     {
         if (_hubConnection is not null)
-            await _hubConnection.SendAsync(HubEvents.JoinGame, _joinGameId, _playerName);
+            await _hubConnection.SendAsync(HubEvents.JoinGame, _joinGameId, _playerName, await VisitorIdAsync());
+    }
+
+    /// <summary>This browser's anonymous id (stats.js), for the game journal; null when the script failed.</summary>
+    private async Task<string?> VisitorIdAsync()
+    {
+        try
+        {
+            return await JS.InvokeAsync<string?>("rummiStats.visitor");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+            return null;
+        }
     }
 
     private async Task AddAiPlayer()

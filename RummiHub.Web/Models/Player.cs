@@ -20,4 +20,11 @@ public class Player
     /// rather than a human acting through a SignalR connection.
     /// </summary>
     public bool IsAuto { get; init; }
+
+    /// <summary>
+    /// The anonymous id of the browser that took this human seat (<see cref="Services.VisitorIds"/>),
+    /// for the statistics; null for an AI seat or when the page sent none.
+    /// </summary>
+    [JsonIgnore]
+    public string? VisitorId { get; init; }
 }

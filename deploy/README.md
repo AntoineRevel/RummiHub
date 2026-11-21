@@ -292,7 +292,9 @@ Les métriques ne sont que dans l’interface. Aucun service ne dépend du table
 
 `https://stats.rummisolve.com` : visiteurs, pages, pays, appareils, navigateurs, provenance, et les événements envoyés par le jeu. Une seule instance, dans la pile de production ; le site de test y écrit aussi, sous un autre site Umami (identifiants dans `RummiHub.Web/appsettings.json`, `Umami:Websites`, choisis selon le nom d’hôte de la requête). Les données sont dans Postgres (volume `umami_db`) : elles survivent aux redémarrages et aux déploiements.
 
-Aucune adresse IP n’est enregistrée. Un visiteur est un hachage du site, de l’IP, du navigateur et d’un sel qui change chaque mois : la même personne, sur le même appareil, compte pour un visiteur dans le mois. Pas de cookie ni de stockage local.
+Aucune adresse IP n’est enregistrée. Chaque navigateur garde un identifiant anonyme tiré au hasard dans un cookie du site, `rummi-visiteur` (posé par `wwwroot/js/stats.js`, 13 mois depuis la première visite, jamais prolongé) : Umami le reçoit comme *distinct id* (`data-distinct-id`, ou `umami.identify` à la toute première visite), donc un joueur compte pour un visiteur d’un jour et d’un réseau à l’autre. Sans ce cookie (refusé par le navigateur), Umami retombe sur un hachage du site, de l’IP, du navigateur et d’un sel mensuel.
+
+Les événements du jeu : `partie-creee`, `partie-rejointe` (envoyé par celui qui rejoint), `partie-lancee` (par l’hôte : `joueurs`, `humains`, `ia`), `partie-terminee` (par chaque humain : `joueurs`, `ia`, `tours`, `gagnee`). Ils partent du navigateur : un onglet fermé trop tôt ou un bloqueur les perd. Pour des chiffres exacts, voir le journal des parties ci-dessous.
 
 Le navigateur charge le script et envoie les visites à `https://<site>/stats/script.js` et `/stats/api/send` ; Caddy les passe à Umami avec l’IP du visiteur (`X-Forwarded-For`). Rien d’autre d’Umami n’est servi sur le site public. Umami n’a pas d’accès à Internet (réseau `internal`) : la géolocalisation vient de la base GeoLite2 incluse dans l’image.
 
@@ -313,6 +315,14 @@ $U http://rummihub-umami-1:3000/api/websites -H "authorization: Bearer $T" -H 'c
 ```
 
 Lien en lecture seule, sans compte : *Websites → (site) → Edit → Share URL*.
+
+### Journal des parties
+
+Le serveur note chaque partie dans un fichier JSON Lines (`GameJournal.cs`) : création (hôte, graine, sans joker), arrivée d’un humain dans le lobby, lancement (la table : noms, IA, identifiant de navigateur de chaque humain), chaque coup (tuiles posées, pioche), fin (gagnant, tours, tuiles restantes). Rien ne dépend du navigateur : le compte est exact. Le fichier est sur le volume `stats` de chaque projet Compose (`rummihub_stats` pour la production, `rummihub-test_stats` pour le site de test : les parties de test ne comptent jamais). Il ne contient pas d’IP, seulement les noms tapés dans le lobby et l’identifiant anonyme du navigateur.
+
+`/admin/statistiques` en tire les chiffres : joueurs humains distincts (par identifiant de navigateur), parties créées, lancées, terminées, abandonnées (lancées, sans coup depuis une heure : onglet fermé ou redémarrage du serveur), par nombre d’humains à la table, par jour, par joueur, et la liste des parties. Le bouton « C’est moi », à utiliser une fois sur chacun de ses appareils, marque l’identifiant de ce navigateur : les parties où seuls ces appareils avaient un siège humain sortent des chiffres (lien « moi compris » pour les remettre). Le journal commence au déploiement de cette page (21/11/2026) ; avant, seuls les événements Umami existent.
+
+Lire le fichier brut : `docker run --rm -v rummihub_stats:/s alpine:3.20 cat /s/game-journal.jsonl`. Ne pas le supprimer avec `docker compose down -v`.
 
 ### Pages d’administration
 

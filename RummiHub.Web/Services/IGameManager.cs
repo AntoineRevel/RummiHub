@@ -8,15 +8,18 @@ public interface IGameManager
     /// Creates a game dealt from <paramref name="distributionSeed"/>, or from a fresh random seed
     /// when empty, without the two jokers when <paramref name="noJokers"/>. Throws
     /// <see cref="ArgumentException"/> (message for the player) on a malformed seed.
+    /// <paramref name="visitorId"/> is the host's browser id for the game journal (<see cref="VisitorIds"/>).
     /// </summary>
-    Game CreateGame(string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false);
+    Game CreateGame(
+        string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false,
+        string? visitorId = null);
 
     /// <summary>
     /// Creates a game replaying a list entry: its seed, AI seats up to its table size, and the
     /// host on its seat, so the host gets the same rack and the same draws (with or without
     /// jokers, as it was saved).
     /// </summary>
-    Game CreateGame(string playerName, string connectionId, SavedSeed saved);
+    Game CreateGame(string playerName, string connectionId, SavedSeed saved, string? visitorId = null);
 
     /// <summary>
     /// Adds an AI (auto-play) seat to a not-yet-started game. Returns null if the game is
@@ -57,7 +60,7 @@ public interface IGameManager
     /// Adds a human seat. Returns null when the game is missing, already started, or already
     /// has <see cref="GameLimits.MaxPlayers"/> seats.
     /// </summary>
-    Player? AddPlayer(string gameId, string playerName, string connectionId);
+    Player? AddPlayer(string gameId, string playerName, string connectionId, string? visitorId = null);
     bool RemovePlayer(string connectionId);
     Game? FindGameByConnection(string connectionId);
 

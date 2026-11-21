@@ -12,6 +12,7 @@ public partial class GameHub(
     IHttpClientFactory httpClientFactory,
     SolveResultSubscriber solveResultSubscriber,
     IHubContext<GameHub> hubContext,
+    IGameJournal journal,
     ILogger<GameHub> logger) : Hub
 {
     /// <summary>
@@ -86,8 +87,10 @@ public partial class GameHub(
     /// lobby never holds a listed seed; the table is then set as it was saved), or, with both
     /// empty, from a fresh random seed. <paramref name="noJokers"/> deals without the two
     /// jokers; a list entry ignores it and replays the option it was saved with.
+    /// <paramref name="visitorId"/> is the browser's anonymous id (stats.js), for the game journal.
     /// </summary>
-    public async Task CreateGame(string playerName, string? pastedSeed, string? listedSeedId, bool noJokers)
+    public async Task CreateGame(
+        string playerName, string? pastedSeed, string? listedSeedId, bool noJokers, string? visitorId)
     {
         try
         {
@@ -108,7 +111,7 @@ public partial class GameHub(
                     return;
                 }
 
-                game = gameManager.CreateGame(playerName, Context.ConnectionId, saved);
+                game = gameManager.CreateGame(playerName, Context.ConnectionId, saved, visitorId);
             }
             else
             {
@@ -120,7 +123,7 @@ public partial class GameHub(
                     return;
                 }
 
-                game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed, noJokers);
+                game = gameManager.CreateGame(playerName, Context.ConnectionId, requestedSeed, noJokers, visitorId);
             }
 
             var seatToken = game.GetPlayers().Single(p => !p.IsAuto).SeatToken;
@@ -137,7 +140,11 @@ public partial class GameHub(
         }
     }
 
-    public async Task JoinGame(string gameId, string playerName)
+    /// <summary>
+    /// Seats a human in a game still in the lobby. <paramref name="visitorId"/> is the browser's
+    /// anonymous id (stats.js), for the game journal.
+    /// </summary>
+    public async Task JoinGame(string gameId, string playerName, string? visitorId)
     {
         try
         {
@@ -170,7 +177,7 @@ public partial class GameHub(
                 return;
             }
 
-            var player = gameManager.AddPlayer(gameId, playerName, Context.ConnectionId);
+            var player = gameManager.AddPlayer(gameId, playerName, Context.ConnectionId, visitorId);
             if (player == null)
             {
                 var message = game.PlayerCount >= GameLimits.MaxPlayers
@@ -428,6 +435,7 @@ public partial class GameHub(
                 {
                     // Apply the move
                     game.Engine.ApplySolveResult(result);
+                    journal.RecordMove(game, playerIndex.Value, totalPlayed, drew: false);
 
                     // Send updated rack to this player
                     var rack = GetRackTiles(game.Engine, playerIndex.Value);
@@ -510,6 +518,7 @@ public partial class GameHub(
             }
 
             var drawnTile = game.Engine.DrawTile();
+            journal.RecordMove(game, playerIndex.Value, 0, drew: true);
 
             // Send drawn tile + updated rack to this player
             await Clients.Caller.SendAsync(HubEvents.TileDrawn, drawnTile);
@@ -862,11 +871,17 @@ public partial class GameHub(
                           && result.TilesToPlay.Count + result.JokersToPlay > 0;
 
             var boardBefore = game.LastBroadcastBoard;
+            var drew = false;
             if (hasMove)
                 engine.ApplySolveResult(result!);
             else if (engine.TilePoolCount > 0)
+            {
                 engine.DrawTile();
+                drew = true;
+            }
             // else: nothing to play and an empty pool — the turn simply passes.
+            journal.RecordMove(game, playerIndex,
+                hasMove ? result!.TilesToPlay.Count + result.JokersToPlay : 0, drew);
 
             // Advance the turn, broadcast, and arm the next solve. If that player is also
             // an AI, the chain continues automatically.

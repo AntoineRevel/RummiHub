@@ -3,7 +3,7 @@ using RummiHub.Web.Models;
 
 namespace RummiHub.Web.Services;
 
-public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedStore) : IGameManager
+public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedStore, IGameJournal journal) : IGameManager
 {
     private readonly ConcurrentDictionary<string, Game> _games = new();
 
@@ -30,20 +30,24 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         game.MarkSeedSaved(seat);
     }
 
-    public Game CreateGame(string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false)
+    public Game CreateGame(
+        string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false,
+        string? visitorId = null)
     {
         var seed = ResolveDistributionSeed(distributionSeed);
-        return CreateGame(playerName, connectionId, new Game
-        {
-            HostConnectionId = connectionId,
-            DistributionSeed = seed,
-            NoJokers = noJokers
-        });
+        return CreateGame(playerName, connectionId, visitorId,
+            string.IsNullOrWhiteSpace(distributionSeed) ? "random" : "pasted",
+            new Game
+            {
+                HostConnectionId = connectionId,
+                DistributionSeed = seed,
+                NoJokers = noJokers
+            });
     }
 
-    public Game CreateGame(string playerName, string connectionId, SavedSeed saved)
+    public Game CreateGame(string playerName, string connectionId, SavedSeed saved, string? visitorId = null)
     {
-        var game = CreateGame(playerName, connectionId, new Game
+        var game = CreateGame(playerName, connectionId, visitorId, "list", new Game
         {
             HostConnectionId = connectionId,
             DistributionSeed = saved.Seed,
@@ -58,14 +62,15 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         return game;
     }
 
-    private Game CreateGame(string playerName, string connectionId, Game game)
+    private Game CreateGame(string playerName, string connectionId, string? visitorId, string seedKind, Game game)
     {
         var player = new Player
         {
             Id = NewShortId(),
             Name = playerName,
             ConnectionId = connectionId,
-            SeatToken = SeatSecrets.Create()
+            SeatToken = SeatSecrets.Create(),
+            VisitorId = VisitorIds.Normalize(visitorId)
         };
 
         if (!game.AddPlayer(player))
@@ -73,6 +78,15 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
         _games[game.Id] = game;
         LogGameCreated(game.Id, playerName);
+        journal.Record(new JournalEntry
+        {
+            Kind = JournalKinds.Created,
+            Game = game.Id,
+            Visitor = player.VisitorId,
+            Name = playerName,
+            Seed = seedKind,
+            NoJokers = game.NoJokers ? true : null
+        });
         return game;
     }
 
@@ -137,7 +151,7 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
 
     public IReadOnlyList<Game> GetGames() => [.._games.Values];
 
-    public Player? AddPlayer(string gameId, string playerName, string connectionId)
+    public Player? AddPlayer(string gameId, string playerName, string connectionId, string? visitorId = null)
     {
         if (!_games.TryGetValue(gameId, out var game))
             return null;
@@ -150,13 +164,21 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
             Id = NewShortId(),
             Name = playerName,
             ConnectionId = connectionId,
-            SeatToken = SeatSecrets.Create()
+            SeatToken = SeatSecrets.Create(),
+            VisitorId = VisitorIds.Normalize(visitorId)
         };
 
         if (!game.AddPlayer(player))
             return null;
 
         LogPlayerJoined(playerName, gameId);
+        journal.Record(new JournalEntry
+        {
+            Kind = JournalKinds.Joined,
+            Game = gameId,
+            Visitor = player.VisitorId,
+            Name = playerName
+        });
         return player;
     }
 
@@ -204,6 +226,12 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
             game.MarkSeedSaved(saved.Seat);
 
         LogEngineInitialized(gameId, playerNames.Count);
+        journal.Record(new JournalEntry
+        {
+            Kind = JournalKinds.Started,
+            Game = gameId,
+            Seats = players.Select(p => new JournalSeat(p.Name, p.IsAuto, p.VisitorId)).ToList()
+        });
         return true;
     }
 

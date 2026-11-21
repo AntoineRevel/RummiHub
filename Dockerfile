@@ -30,7 +30,7 @@ RUN test -n "$ASSEMBLY" \
     && apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /var/rummihub/keys /var/rummihub/seeds \
+    && mkdir -p /var/rummihub/keys /var/rummihub/seeds /var/rummihub/stats \
     && chown -R app:app /var/rummihub
 
 WORKDIR /app
@@ -41,9 +41,11 @@ USER app
 # for this image; Aspire local dev does not use it.
 # GameOptions__SeedsFile: the lobby seed list. Compose mounts there a volume shared by
 # production and the test site; the directory exists (owned by app) so a new volume is too.
+# GameOptions__JournalFile: the game journal (statistics), on a volume of each Compose project.
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     GameOptions__SeedsFile=/var/rummihub/seeds/seed-configs.json \
+    GameOptions__JournalFile=/var/rummihub/stats/game-journal.jsonl \
     DOTNET_ENVIRONMENT=Production \
     ASSEMBLY=${ASSEMBLY}
 
