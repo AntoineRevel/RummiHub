@@ -77,7 +77,40 @@ public static class BoardStabilizer
             laid[j] = kept ? home! : LaidLike(home, laid[j].Tiles) ?? laid[j];
         }
 
+        AroundTakenTiles(previous, laid, pairs);
         return new Solution { IsValid = true, Sets = BoardSeating.Seat(previous, laid) };
+    }
+
+    /// <summary>
+    /// Orders each new group (one that carries on no previous set) around the tiles it takes
+    /// from the board, so they stay on their cell: the group lies where the most of them are
+    /// (<see cref="BoardGrid"/>), and colors have no order. A 10 taken from the end of a run
+    /// stays put and the 10s from the hand go on its free side; written in the solver's order
+    /// (blue, red, mango), the red 10 would be pushed half a tile away from the rest of the run.
+    /// The cells the rest of that previous set keeps, and the gap beside them, are not free.
+    /// </summary>
+    private static void AroundTakenTiles(List<ValidSet> previous, List<ValidSet> laid, (int PrevIndex, int Shared)[] pairs)
+    {
+        var sources = BoardGrid.Sources(previous, laid);
+        for (var j = 0; j < laid.Count; j++)
+        {
+            if (pairs[j].PrevIndex >= 0 || !laid[j].IsGroup) continue;
+            var from = sources[j].Where(source => source.Prev >= 0).GroupBy(source => source.Prev)
+                .OrderByDescending(group => group.Count()).ThenBy(group => group.Key).FirstOrDefault()?.Key;
+            if (from is not { } frame) continue;
+
+            var blocked = new HashSet<int>();
+            for (var k = 0; k < laid.Count; k++)
+            {
+                if (pairs[k].PrevIndex != frame) continue;
+                foreach (var (prev, seat) in sources[k])
+                    if (prev == frame) blocked.UnionWith([seat - 1, seat, seat + 1]);
+            }
+
+            var tiles = laid[j].Tiles
+                .Select((tile, b) => (tile, sources[j][b].Prev == frame ? sources[j][b].Seat : -1)).ToList();
+            laid[j] = new ValidSet(InPlace(tiles, previous[frame].Tiles.Length, blocked));
+        }
     }
 
     /// <summary>
@@ -180,10 +213,12 @@ public static class BoardStabilizer
     /// keeps on their seat (out of the <paramref name="seats"/> it had), then moves the others
     /// the least: colors in a group have no order, so a tile joining it takes the seat a
     /// departed tile left instead of being added at the end while its neighbours close the
-    /// gap. A group that only shrinks closes the gap from the nearest end. Ties keep the
-    /// kept tiles in seat order and the newcomers in the order given, after them.
+    /// gap. A group that only shrinks closes the gap from the nearest end. No tile lies on a
+    /// <paramref name="blocked"/> seat (another set keeps it) while that leaves a choice.
+    /// Ties keep the kept tiles in seat order and the newcomers in the order given, after them.
     /// </summary>
-    internal static Tile[] InPlace(IReadOnlyList<(Tile Tile, int Seat)> tiles, int seats)
+    internal static Tile[] InPlace(IReadOnlyList<(Tile Tile, int Seat)> tiles, int seats,
+        IReadOnlySet<int>? blocked = null)
     {
         var count = tiles.Count;
         var order = Enumerable.Range(0, count).ToArray();
@@ -191,8 +226,13 @@ public static class BoardStabilizer
 
         int[]? best = null;
         (int Moved, int Distance, int Shift, int Left) bestCost = default;
+        var starts = Enumerable.Range(-count, seats + 2 * count).ToList();
+        var open = starts.Where(start => blocked is null
+                                         || !Enumerable.Range(start, count).Any(blocked.Contains)).ToList();
+        if (open.Count > 0) starts = open;
+
         foreach (var permutation in Permutations(order, 0))
-        for (var start = 1 - count; start < seats; start++)
+        foreach (var start in starts)
         {
             var (moved, distance) = (0, 0);
             for (var p = 0; p < count; p++)
