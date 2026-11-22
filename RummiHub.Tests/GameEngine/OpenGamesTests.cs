@@ -16,7 +16,7 @@ public class OpenGamesTests
     {
         var manager = CreateManager();
         manager.CreateGame("Alice", "conn-1");
-        var open = manager.CreateGame("Bob", "conn-2", noJokers: true, isPublic: true);
+        var open = manager.CreateGame("Bob", "conn-2", isPublic: true);
         manager.AddAiPlayer(open.Id);
 
         manager.GetOpenGames().Should().ContainSingle().Which.Should().BeEquivalentTo(new
@@ -24,8 +24,7 @@ public class OpenGamesTests
             open.Id,
             Host = "Bob",
             Humans = 1,
-            Ais = 1,
-            NoJokers = true
+            Ais = 1
         });
     }
 

@@ -44,12 +44,6 @@ public partial class Lobby
     private string _seedChoice = RandomSeed;
     private string _pastedSeed = string.Empty;
 
-    /// <summary>The "Play without jokers" box, for a random or pasted seed.</summary>
-    private bool _noJokers;
-
-    /// <summary>The game this lobby created is dealt without jokers.</summary>
-    private bool _gameNoJokers;
-
     /// <summary>The short form of the seed the game was created with, shown in the waiting room.</summary>
     private string? _gameSeed;
 
@@ -335,9 +329,6 @@ public partial class Lobby
 
     private SeedListItemDto? SelectedSeed => IsListedSeed ? _seeds.FirstOrDefault(s => s.Id == _seedChoice) : null;
 
-    /// <summary>What the box shows: the selected list entry's option, else the player's choice.</summary>
-    private bool NoJokersChoice => SelectedSeed?.NoJokers ?? _noJokers;
-
     /// <summary>The select's value; picking another entry leaves a rename in progress.</summary>
     private string SeedChoice
     {
@@ -399,9 +390,9 @@ public partial class Lobby
     /// <summary>Its name, else its short seed.</summary>
     private static string SeedTitle(SeedListItemDto item) => item.Name ?? item.Short;
 
-    /// <summary>What the deal replays: the table size, the seat (counted from 1) it was saved from, no jokers.</summary>
+    /// <summary>What the deal replays: the table size, the seat (counted from 1) it was saved from.</summary>
     private static string SeedTable(SeedListItemDto item) =>
-        $"{item.Players} players, seat {item.Seat + 1}{(item.NoJokers ? ", no jokers" : "")}";
+        $"{item.Players} players, seat {item.Seat + 1}";
 
     private static string SeedOptionLabel(SeedListItemDto item) =>
         $"{SeedTitle(item)} · {SeedTable(item)} · {item.AddedAt.UtcDateTime:d MMM yyyy}";
@@ -416,10 +407,9 @@ public partial class Lobby
         var pasted = PastedSeed;
         _gameSaved = SelectedSeed;
         _gameSeed = pasted is not null ? DistributionSeeds.Abbreviate(pasted) : _gameSaved?.Short;
-        _gameNoJokers = NoJokersChoice;
         _gamePublic = _isPublic;
         await _hubConnection.SendAsync(
-            HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id, _noJokers, await VisitorIdAsync(), _isPublic);
+            HubEvents.CreateGame, _playerName, pasted, _gameSaved?.Id, await VisitorIdAsync(), _isPublic);
     }
 
     private async Task JoinGame(string gameId)
@@ -436,15 +426,13 @@ public partial class Lobby
     private async Task JoinOpenGame(OpenGameDto game)
     {
         _gamePublic = true;
-        _gameNoJokers = game.NoJokers;
         await JoinGame(game.Id);
     }
 
     /// <summary>"2/4 players (1 AI)": the seats taken out of <see cref="GameLimits.MaxPlayers"/>.</summary>
     private static string OpenGameSeats(OpenGameDto game) =>
         $"{game.Humans + game.Ais}/{GameLimits.MaxPlayers} players"
-        + (game.Ais > 0 ? $" ({game.Ais} AI)" : "")
-        + (game.NoJokers ? " · no jokers" : "");
+        + (game.Ais > 0 ? $" ({game.Ais} AI)" : "");
 
     /// <summary>This browser's anonymous id (stats.js), for the game journal; null when the script failed.</summary>
     private async Task<string?> VisitorIdAsync()

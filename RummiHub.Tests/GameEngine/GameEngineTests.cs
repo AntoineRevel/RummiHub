@@ -29,40 +29,6 @@ public class GameEngineTests
     }
 
     [Theory]
-    [InlineData(2, null)]
-    [InlineData(4, "no-jokers")]
-    public void Initialize_WithoutJokers_Deals104Tiles_NoneOfThemAJoker(int playerCount, string? seedText)
-    {
-        var engine = new GameEngine();
-        var names = Enumerable.Range(1, playerCount).Select(i => $"Player{i}").ToList();
-        engine.Initialize(names, seedText is null ? null : TestSeeds.Of(seedText), jokers: false);
-
-        engine.Players.Should().OnlyContain(p => p.Rack.Tiles.Count == 14 && p.Rack.Jokers == 0);
-        engine.TilePoolCount.Should().Be(104 - 14 * playerCount);
-        var drawn = new List<Tile>();
-        while (engine.TilePoolCount > 0)
-            drawn.Add(engine.DrawTile());
-        drawn.Should().NotContain(t => t.IsJoker);
-        drawn.Concat(engine.Players.SelectMany(p => p.Rack.Tiles)).Distinct().Should().HaveCount(52);
-    }
-
-    [Fact]
-    public void Initialize_TheSameSeed_DealsDifferently_WithoutJokers()
-    {
-        var seed = TestSeeds.Of("same-seed");
-        var withJokers = new GameEngine();
-        withJokers.Initialize(["Alice", "Bob"], seed);
-        var withoutJokers = new GameEngine();
-        withoutJokers.Initialize(["Alice", "Bob"], seed, jokers: false);
-        var again = new GameEngine();
-        again.Initialize(["Alice", "Bob"], seed, jokers: false);
-
-        var rack = withoutJokers.Players[0].Rack.GetAllTilesIncludingJokers().ToList();
-        rack.Should().Equal(again.Players[0].Rack.GetAllTilesIncludingJokers());
-        rack.Should().NotEqual(withJokers.Players[0].Rack.GetAllTilesIncludingJokers());
-    }
-
-    [Theory]
     [InlineData(2)]
     [InlineData(3)]
     public void Initialize_Distributes14TilesPerPlayer(int playerCount)

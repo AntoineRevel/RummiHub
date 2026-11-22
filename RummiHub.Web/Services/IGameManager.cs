@@ -6,13 +6,12 @@ public interface IGameManager
 {
     /// <summary>
     /// Creates a game dealt from <paramref name="distributionSeed"/>, or from a fresh random seed
-    /// when empty, without the two jokers when <paramref name="noJokers"/>. Throws
-    /// <see cref="ArgumentException"/> (message for the player) on a malformed seed.
+    /// when empty. Throws <see cref="ArgumentException"/> (message for the player) on a malformed seed.
     /// <paramref name="visitorId"/> is the host's browser id for the game journal (<see cref="VisitorIds"/>).
     /// A <paramref name="isPublic"/> game is listed in the lobby (<see cref="GetOpenGames"/>).
     /// </summary>
     Game CreateGame(
-        string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false,
+        string playerName, string connectionId, string? distributionSeed = null,
         string? visitorId = null, bool isPublic = false);
 
     /// <summary>

@@ -11,19 +11,12 @@ namespace RummiHub.Web.Services;
 /// </summary>
 public sealed record SavedSeed(string Seed, int Players, int Seat, string? Name, DateTimeOffset AddedAt)
 {
-    /// <summary>
-    /// Dealt without jokers. The seed shuffles 104 tiles instead of 106, so it is a different
-    /// deal and a different entry. Absent from entries saved before the option: with jokers.
-    /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool NoJokers { get; init; }
-
     /// <summary>Longest name kept; a longer one is cut.</summary>
     public const int MaxNameLength = 40;
 
     /// <summary>What a page names this entry by (<see cref="DistributionSeeds.ListId"/>).</summary>
     [JsonIgnore]
-    public string ListId => DistributionSeeds.ListId(Seed, Players, Seat, NoJokers);
+    public string ListId => DistributionSeeds.ListId(Seed, Players, Seat);
 
     /// <summary>A seed of the shape <see cref="DistributionSeeds.Create"/> makes, a table size the game allows, a seat at it.</summary>
     public static bool IsValid(string? seed, int players, int seat) =>
@@ -52,10 +45,10 @@ public interface ISeedStore
     IReadOnlyList<SavedSeed> GetAll();
 
     /// <summary>
-    /// Puts the deal at the top of the list, dated now. The same seed, table size, seat and
-    /// joker option already listed moves up, keeping its name when <paramref name="name"/> is empty.
+    /// Puts the deal at the top of the list, dated now. The same seed, table size and seat
+    /// already listed moves up, keeping its name when <paramref name="name"/> is empty.
     /// </summary>
-    void Add(string seed, int players, int seat, string? name, bool noJokers = false);
+    void Add(string seed, int players, int seat, string? name);
 
     /// <summary>Names the entry (<see cref="SavedSeed.ListId"/>); an empty name clears it. No-op if absent.</summary>
     void Rename(string listId, string? name);
@@ -102,7 +95,7 @@ public sealed partial class FileSeedStore : ISeedStore
         }
     }
 
-    public void Add(string seed, int players, int seat, string? name, bool noJokers = false)
+    public void Add(string seed, int players, int seat, string? name)
     {
         if (!SavedSeed.IsValid(seed, players, seat))
             return;
@@ -110,10 +103,10 @@ public sealed partial class FileSeedStore : ISeedStore
         name = SavedSeed.NormalizeName(name);
         Change(seeds =>
         {
-            var listId = DistributionSeeds.ListId(seed, players, seat, noJokers);
+            var listId = DistributionSeeds.ListId(seed, players, seat);
             var previous = seeds.FirstOrDefault(s => s.ListId == listId);
             seeds.RemoveAll(s => s.ListId == listId);
-            seeds.Insert(0, new SavedSeed(seed, players, seat, name ?? previous?.Name, _time.GetUtcNow()) { NoJokers = noJokers });
+            seeds.Insert(0, new SavedSeed(seed, players, seat, name ?? previous?.Name, _time.GetUtcNow()));
             if (seeds.Count > MaxSeeds)
                 seeds.RemoveRange(MaxSeeds, seeds.Count - MaxSeeds);
             return true;

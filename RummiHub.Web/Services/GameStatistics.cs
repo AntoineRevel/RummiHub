@@ -45,7 +45,6 @@ public sealed class GameRecord
     /// <summary><c>random</c>, <c>pasted</c> or <c>list</c>; null when the creation is not in the journal.</summary>
     public string? SeedKind { get; set; }
 
-    public bool NoJokers { get; set; }
     public List<SeatRecord> Seats { get; set; } = [];
     public int Moves { get; set; }
     public int? WinnerSeat { get; set; }
@@ -159,7 +158,6 @@ public static class GameStatistics
                 case JournalKinds.Created:
                     game.CreatedAt = e.At;
                     game.SeedKind = e.Seed;
-                    game.NoJokers = e.NoJokers == true;
                     var host = Seat(e.Game, e.Name, ai: false, e.Visitor);
                     game.Seats.Add(host);
                     hosts.Add((game, host));

@@ -24,9 +24,6 @@ public class Game
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string? DistributionSeed { get; set; }
 
-    /// <summary>Dealt without the two jokers (lobby option, or the list entry replayed).</summary>
-    public bool NoJokers { get; init; }
-
     /// <summary>
     /// Set when the game was created from a lobby list entry: the table size and seat it was
     /// saved with. The host keeps that seat (<see cref="KeepHostSeat"/>) so they get the same rack.
@@ -227,7 +224,7 @@ public class Game
                 return null;
 
             return new OpenGameDto(
-                Id, host.Name, Players.Count(p => !p.IsAuto), Players.Count(p => p.IsAuto), NoJokers, CreatedAt);
+                Id, host.Name, Players.Count(p => !p.IsAuto), Players.Count(p => p.IsAuto), CreatedAt);
         }
     }
 
