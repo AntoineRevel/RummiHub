@@ -129,43 +129,6 @@ public class GameManagerTests
     }
 
     [Fact]
-    public void AGameWithoutJokers_IsDealtWithoutThem()
-    {
-        var manager = CreateManager();
-        var game = manager.CreateGame("Alice", "conn-1", SeedA, noJokers: true);
-        manager.AddAiPlayer(game.Id);
-
-        manager.InitializeEngine(game.Id).Should().BeTrue();
-
-        game.NoJokers.Should().BeTrue();
-        game.Engine!.Players.Should().OnlyContain(p => p.Rack.Jokers == 0);
-        game.Engine.TilePoolCount.Should().Be(104 - 2 * 14);
-    }
-
-    [Fact]
-    public void ASavedGameWithoutJokers_ReplaysWithoutThem_WithTheSameRack()
-    {
-        var store = new InMemorySeedStore();
-        var original = CreateManager(store);
-        var first = original.CreateGame("Bob", "conn-0", SeedA, noJokers: true);
-        original.AddAiPlayer(first.Id);
-        original.InitializeEngine(first.Id).Should().BeTrue();
-        var savedRack = first.Engine!.Players[0].Rack.GetAllTilesIncludingJokers();
-        original.SaveSeed(first, 0, null);
-
-        var saved = store.Seeds.Single();
-        saved.NoJokers.Should().BeTrue();
-        var manager = CreateManager(store);
-        var game = manager.CreateGame("Alice", "conn-1", saved);
-        manager.InitializeEngine(game.Id).Should().BeTrue();
-
-        game.NoJokers.Should().BeTrue();
-        game.Engine!.Players.Single(p => p.Name == "Alice").Rack.GetAllTilesIncludingJokers().Should().Equal(savedRack);
-        game.Engine.TilePoolCount.Should().Be(first.Engine.TilePoolCount);
-        game.IsSeedSaved(0).Should().BeTrue();
-    }
-
-    [Fact]
     public void TheHostKeepsTheSavedSeat_WhenAnAiMakesRoomForAFriend()
     {
         var store = new InMemorySeedStore();

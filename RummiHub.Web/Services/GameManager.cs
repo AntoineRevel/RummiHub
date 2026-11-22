@@ -26,12 +26,12 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         if (seat < 0 || seat >= engine.Players.Count)
             return;
 
-        seedStore.Add(seed, engine.Players.Count, seat, name, game.NoJokers);
+        seedStore.Add(seed, engine.Players.Count, seat, name);
         game.MarkSeedSaved(seat);
     }
 
     public Game CreateGame(
-        string playerName, string connectionId, string? distributionSeed = null, bool noJokers = false,
+        string playerName, string connectionId, string? distributionSeed = null,
         string? visitorId = null, bool isPublic = false)
     {
         var seed = ResolveDistributionSeed(distributionSeed);
@@ -41,7 +41,6 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
             {
                 HostConnectionId = connectionId,
                 DistributionSeed = seed,
-                NoJokers = noJokers,
                 IsPublic = isPublic
             });
     }
@@ -53,7 +52,6 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         {
             HostConnectionId = connectionId,
             DistributionSeed = saved.Seed,
-            NoJokers = saved.NoJokers,
             SavedFrom = saved,
             IsPublic = isPublic
         });
@@ -88,7 +86,6 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
             Visitor = player.VisitorId,
             Name = playerName,
             Seed = seedKind,
-            NoJokers = game.NoJokers ? true : null,
             Public = game.IsPublic ? true : null
         });
         return game;
@@ -234,7 +231,7 @@ public partial class GameManager(ILogger<GameManager> logger, ISeedStore seedSto
         var playerNames = players.Select(p => p.Name).ToList();
         var autoPlayers = players.Select(p => p.IsAuto).ToList();
         var engine = new GameEngine { GameId = game.Id };
-        engine.Initialize(playerNames, game.DistributionSeed, autoPlayers, jokers: !game.NoJokers);
+        engine.Initialize(playerNames, game.DistributionSeed, autoPlayers);
         game.Engine = engine;
 
         // Replaying a list entry at its table size: the host's seat holds that entry.

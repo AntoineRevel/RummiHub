@@ -151,18 +151,6 @@
                     }
                 </div>
 
-                @* A list entry replays the deal it was saved with, jokers included or not: the
-                   seed shuffles a different number of tiles either way. *@
-                <label class="option-check @(IsListedSeed ? "locked" : "")"
-                       title="@(IsListedSeed ? "Set by the saved seed" : null)">
-                    <input id="noJokers"
-                           type="checkbox"
-                           checked="@NoJokersChoice"
-                           disabled="@IsListedSeed"
-                           @onchange="e => _noJokers = e.Value is true" />
-                    <span>Play without jokers</span>
-                </label>
-
                 <label class="option-check">
                     <input id="isPublic"
                            type="checkbox"
@@ -231,13 +219,6 @@
                         <strong class="info-value">@(_gamePublic ? "anyone" : "invite only")</strong>
                     }
                 </div>
-                @if (_gameNoJokers)
-                {
-                    <div class="info-row">
-                        <span class="info-label">Jokers</span>
-                        <strong class="info-value">none</strong>
-                    </div>
-                }
                 @if (_gameSaved is not null)
                 {
                     <div class="info-row">
@@ -676,11 +657,6 @@
         margin: 0;
         accent-color: #1976d2;
         cursor: inherit;
-    }
-
-    .option-check.locked {
-        color: #999;
-        cursor: not-allowed;
     }
 
     .seed-input {

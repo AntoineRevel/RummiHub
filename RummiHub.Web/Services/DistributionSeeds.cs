@@ -44,13 +44,11 @@ public static class DistributionSeeds
 
     /// <summary>
     /// What a page gets for a lobby list entry: 16 hex characters of the SHA-256 of its seed,
-    /// table size, seat and, for a deal without jokers only, that option (entries with jokers
-    /// keep the ids they had before it). It names the entry (to pick, rename or remove it)
-    /// without giving the seed away; only the server maps it back.
+    /// table size and seat. It names the entry (to pick, rename or remove it) without giving
+    /// the seed away; only the server maps it back.
     /// </summary>
-    public static string ListId(string seed, int players, int seat, bool noJokers = false) =>
-        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
-                $"{seed}/{players}/{seat}{(noJokers ? "/no-jokers" : "")}")))[..16]
+    public static string ListId(string seed, int players, int seat) =>
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{seed}/{players}/{seat}")))[..16]
             .ToLowerInvariant();
 
     /// <summary>

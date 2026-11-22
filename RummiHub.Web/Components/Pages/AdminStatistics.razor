@@ -96,7 +96,7 @@ else
             "des parties terminées")
         @Tile("Tours médians", finished.Count == 0 ? "—" : Median(finished.Select(g => (double)(g.Turns ?? 0))).ToString("0"),
             "des parties terminées")
-        @Tile("Sans joker", started.Count(g => g.NoJokers),
+        @Tile("Graines choisies", started.Count(g => g.SeedKind is "list" or "pasted"),
             $"{started.Count(g => g.SeedKind == "list")} graines de la liste · {started.Count(g => g.SeedKind == "pasted")} collées")
     </div>
 
@@ -246,7 +246,7 @@ else
                     <td class="text-end">@g.Moves@(g.Turns is { } t ? $" · {t} tours" : "")</td>
                     <td class="text-end">@(g.Started ? Duration(((g.EndedAt ?? g.LastActivity) - g.StartedAt!.Value).TotalMinutes) : "")</td>
                     <td>@(g.Winner is { } w ? w.Name + (w.Ai ? " (IA)" : "") : "")</td>
-                    <td>@SeedLabel(g)@(g.NoJokers ? " · sans joker" : "")</td>
+                    <td>@SeedLabel(g)</td>
                 </tr>
             }
             </tbody>

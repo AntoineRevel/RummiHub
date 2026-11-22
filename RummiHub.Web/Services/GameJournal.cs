@@ -65,8 +65,6 @@ public sealed record JournalEntry
     /// <summary>Where the deal comes from: <c>random</c>, <c>pasted</c> or <c>list</c>.</summary>
     public string? Seed { get; init; }
 
-    public bool? NoJokers { get; init; }
-
     /// <summary>Created « Open to anyone »: listed in the lobby for players who do not know the host.</summary>
     public bool? Public { get; init; }
 

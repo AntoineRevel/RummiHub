@@ -79,7 +79,7 @@ public class GameJournalTests
         var journal = new InMemoryGameJournal();
         var manager = new GameManager(NullLogger<GameManager>.Instance, new InMemorySeedStore(), journal);
 
-        var game = manager.CreateGame("Alice", "c1", noJokers: true, visitorId: Alice);
+        var game = manager.CreateGame("Alice", "c1", visitorId: Alice);
         manager.AddPlayer(game.Id, "Bob", "c2", "not valid!");
         manager.AddAiPlayer(game.Id);
         manager.InitializeEngine(game.Id).Should().BeTrue();
@@ -88,7 +88,7 @@ public class GameJournalTests
             JournalKinds.Created, JournalKinds.Joined, JournalKinds.Started);
         journal.Entries[0].Should().BeEquivalentTo(new
         {
-            Game = game.Id, Visitor = Alice, Name = "Alice", Seed = "random", NoJokers = (bool?)true
+            Game = game.Id, Visitor = Alice, Name = "Alice", Seed = "random"
         });
         journal.Entries[1].Visitor.Should().BeNull("a malformed id is dropped, not stored");
         journal.Entries[2].Seats.Should().Equal(
