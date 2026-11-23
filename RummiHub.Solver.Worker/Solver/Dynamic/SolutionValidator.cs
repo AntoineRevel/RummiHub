@@ -17,7 +17,7 @@ public static class SolutionValidator
 
         var solution = result.BestSolution;
 
-        if (!solution.Sets.All(set => IsLegalRun(set) || IsLegalGroup(set))) return false;
+        if (!solution.Sets.All(SetRules.IsLegal)) return false;
 
         // Every played tile must come from the rack (multiset containment).
         if (!IsSubMultiset(result.TilesToPlay.Where(t => !t.IsJoker), rack.Tiles)) return false;
@@ -41,52 +41,6 @@ public static class SolutionValidator
             // First play: no board involved, and the score gate must be met.
             if (board.Tiles.Count > 0 || board.Jokers > 0) return false;
             if (result.Score < ISolver.MinScore) return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsLegalRun(ValidSet set)
-    {
-        var tiles = set.Tiles;
-        if (tiles.Length < 3) return false;
-
-        TileColor? color = null;
-        var ordered = tiles.OrderBy(t => t.Value).ToArray();
-
-        for (var i = 0; i < ordered.Length; i++)
-        {
-            var tile = ordered[i];
-            if (tile.Value is < 1 or > 13) return false;
-            if (!tile.IsJoker)
-            {
-                if (color is null) color = tile.Color;
-                else if (color != tile.Color) return false;
-            }
-
-            if (i > 0 && ordered[i].Value != ordered[i - 1].Value + 1) return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsLegalGroup(ValidSet set)
-    {
-        var tiles = set.Tiles;
-        if (tiles.Length is < 3 or > 4) return false;
-
-        int? value = null;
-        var seenColors = new HashSet<TileColor>();
-
-        foreach (var tile in tiles)
-        {
-            if (tile.Value is < 1 or > 13) return false;
-            if (tile.IsJoker) continue;
-
-            if (value is null) value = tile.Value;
-            else if (value != tile.Value) return false;
-
-            if (!seenColors.Add(tile.Color)) return false;
         }
 
         return true;
